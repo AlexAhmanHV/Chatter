@@ -1,0 +1,49 @@
+# Builds
+bin/
+obj/
+[Bb]uild/
+[Bb]uilds/
+
+# VS / VS Code
+.vs/
+.vscode/
+
+# User-specific
+*.user
+*.userosscache
+*.suo
+*.swp
+
+# Logs / temp
+*.log
+*.tlog
+*.tmp
+*.temp
+
+# Packages
+*.nupkg
+*.snupkg
+*.tgz
+packages/
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# MAUI/Android/iOS artifacts
+*.aab
+*.apk
+*.ap_(temp)*
+*.ipa
+
+# Publish output
+**/AppPackages/
+**/PublishProfiles/
+
+# Rider
+.idea/
+
+# Optional: if you export certs / keystores, NEVER commit them
+*.keystore
+*.jks
+*.pfx
