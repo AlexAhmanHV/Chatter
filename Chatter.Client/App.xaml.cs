@@ -1,14 +1,12 @@
-﻿namespace Chatter.Client;
+﻿using Chatter.Client.Views;
+
+namespace Chatter.Client;
 
 public partial class App : Application
 {
-	public App()
-	{
-		InitializeComponent();
-	}
-
-	protected override Window CreateWindow(IActivationState? activationState)
-	{
-		return new Window(new AppShell());
-	}
+    public App(ChatPage page)
+    {
+        InitializeComponent();
+        MainPage = new NavigationPage(page);
+    }
 }

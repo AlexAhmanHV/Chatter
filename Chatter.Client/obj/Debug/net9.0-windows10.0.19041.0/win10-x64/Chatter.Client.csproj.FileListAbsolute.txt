@@ -515,3 +515,15 @@ C:\Users\AlexH\Chatter\Chatter.Client\obj\Debug\net9.0-windows10.0.19041.0\win10
 C:\Users\AlexH\Chatter\Chatter.Client\obj\Debug\net9.0-windows10.0.19041.0\win10-x64\qualifiers.txt
 C:\Users\AlexH\Chatter\Chatter.Client\obj\Debug\net9.0-windows10.0.19041.0\win10-x64\qualifiers.txt.intermediate
 C:\Users\AlexH\Chatter\Chatter.Client\obj\Debug\net9.0-windows10.0.19041.0\win10-x64\MultipleQualifiersPerDimensionFound.txt
+C:\Users\AlexH\Chatter\Chatter.Client\bin\Debug\net9.0-windows10.0.19041.0\win10-x64\CommunityToolkit.Mvvm.dll
+C:\Users\AlexH\Chatter\Chatter.Client\bin\Debug\net9.0-windows10.0.19041.0\win10-x64\Microsoft.AspNetCore.Connections.Abstractions.dll
+C:\Users\AlexH\Chatter\Chatter.Client\bin\Debug\net9.0-windows10.0.19041.0\win10-x64\Microsoft.AspNetCore.Http.Connections.Client.dll
+C:\Users\AlexH\Chatter\Chatter.Client\bin\Debug\net9.0-windows10.0.19041.0\win10-x64\Microsoft.AspNetCore.Http.Connections.Common.dll
+C:\Users\AlexH\Chatter\Chatter.Client\bin\Debug\net9.0-windows10.0.19041.0\win10-x64\Microsoft.AspNetCore.SignalR.Client.dll
+C:\Users\AlexH\Chatter\Chatter.Client\bin\Debug\net9.0-windows10.0.19041.0\win10-x64\Microsoft.AspNetCore.SignalR.Client.Core.dll
+C:\Users\AlexH\Chatter\Chatter.Client\bin\Debug\net9.0-windows10.0.19041.0\win10-x64\Microsoft.AspNetCore.SignalR.Common.dll
+C:\Users\AlexH\Chatter\Chatter.Client\bin\Debug\net9.0-windows10.0.19041.0\win10-x64\Microsoft.AspNetCore.SignalR.Protocols.Json.dll
+C:\Users\AlexH\Chatter\Chatter.Client\bin\Debug\net9.0-windows10.0.19041.0\win10-x64\Microsoft.Extensions.Features.dll
+C:\Users\AlexH\Chatter\Chatter.Client\bin\Debug\net9.0-windows10.0.19041.0\win10-x64\System.Net.ServerSentEvents.dll
+C:\Users\AlexH\Chatter\Chatter.Client\bin\Debug\net9.0-windows10.0.19041.0\win10-x64\System.Threading.Channels.dll
+C:\Users\AlexH\Chatter\Chatter.Client\obj\Debug\net9.0-windows10.0.19041.0\win10-x64\Chatter.Client.sourcelink.json

@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="Chatter.Client.Views.ChatPage"
+             Title="Chat">
+  <VerticalStackLayout Padding="16" Spacing="8">
+
+    <!-- Username row -->
+    <HorizontalStackLayout Spacing="8" VerticalOptions="Start">
+      <Label Text="Username" VerticalTextAlignment="Center"/>
+      <Entry Text="{Binding User}" Placeholder="e.g., Alex" WidthRequest="200"/>
+    </HorizontalStackLayout>
+
+    <Button Text="Connect" Command="{Binding ConnectCommand}" />
+    <CollectionView ItemsSource="{Binding Messages}" HeightRequest="300"/>
+    <HorizontalStackLayout Spacing="8">
+      <Entry Placeholder="Type a message…" Text="{Binding OutgoingMessage}" HorizontalOptions="FillAndExpand"/>
+      <Button Text="Send" Command="{Binding SendCommand}"/>
+    </HorizontalStackLayout>
+
+  </VerticalStackLayout>
+</ContentPage>

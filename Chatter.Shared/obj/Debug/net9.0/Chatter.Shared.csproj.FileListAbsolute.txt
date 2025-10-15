@@ -9,3 +9,4 @@ C:\Users\AlexH\Chatter\Chatter.Shared\obj\Debug\net9.0\Chatter.Shared.dll
 C:\Users\AlexH\Chatter\Chatter.Shared\obj\Debug\net9.0\refint\Chatter.Shared.dll
 C:\Users\AlexH\Chatter\Chatter.Shared\obj\Debug\net9.0\Chatter.Shared.pdb
 C:\Users\AlexH\Chatter\Chatter.Shared\obj\Debug\net9.0\ref\Chatter.Shared.dll
+C:\Users\AlexH\Chatter\Chatter.Shared\obj\Debug\net9.0\Chatter.Shared.sourcelink.json

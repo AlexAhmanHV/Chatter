@@ -296,3 +296,14 @@ C:\Users\AlexH\Chatter\Chatter.Client\obj\Debug\net9.0-maccatalyst\maccatalyst-x
 C:\Users\AlexH\Chatter\Chatter.Client\obj\Debug\net9.0-maccatalyst\maccatalyst-x64\Chatter.Client.pdb
 C:\Users\AlexH\Chatter\Chatter.Client\obj\Debug\net9.0-maccatalyst\maccatalyst-x64\Chatter.Client.genruntimeconfig.cache
 C:\Users\AlexH\Chatter\Chatter.Client\obj\Debug\net9.0-maccatalyst\maccatalyst-x64\ref\Chatter.Client.dll
+C:\Users\AlexH\Chatter\Chatter.Client\obj\Debug\net9.0-maccatalyst\maccatalyst-x64\Chatter.Client.sourcelink.json
+C:\Users\AlexH\Chatter\Chatter.Client\bin\Debug\net9.0-maccatalyst\maccatalyst-x64\CommunityToolkit.Mvvm.dll
+C:\Users\AlexH\Chatter\Chatter.Client\bin\Debug\net9.0-maccatalyst\maccatalyst-x64\Microsoft.AspNetCore.Connections.Abstractions.dll
+C:\Users\AlexH\Chatter\Chatter.Client\bin\Debug\net9.0-maccatalyst\maccatalyst-x64\Microsoft.AspNetCore.Http.Connections.Client.dll
+C:\Users\AlexH\Chatter\Chatter.Client\bin\Debug\net9.0-maccatalyst\maccatalyst-x64\Microsoft.AspNetCore.Http.Connections.Common.dll
+C:\Users\AlexH\Chatter\Chatter.Client\bin\Debug\net9.0-maccatalyst\maccatalyst-x64\Microsoft.AspNetCore.SignalR.Client.dll
+C:\Users\AlexH\Chatter\Chatter.Client\bin\Debug\net9.0-maccatalyst\maccatalyst-x64\Microsoft.AspNetCore.SignalR.Client.Core.dll
+C:\Users\AlexH\Chatter\Chatter.Client\bin\Debug\net9.0-maccatalyst\maccatalyst-x64\Microsoft.AspNetCore.SignalR.Common.dll
+C:\Users\AlexH\Chatter\Chatter.Client\bin\Debug\net9.0-maccatalyst\maccatalyst-x64\Microsoft.AspNetCore.SignalR.Protocols.Json.dll
+C:\Users\AlexH\Chatter\Chatter.Client\bin\Debug\net9.0-maccatalyst\maccatalyst-x64\Microsoft.Extensions.Features.dll
+C:\Users\AlexH\Chatter\Chatter.Client\bin\Debug\net9.0-maccatalyst\maccatalyst-x64\System.Net.ServerSentEvents.dll

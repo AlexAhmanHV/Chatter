@@ -1,39 +1,61 @@
+using Microsoft.AspNetCore.SignalR;
+using Chatter.Server; // so Program.cs can see ChatHub
+
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
-// Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
+// Services
 builder.Services.AddOpenApi();
+builder.Services.AddSignalR();
+
+// (Optional) CORS if you’ll test from a browser origin
+builder.Services.AddCors(opt =>
+{
+    opt.AddDefaultPolicy(p => p
+        .AllowAnyHeader()
+        .AllowAnyMethod()
+        .AllowCredentials()
+        .WithOrigins(
+            "http://localhost", "https://localhost",
+            "http://localhost:5173", "https://localhost:7043"));
+});
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
+// Pipeline
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
 }
 
 app.UseHttpsRedirection();
+app.UseCors();
 
+// SignalR hub endpoint
+app.MapHub<ChatHub>("/hub/chat");
+
+// Your sample endpoint unchanged
 var summaries = new[]
 {
-    "Freezing", "Bracing", "Chilly", "Cool", "Mild", "Warm", "Balmy", "Hot", "Sweltering", "Scorching"
+    "Freezing", "Bracing", "Chilly", "Cool", "Mild",
+    "Warm", "Balmy", "Hot", "Sweltering", "Scorching"
 };
 
 app.MapGet("/weatherforecast", () =>
 {
-    var forecast =  Enumerable.Range(1, 5).Select(index =>
+    var forecast = Enumerable.Range(1, 5).Select(index =>
         new WeatherForecast
         (
             DateOnly.FromDateTime(DateTime.Now.AddDays(index)),
             Random.Shared.Next(-20, 55),
             summaries[Random.Shared.Next(summaries.Length)]
-        ))
-        .ToArray();
+        )).ToArray();
     return forecast;
 })
 .WithName("GetWeatherForecast");
 
 app.Run();
+
+// ---- Types ----
 
 record WeatherForecast(DateOnly Date, int TemperatureC, string? Summary)
 {
