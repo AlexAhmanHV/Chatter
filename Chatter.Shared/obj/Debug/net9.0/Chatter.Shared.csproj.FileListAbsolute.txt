@@ -1,0 +1,11 @@
+C:\Users\AlexH\Chatter\Chatter.Shared\bin\Debug\net9.0\Chatter.Shared.deps.json
+C:\Users\AlexH\Chatter\Chatter.Shared\bin\Debug\net9.0\Chatter.Shared.dll
+C:\Users\AlexH\Chatter\Chatter.Shared\bin\Debug\net9.0\Chatter.Shared.pdb
+C:\Users\AlexH\Chatter\Chatter.Shared\obj\Debug\net9.0\Chatter.Shared.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\AlexH\Chatter\Chatter.Shared\obj\Debug\net9.0\Chatter.Shared.AssemblyInfoInputs.cache
+C:\Users\AlexH\Chatter\Chatter.Shared\obj\Debug\net9.0\Chatter.Shared.AssemblyInfo.cs
+C:\Users\AlexH\Chatter\Chatter.Shared\obj\Debug\net9.0\Chatter.Shared.csproj.CoreCompileInputs.cache
+C:\Users\AlexH\Chatter\Chatter.Shared\obj\Debug\net9.0\Chatter.Shared.dll
+C:\Users\AlexH\Chatter\Chatter.Shared\obj\Debug\net9.0\refint\Chatter.Shared.dll
+C:\Users\AlexH\Chatter\Chatter.Shared\obj\Debug\net9.0\Chatter.Shared.pdb
+C:\Users\AlexH\Chatter\Chatter.Shared\obj\Debug\net9.0\ref\Chatter.Shared.dll
