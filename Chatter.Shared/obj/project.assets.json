@@ -8,23 +8,23 @@
     "net9.0": []
   },
   "packageFolders": {
-    "C:\\Users\\AlexH\\.nuget\\packages\\": {},
+    "C:\\Users\\albin\\.nuget\\packages\\": {},
     "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages": {}
   },
   "project": {
     "version": "1.0.0",
     "restore": {
-      "projectUniqueName": "C:\\Users\\AlexH\\Chatter\\Chatter.Shared\\Chatter.Shared.csproj",
+      "projectUniqueName": "C:\\Chatter\\Chatter\\Chatter.Shared\\Chatter.Shared.csproj",
       "projectName": "Chatter.Shared",
-      "projectPath": "C:\\Users\\AlexH\\Chatter\\Chatter.Shared\\Chatter.Shared.csproj",
-      "packagesPath": "C:\\Users\\AlexH\\.nuget\\packages\\",
-      "outputPath": "C:\\Users\\AlexH\\Chatter\\Chatter.Shared\\obj\\",
+      "projectPath": "C:\\Chatter\\Chatter\\Chatter.Shared\\Chatter.Shared.csproj",
+      "packagesPath": "C:\\Users\\albin\\.nuget\\packages\\",
+      "outputPath": "C:\\Chatter\\Chatter\\Chatter.Shared\\obj\\",
       "projectStyle": "PackageReference",
       "fallbackFolders": [
         "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"
       ],
       "configFilePaths": [
-        "C:\\Users\\AlexH\\AppData\\Roaming\\NuGet\\NuGet.Config",
+        "C:\\Users\\albin\\AppData\\Roaming\\NuGet\\NuGet.Config",
         "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.FallbackLocation.config",
         "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.Offline.config"
       ],
@@ -73,7 +73,7 @@
             "privateAssets": "all"
           }
         },
-        "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\9.0.304/PortableRuntimeIdentifierGraph.json"
+        "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\9.0.306/PortableRuntimeIdentifierGraph.json"
       }
     }
   }

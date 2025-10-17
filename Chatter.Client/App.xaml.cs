@@ -4,9 +4,9 @@ namespace Chatter.Client;
 
 public partial class App : Application
 {
-    public App(ChatPage page)
+    public App(LoginPage loginPage)
     {
         InitializeComponent();
-        MainPage = new NavigationPage(page);
+        MainPage = new NavigationPage(loginPage);
     }
 }

@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="Chatter.Client.Views.LoginPage"
+             Title="Welcome">
+    <VerticalStackLayout Padding="24" Spacing="16" VerticalOptions="Center">
+        <Label Text="Chatter" FontSize="28" HorizontalOptions="Center" />
+
+        <Entry Placeholder="Username"
+               Text="{Binding Username}"
+               ReturnType="Next" />
+
+        <Entry Placeholder="Password"
+               Text="{Binding Password}"
+               IsPassword="True"
+               ReturnType="Done" />
+
+        <Button Text="Log in" Command="{Binding LoginCommand}">
+        <Button.Triggers>
+            <!-- When busy: disable and show different text -->
+            <DataTrigger TargetType="Button" Binding="{Binding IsBusy}" Value="True">
+            <Setter Property="IsEnabled" Value="False" />
+            <Setter Property="Text" Value="Logging in..." />
+            </DataTrigger>
+        </Button.Triggers>
+        </Button>
+
+        <!-- Small hint so testers know the hardcoded creds -->
+        <Label Text="Try: admin / password"
+               FontSize="12"
+               Opacity="0.6"
+               HorizontalOptions="Center" />
+    </VerticalStackLayout>
+</ContentPage>

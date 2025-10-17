@@ -25,6 +25,9 @@ public static class MauiProgram
         builder.Services.AddTransient<ChatViewModel>();   // fresh VM per page
         builder.Services.AddTransient<ChatPage>();        // page that uses the VM
 
+        builder.Services.AddTransient<LoginViewModel>();    // login vm
+        builder.Services.AddTransient<LoginPage>();         // login page
+
         return builder.Build();
     }
 }
