@@ -7,8 +7,14 @@
 
     <!-- Username row -->
     <HorizontalStackLayout Spacing="8" VerticalOptions="Start">
-      <Label Text="Username" VerticalTextAlignment="Center"/>
-      <Entry Text="{Binding User}" Placeholder="e.g., Alex" WidthRequest="200"/>
+      <Label HorizontalOptions="Center" Margin="0,0,0,8" FontSize="14">
+        <Label.FormattedText>
+          <FormattedString>
+            <Span Text="👤 Logged in as: " />
+            <Span Text="{Binding User}" />
+          </FormattedString>
+        </Label.FormattedText>
+      </Label>
     </HorizontalStackLayout>
 
     <Button Text="Connect" Command="{Binding ConnectCommand}" />

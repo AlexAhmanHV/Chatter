@@ -34,18 +34,19 @@ public partial class LoginViewModel : ObservableObject
                 return;
             }
 
-            // 🔒 Hardcoded credentials for now
-            var ok = Username.Equals("admin", StringComparison.OrdinalIgnoreCase)
-                     && Password == "password";
+        // 🔓 Accept any non-empty credentials for now
+        var ok = !string.IsNullOrWhiteSpace(Username) &&
+                !string.IsNullOrWhiteSpace(Password);
 
-            if (!ok)
-            {
-                await Application.Current.MainPage.DisplayAlert("Login failed", "Invalid username or password.", "OK");
-                return;
-            }
-
-            // Notify page to navigate
-            LoginSucceeded?.Invoke(Username);
+        if (!ok)
+        {
+            await Application.Current.MainPage.DisplayAlert(
+                "Login failed", "Please enter a username and password.", "OK");
+            return;
+        }
+            
+// Notify page to navigate (this username will be used in chat)
+LoginSucceeded?.Invoke(Username!);
         }
         catch (Exception ex)
         {

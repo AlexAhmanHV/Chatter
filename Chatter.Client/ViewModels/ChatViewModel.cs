@@ -37,12 +37,7 @@ public partial class ChatViewModel : ObservableObject
     {
         try
         {
-            if (string.IsNullOrWhiteSpace(User))
-            {
-                await Application.Current.MainPage.DisplayAlert(
-                    "Pick a username", "Please enter a username first.", "OK");
-                return;
-            }
+            // Username is already set at login — no need to validate here
 
             await _chat.StartAsync(BaseUrl);
             Messages.Add("📶 Connected to server.");

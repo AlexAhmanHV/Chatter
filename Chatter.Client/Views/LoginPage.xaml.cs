@@ -18,14 +18,21 @@ public partial class LoginPage : ContentPage
 
     private async void OnLoginSucceeded(string username)
     {
-        // Resolve a fresh ChatPage (and its VM) via DI
         var chatPage = _services.GetRequiredService<ChatPage>();
 
         if (chatPage.BindingContext is ViewModels.ChatViewModel chatVm)
         {
-            chatVm.User = username; // prefill the username in chat
+            chatVm.User = username;                    // set chat username
         }
 
-        await Navigation.PushAsync(chatPage);
+        // Replace login with chat in the navigation stack
+        Navigation.InsertPageBefore(chatPage, this);
+        await Navigation.PopAsync();                   // navigates to ChatPage
+
+        // Auto-connect after landing on ChatPage
+        if (chatPage.BindingContext is ViewModels.ChatViewModel vm)
+        {
+            await vm.ConnectCommand.ExecuteAsync(null);
+        }
     }
 }
