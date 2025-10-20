@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.SignalR;
 using Chatter.Server; // so Program.cs can see ChatHub
+using Chatter.Server.Hubs;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -31,7 +32,7 @@ app.UseHttpsRedirection();
 app.UseCors();
 
 // SignalR hub endpoint
-app.MapHub<ChatHub>("/hub/chat");
+app.MapHub<ChatHub>("/hub/Chat");
 
 // Your sample endpoint unchanged
 var summaries = new[]

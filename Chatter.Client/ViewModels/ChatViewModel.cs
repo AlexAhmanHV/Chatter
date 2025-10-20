@@ -2,21 +2,25 @@ using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Chatter.Client.Services;
-using Microsoft.Maui.ApplicationModel; // MainThread
-using Microsoft.Maui.Controls;         // Application (DisplayAlert)
+using Microsoft.Maui.ApplicationModel;
+using Microsoft.Maui.Controls;
 using CommunityToolkit.Mvvm.Messaging;
 using Chatter.Client.Messages;
+using System.Collections.ObjectModel;
 
 namespace Chatter.Client.ViewModels;
+
 
 public partial class ChatViewModel : ObservableObject
 {
     private readonly ChatService _chat;
-
     private const string BaseUrl = "http://localhost:5291";
 
     [ObservableProperty] private string user = string.Empty;
     [ObservableProperty] private string? outgoingMessage;
+
+    // NEW: roster bound to the sidebar UI
+    public ObservableCollection<string> OnlineUsers { get; } = new();
 
     public ObservableCollection<string> Messages { get; } = new();
 
@@ -30,12 +34,26 @@ public partial class ChatViewModel : ObservableObject
         _chat.MessageReceived += (u, m) =>
             MainThread.BeginInvokeOnMainThread(() => Messages.Add($"{u}: {m}"));
 
-        // 🔔 Update User when settings change the display name
-        WeakReferenceMessenger.Default.Register<DisplayNameChangedMessage>(this, (_, msg) =>
+        _chat.DisplayNameChanged += (oldName, newName) =>
+            MainThread.BeginInvokeOnMainThread(() =>
+                Messages.Add($"🔔 {oldName} changed their name to “{newName}”."));
+
+        // NEW: update roster when the server pushes it
+        _chat.OnlineUsersUpdated += list =>
+            MainThread.BeginInvokeOnMainThread(() =>
+            {
+                OnlineUsers.Clear();
+                foreach (var n in list)
+                    OnlineUsers.Add(n);
+            });
+
+        WeakReferenceMessenger.Default.Register<DisplayNameChangedMessage>(this, async (_, msg) =>
         {
             User = msg.Value;
-            Messages.Add($"📝 Display name updated to '{User}'.");
+            try { await _chat.ChangeDisplayNameAsync(User); } catch { }
         });
+
+        _chat.OnGetCurrentDisplayName = () => User;
 
         ConnectCommand = new AsyncRelayCommand(ConnectAsync);
         SendCommand = new AsyncRelayCommand(SendAsync);
@@ -47,6 +65,8 @@ public partial class ChatViewModel : ObservableObject
         {
             await _chat.StartAsync(BaseUrl);
             Messages.Add("📶 Connected to server.");
+            if (!string.IsNullOrWhiteSpace(User))
+                await _chat.SetDisplayNameAsync(User);
         }
         catch (Exception ex)
         {

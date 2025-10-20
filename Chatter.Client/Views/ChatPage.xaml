@@ -1,32 +1,86 @@
-<?xml version="1.0" encoding="utf-8" ?>
 <ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              x:Class="Chatter.Client.Views.ChatPage"
              Title="Chat">
-             <ContentPage.ToolbarItems>
+
+  <ContentPage.ToolbarItems>
     <ToolbarItem Text="Settings" Clicked="OnSettingsClicked" />
   </ContentPage.ToolbarItems>
-  <VerticalStackLayout Padding="16" Spacing="8">
 
-    <!-- Username row -->
-    <HorizontalStackLayout Spacing="8" VerticalOptions="Start">
-      <Label HorizontalOptions="Center" Margin="0,0,0,8" FontSize="14">
-        <Label.FormattedText>
-          <FormattedString>
-            <Span Text="👤 Logged in as: " />
-            <Span Text="{Binding User}" />
-          </FormattedString>
-        </Label.FormattedText>
-      </Label>
-      
-    </HorizontalStackLayout>
+  <Grid ColumnSpacing="0" RowSpacing="0" Padding="0">
+    <Grid.ColumnDefinitions>
+      <ColumnDefinition Width="*" />
+      <ColumnDefinition Width="280" />
+    </Grid.ColumnDefinitions>
 
+    <Grid.RowDefinitions>
+      <RowDefinition Height="*" />
+    </Grid.RowDefinitions>
 
-    <CollectionView ItemsSource="{Binding Messages}" HeightRequest="300"/>
-    <HorizontalStackLayout Spacing="8">
-      <Entry Placeholder="Type a message…" Text="{Binding OutgoingMessage}" HorizontalOptions="FillAndExpand"/>
-      <Button Text="Send" Command="{Binding SendCommand}"/>
-    </HorizontalStackLayout>
+    <!-- LEFT: Chat area -->
+    <Grid Grid.Column="0" Padding="16">
+      <Grid.RowDefinitions>
+        <RowDefinition Height="*" />
+        <RowDefinition Height="Auto" />
+      </Grid.RowDefinitions>
 
-  </VerticalStackLayout>
+      <CollectionView Grid.Row="0" ItemsSource="{Binding Messages}">
+        <CollectionView.ItemTemplate>
+          <DataTemplate>
+            <Label Text="{Binding .}" LineBreakMode="WordWrap" Margin="0,2"/>
+          </DataTemplate>
+        </CollectionView.ItemTemplate>
+      </CollectionView>
+
+      <Grid Grid.Row="1" ColumnSpacing="8" Padding="0,12,0,0">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="Auto" />
+        </Grid.ColumnDefinitions>
+
+        <Entry Grid.Column="0"
+               Placeholder="Type a message"
+               Text="{Binding OutgoingMessage}" />
+        <Button Grid.Column="1"
+                Text="Send"
+                Command="{Binding SendCommand}" />
+      </Grid>
+    </Grid>
+
+    <!-- RIGHT: People online -->
+    <Border Grid.Column="1" StrokeThickness="0"
+            BackgroundColor="{AppThemeBinding Light=#F5F5F7, Dark=#1E1E1E}">
+      <VerticalStackLayout Padding="16" Spacing="8">
+               <!-- NEW: Show current user's display name -->
+        <Label Text="{Binding User, StringFormat='Chatting as: {0}'}"
+              FontSize="14"
+              FontAttributes="Italic"
+              TextColor="Gray"
+              Margin="0,0,0,12" />
+        <Label Text="People online" FontAttributes="Bold" />
+
+ 
+
+        <Label Text="{Binding OnlineUsers.Count, StringFormat='Total: {0}'}"
+              FontSize="12" TextColor="Gray" />
+
+        <CollectionView ItemsSource="{Binding OnlineUsers}">
+          <CollectionView.ItemTemplate>
+            <DataTemplate>
+              <Grid Padding="0,6">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="Auto"/>
+                  <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <Ellipse WidthRequest="8" HeightRequest="8"
+                        Fill="LimeGreen" VerticalOptions="Center" />
+                <Label Grid.Column="1" Text="{Binding .}" Margin="8,0,0,0" />
+              </Grid>
+            </DataTemplate>
+          </CollectionView.ItemTemplate>
+        </CollectionView>
+      </VerticalStackLayout>
+    </Border>
+
+  </Grid>
 </ContentPage>
