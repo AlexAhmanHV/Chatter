@@ -9,22 +9,64 @@
 
   <Grid ColumnSpacing="0" RowSpacing="0" Padding="0">
     <Grid.ColumnDefinitions>
-      <ColumnDefinition Width="*" />
-      <ColumnDefinition Width="280" />
+      <ColumnDefinition Width="240" />  <!-- LEFT: chats -->
+      <ColumnDefinition Width="*" />    <!-- MIDDLE: conversation -->
+      <ColumnDefinition Width="280" />  <!-- RIGHT: people -->
     </Grid.ColumnDefinitions>
 
-    <Grid.RowDefinitions>
-      <RowDefinition Height="*" />
-    </Grid.RowDefinitions>
+    <!-- LEFT: Chats list -->
+    <Border Grid.Column="0" StrokeThickness="0"
+            BackgroundColor="{AppThemeBinding Light=#F7F7F7, Dark=#1A1A1A}">
+      <VerticalStackLayout Padding="12" Spacing="8">
+        <Label Text="Chats" FontAttributes="Bold" />
 
-    <!-- LEFT: Chat area -->
-    <Grid Grid.Column="0" Padding="16">
+        <CollectionView ItemsSource="{Binding Chats}"
+                        SelectionMode="Single"
+                        SelectedItem="{Binding SelectedChat}">
+          <CollectionView.ItemTemplate>
+            <DataTemplate>
+              <Grid Padding="8" ColumnSpacing="8">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="*" />
+                  <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <!-- Chat label -->
+                <Label Text="{Binding Id}" LineBreakMode="TailTruncation" />
+
+                <!-- Unread badge -->
+                <Border Grid.Column="1"
+                        BackgroundColor="#CCFF3B30"
+                        Padding="6,2"
+                        StrokeThickness="0"
+                        HorizontalOptions="End"
+                        VerticalOptions="Center"
+                        IsVisible="True">
+                  <Border.Triggers>
+                    <!-- Hide when unread is 0 -->
+                    <DataTrigger TargetType="Border"
+                                Binding="{Binding Unread}"
+                                Value="0">
+                      <Setter Property="IsVisible" Value="False" />
+                    </DataTrigger>
+                  </Border.Triggers>
+                  <Label Text="{Binding Unread}" FontAttributes="Bold" FontSize="12" />
+                </Border>
+              </Grid>
+            </DataTemplate>
+          </CollectionView.ItemTemplate>
+        </CollectionView>
+      </VerticalStackLayout>
+    </Border>
+
+    <!-- MIDDLE: Current conversation -->
+    <Grid Grid.Column="1" Padding="16">
       <Grid.RowDefinitions>
         <RowDefinition Height="*" />
         <RowDefinition Height="Auto" />
       </Grid.RowDefinitions>
 
-      <CollectionView Grid.Row="0" ItemsSource="{Binding Messages}">
+      <CollectionView Grid.Row="0" ItemsSource="{Binding CurrentChatMessages}">
         <CollectionView.ItemTemplate>
           <DataTemplate>
             <Label Text="{Binding .}" LineBreakMode="WordWrap" Margin="0,2"/>
@@ -39,7 +81,7 @@
         </Grid.ColumnDefinitions>
 
         <Entry Grid.Column="0"
-               Placeholder="Type a message"
+               Placeholder="{Binding SelectedChat.Id, StringFormat='Message {0}…'}"
                Text="{Binding OutgoingMessage}" />
         <Button Grid.Column="1"
                 Text="Send"
@@ -48,23 +90,21 @@
     </Grid>
 
     <!-- RIGHT: People online -->
-    <Border Grid.Column="1" StrokeThickness="0"
+    <Border Grid.Column="2" StrokeThickness="0"
             BackgroundColor="{AppThemeBinding Light=#F5F5F7, Dark=#1E1E1E}">
       <VerticalStackLayout Padding="16" Spacing="8">
-               <!-- NEW: Show current user's display name -->
-        <Label Text="{Binding User, StringFormat='Chatting as: {0}'}"
-              FontSize="14"
-              FontAttributes="Italic"
-              TextColor="Gray"
-              Margin="0,0,0,12" />
+         <Label Text="{Binding User, StringFormat='Chatting as: {0}'}"
+               FontSize="14"
+               FontAttributes="Italic"
+               TextColor="Gray"
+               Margin="0,0,0,6" />
         <Label Text="People online" FontAttributes="Bold" />
-
- 
-
         <Label Text="{Binding OnlineUsers.Count, StringFormat='Total: {0}'}"
-              FontSize="12" TextColor="Gray" />
+               FontSize="12" TextColor="Gray" />
 
-        <CollectionView ItemsSource="{Binding OnlineUsers}">
+        <CollectionView ItemsSource="{Binding OnlineUsers}"
+                        SelectionMode="Single"
+                        SelectionChanged="OnOnlineUserSelected">
           <CollectionView.ItemTemplate>
             <DataTemplate>
               <Grid Padding="0,6">
@@ -72,8 +112,7 @@
                   <ColumnDefinition Width="Auto"/>
                   <ColumnDefinition Width="*" />
                 </Grid.ColumnDefinitions>
-                <Ellipse WidthRequest="8" HeightRequest="8"
-                        Fill="LimeGreen" VerticalOptions="Center" />
+                <Ellipse WidthRequest="8" HeightRequest="8" Fill="LimeGreen" VerticalOptions="Center" />
                 <Label Grid.Column="1" Text="{Binding .}" Margin="8,0,0,0" />
               </Grid>
             </DataTemplate>
@@ -81,6 +120,5 @@
         </CollectionView>
       </VerticalStackLayout>
     </Border>
-
   </Grid>
 </ContentPage>
