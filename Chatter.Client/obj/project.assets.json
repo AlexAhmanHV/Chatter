@@ -620,7 +620,7 @@
           "buildTransitive/Microsoft.Maui.Resizetizer.targets": {}
         }
       },
-      "Microsoft.NET.ILLink.Tasks/9.0.10": {
+      "Microsoft.NET.ILLink.Tasks/9.0.8": {
         "type": "package",
         "build": {
           "build/Microsoft.NET.ILLink.Tasks.props": {}
@@ -1490,7 +1490,7 @@
           "buildTransitive/Microsoft.Maui.Resizetizer.targets": {}
         }
       },
-      "Microsoft.NET.ILLink.Tasks/9.0.10": {
+      "Microsoft.NET.ILLink.Tasks/9.0.8": {
         "type": "package",
         "build": {
           "build/Microsoft.NET.ILLink.Tasks.props": {}
@@ -2360,7 +2360,7 @@
           "buildTransitive/Microsoft.Maui.Resizetizer.targets": {}
         }
       },
-      "Microsoft.NET.ILLink.Tasks/9.0.10": {
+      "Microsoft.NET.ILLink.Tasks/9.0.8": {
         "type": "package",
         "build": {
           "build/Microsoft.NET.ILLink.Tasks.props": {}
@@ -3230,7 +3230,7 @@
           "buildTransitive/Microsoft.Maui.Resizetizer.targets": {}
         }
       },
-      "Microsoft.NET.ILLink.Tasks/9.0.10": {
+      "Microsoft.NET.ILLink.Tasks/9.0.8": {
         "type": "package",
         "build": {
           "build/Microsoft.NET.ILLink.Tasks.props": {}
@@ -4100,7 +4100,7 @@
           "buildTransitive/Microsoft.Maui.Resizetizer.targets": {}
         }
       },
-      "Microsoft.NET.ILLink.Tasks/9.0.10": {
+      "Microsoft.NET.ILLink.Tasks/9.0.8": {
         "type": "package",
         "build": {
           "build/Microsoft.NET.ILLink.Tasks.props": {}
@@ -4970,7 +4970,7 @@
           "buildTransitive/Microsoft.Maui.Resizetizer.targets": {}
         }
       },
-      "Microsoft.NET.ILLink.Tasks/9.0.10": {
+      "Microsoft.NET.ILLink.Tasks/9.0.8": {
         "type": "package",
         "build": {
           "build/Microsoft.NET.ILLink.Tasks.props": {}
@@ -5840,7 +5840,7 @@
           "buildTransitive/Microsoft.Maui.Resizetizer.targets": {}
         }
       },
-      "Microsoft.NET.ILLink.Tasks/9.0.10": {
+      "Microsoft.NET.ILLink.Tasks/9.0.8": {
         "type": "package",
         "build": {
           "build/Microsoft.NET.ILLink.Tasks.props": {}
@@ -6710,7 +6710,7 @@
           "buildTransitive/Microsoft.Maui.Resizetizer.targets": {}
         }
       },
-      "Microsoft.NET.ILLink.Tasks/9.0.10": {
+      "Microsoft.NET.ILLink.Tasks/9.0.8": {
         "type": "package",
         "build": {
           "build/Microsoft.NET.ILLink.Tasks.props": {}
@@ -12654,10 +12654,10 @@
         "microsoft.maui.resizetizer.nuspec"
       ]
     },
-    "Microsoft.NET.ILLink.Tasks/9.0.10": {
-      "sha512": "sseaSJcBxKEpkc59hnB00b3NmJdGvJLfj74HK+nucHxERxbZSUREuWKjC9ywc+HdzJvJyiP2eiyEOROaGSfcPw==",
+    "Microsoft.NET.ILLink.Tasks/9.0.8": {
+      "sha512": "rd1CbIsMtVPtZNTIVD6Xydue//klYOOQIDpRgu3BHtv17AlpRs74/6QFbcYgMm/jL+naVU2T3OFLxVSLV5lQLQ==",
       "type": "package",
-      "path": "microsoft.net.illink.tasks/9.0.10",
+      "path": "microsoft.net.illink.tasks/9.0.8",
       "hasTools": true,
       "files": [
         ".nupkg.metadata",
@@ -12671,7 +12671,7 @@
         "build/Microsoft.NET.ILLink.Analyzers.props",
         "build/Microsoft.NET.ILLink.Tasks.props",
         "build/Microsoft.NET.ILLink.targets",
-        "microsoft.net.illink.tasks.9.0.10.nupkg.sha512",
+        "microsoft.net.illink.tasks.9.0.8.nupkg.sha512",
         "microsoft.net.illink.tasks.nuspec",
         "tools/net472/ILLink.Tasks.dll",
         "tools/net472/ILLink.Tasks.dll.config",
@@ -13867,7 +13867,7 @@
       "Microsoft.AspNetCore.SignalR.Client >= 9.0.10",
       "Microsoft.Extensions.Logging.Debug >= 9.0.8",
       "Microsoft.Maui.Controls >= 9.0.111",
-      "Microsoft.NET.ILLink.Tasks >= 9.0.10",
+      "Microsoft.NET.ILLink.Tasks >= 9.0.8",
       "Supabase >= 1.1.1"
     ],
     "net9.0-maccatalyst26.0": [
@@ -13876,7 +13876,7 @@
       "Microsoft.AspNetCore.SignalR.Client >= 9.0.10",
       "Microsoft.Extensions.Logging.Debug >= 9.0.8",
       "Microsoft.Maui.Controls >= 9.0.111",
-      "Microsoft.NET.ILLink.Tasks >= 9.0.10",
+      "Microsoft.NET.ILLink.Tasks >= 9.0.8",
       "Supabase >= 1.1.1"
     ],
     "net9.0-windows10.0.19041": [
@@ -13889,24 +13889,24 @@
     ]
   },
   "packageFolders": {
-    "C:\\Users\\albin\\.nuget\\packages\\": {},
+    "C:\\Users\\AlexH\\.nuget\\packages\\": {},
     "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages": {}
   },
   "project": {
     "version": "1.0.0",
     "restore": {
-      "projectUniqueName": "C:\\Chatter\\Chatter\\Chatter.Client\\Chatter.Client.csproj",
+      "projectUniqueName": "C:\\Users\\AlexH\\Chatter\\Chatter.Client\\Chatter.Client.csproj",
       "projectName": "Chatter.Client",
-      "projectPath": "C:\\Chatter\\Chatter\\Chatter.Client\\Chatter.Client.csproj",
-      "packagesPath": "C:\\Users\\albin\\.nuget\\packages\\",
-      "outputPath": "C:\\Chatter\\Chatter\\Chatter.Client\\obj\\",
+      "projectPath": "C:\\Users\\AlexH\\Chatter\\Chatter.Client\\Chatter.Client.csproj",
+      "packagesPath": "C:\\Users\\AlexH\\.nuget\\packages\\",
+      "outputPath": "C:\\Users\\AlexH\\Chatter\\Chatter.Client\\obj\\",
       "projectStyle": "PackageReference",
       "crossTargeting": true,
       "fallbackFolders": [
         "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"
       ],
       "configFilePaths": [
-        "C:\\Users\\albin\\AppData\\Roaming\\NuGet\\NuGet.Config",
+        "C:\\Users\\AlexH\\AppData\\Roaming\\NuGet\\NuGet.Config",
         "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.FallbackLocation.config",
         "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.Offline.config"
       ],
@@ -13924,24 +13924,24 @@
         "net9.0-ios26.0": {
           "targetAlias": "net9.0-ios",
           "projectReferences": {
-            "C:\\Chatter\\Chatter\\Chatter.Shared\\Chatter.Shared.csproj": {
-              "projectPath": "C:\\Chatter\\Chatter\\Chatter.Shared\\Chatter.Shared.csproj"
+            "C:\\Users\\AlexH\\Chatter\\Chatter.Shared\\Chatter.Shared.csproj": {
+              "projectPath": "C:\\Users\\AlexH\\Chatter\\Chatter.Shared\\Chatter.Shared.csproj"
             }
           }
         },
         "net9.0-maccatalyst26.0": {
           "targetAlias": "net9.0-maccatalyst",
           "projectReferences": {
-            "C:\\Chatter\\Chatter\\Chatter.Shared\\Chatter.Shared.csproj": {
-              "projectPath": "C:\\Chatter\\Chatter\\Chatter.Shared\\Chatter.Shared.csproj"
+            "C:\\Users\\AlexH\\Chatter\\Chatter.Shared\\Chatter.Shared.csproj": {
+              "projectPath": "C:\\Users\\AlexH\\Chatter\\Chatter.Shared\\Chatter.Shared.csproj"
             }
           }
         },
         "net9.0-windows10.0.19041": {
           "targetAlias": "net9.0-windows10.0.19041.0",
           "projectReferences": {
-            "C:\\Chatter\\Chatter\\Chatter.Shared\\Chatter.Shared.csproj": {
-              "projectPath": "C:\\Chatter\\Chatter\\Chatter.Shared\\Chatter.Shared.csproj"
+            "C:\\Users\\AlexH\\Chatter\\Chatter.Shared\\Chatter.Shared.csproj": {
+              "projectPath": "C:\\Users\\AlexH\\Chatter\\Chatter.Shared\\Chatter.Shared.csproj"
             }
           }
         }
@@ -13981,7 +13981,7 @@
           "Microsoft.NET.ILLink.Tasks": {
             "suppressParent": "All",
             "target": "Package",
-            "version": "[9.0.10, )",
+            "version": "[9.0.8, )",
             "autoReferenced": true
           },
           "Supabase": {
@@ -14000,6 +14000,12 @@
         ],
         "assetTargetFallback": true,
         "warn": true,
+        "downloadDependencies": [
+          {
+            "name": "Microsoft.NETCore.App.Ref",
+            "version": "[9.0.10, 9.0.10]"
+          }
+        ],
         "frameworkReferences": {
           "Microsoft.iOS": {
             "privateAssets": "all"
@@ -14008,7 +14014,7 @@
             "privateAssets": "all"
           }
         },
-        "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\9.0.306/PortableRuntimeIdentifierGraph.json"
+        "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\9.0.304/PortableRuntimeIdentifierGraph.json"
       },
       "net9.0-maccatalyst26.0": {
         "targetAlias": "net9.0-maccatalyst",
@@ -14032,7 +14038,7 @@
           "Microsoft.NET.ILLink.Tasks": {
             "suppressParent": "All",
             "target": "Package",
-            "version": "[9.0.10, )",
+            "version": "[9.0.8, )",
             "autoReferenced": true
           },
           "Supabase": {
@@ -14052,6 +14058,12 @@
         ],
         "assetTargetFallback": true,
         "warn": true,
+        "downloadDependencies": [
+          {
+            "name": "Microsoft.NETCore.App.Ref",
+            "version": "[9.0.10, 9.0.10]"
+          }
+        ],
         "frameworkReferences": {
           "Microsoft.MacCatalyst": {
             "privateAssets": "all"
@@ -14060,7 +14072,7 @@
             "privateAssets": "all"
           }
         },
-        "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\9.0.306/PortableRuntimeIdentifierGraph.json"
+        "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\9.0.304/PortableRuntimeIdentifierGraph.json"
       },
       "net9.0-windows10.0.19041": {
         "targetAlias": "net9.0-windows10.0.19041.0",
@@ -14111,7 +14123,7 @@
             "privateAssets": "all"
           }
         },
-        "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\9.0.306\\RuntimeIdentifierGraph.json"
+        "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\9.0.304\\RuntimeIdentifierGraph.json"
       }
     },
     "runtimes": {

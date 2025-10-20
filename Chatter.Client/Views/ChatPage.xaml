@@ -32,7 +32,16 @@
                 </Grid.ColumnDefinitions>
 
                 <!-- Chat label -->
-                <Label Text="{Binding Id}" LineBreakMode="TailTruncation" />
+                <!-- Chat label -->
+<Label Text="{Binding Label}" LineBreakMode="TailTruncation">
+  <Label.Triggers>
+    <DataTrigger TargetType="Label"
+                 Binding="{Binding Id}"
+                 Value="Lobby">
+      <Setter Property="FontAttributes" Value="Bold" />
+    </DataTrigger>
+  </Label.Triggers>
+</Label>
 
                 <!-- Unread badge -->
                 <Border Grid.Column="1"

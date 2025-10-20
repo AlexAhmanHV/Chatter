@@ -22,7 +22,7 @@ public partial class ChatViewModel : ObservableObject
     [ObservableProperty] private string user = string.Empty;
     [ObservableProperty] private string? outgoingMessage;
 
-    // NEW: whether ChatPage is currently visible
+    // whether ChatPage is currently visible
     [ObservableProperty] private bool isActive;
 
     // RIGHT: roster
@@ -54,10 +54,6 @@ public partial class ChatViewModel : ObservableObject
         _chat.MessageReceived += (u, m) =>
             MainThread.BeginInvokeOnMainThread(() => Messages.Add($"{u}: {m}"));
 
-        _chat.DisplayNameChanged += (oldName, newName) =>
-            MainThread.BeginInvokeOnMainThread(() =>
-                Messages.Add($"🔔 {oldName} changed their name to “{newName}”."));
-
         // ===== Roster =====
         _chat.OnlineUsersUpdated += list =>
             MainThread.BeginInvokeOnMainThread(() =>
@@ -68,27 +64,36 @@ public partial class ChatViewModel : ObservableObject
 
         // ===== Chats list =====
         _chat.ChatsForMeUpdated += list =>
-            MainThread.BeginInvokeOnMainThread(() =>
-            {
-                var shouldHave = new HashSet<string>(list, StringComparer.OrdinalIgnoreCase);
+    MainThread.BeginInvokeOnMainThread(() =>
+    {
+        var shouldHave = new HashSet<string>(list, StringComparer.OrdinalIgnoreCase);
 
-                foreach (var id in list)
-                    _ = EnsureChatItem(id);
+        foreach (var id in list)
+        {
+            var item = EnsureChatItem(id);
+            item.Label = ComputeChatLabel(id);
+        }
 
-                for (int i = Chats.Count - 1; i >= 0; i--)
-                    if (!shouldHave.Contains(Chats[i].Id))
-                        Chats.RemoveAt(i);
+        for (int i = Chats.Count - 1; i >= 0; i--)
+            if (!shouldHave.Contains(Chats[i].Id))
+                Chats.RemoveAt(i);
 
-                if (SelectedChat is null && Chats.Count > 0)
-                    SelectedChat = Chats[0];
-            });
+        // 🔝 keep Lobby at index 0
+        var lobby = Chats.FirstOrDefault(c => c.Id.Equals("Lobby", StringComparison.OrdinalIgnoreCase));
+        if (lobby is not null && Chats.IndexOf(lobby) != 0)
+            Chats.Move(Chats.IndexOf(lobby), 0);
+
+        if (SelectedChat is null && Chats.Count > 0)
+            SelectedChat = Chats[0];
+    });
 
         // ===== Messages from joined groups =====
         _chat.ChatMessageReceived += (chatId, u, m) =>
             MainThread.BeginInvokeOnMainThread(() =>
             {
-                var line = $"{u}: {m}";
-                // --- de-dupe guard ---
+                var line = string.Equals(u, "system", StringComparison.OrdinalIgnoreCase) ? m : $"{u}: {m}";
+
+                // de-dupe guard
                 if (_lastLineByChat.TryGetValue(chatId, out var last) && last == line)
                     return;
                 _lastLineByChat[chatId] = line;
@@ -113,7 +118,8 @@ public partial class ChatViewModel : ObservableObject
         _chat.AddedChat += (chatId, fromUser) =>
             MainThread.BeginInvokeOnMainThread(() =>
             {
-                _ = EnsureChatItem(chatId);
+                var item = EnsureChatItem(chatId);
+                item.Label = fromUser; // use sender as label for DM
                 // no unread bump (no message yet)
             });
 
@@ -122,7 +128,8 @@ public partial class ChatViewModel : ObservableObject
             MainThread.BeginInvokeOnMainThread(() =>
             {
                 var line = $"{fromUser}: {msg}";
-                // --- de-dupe guard ---
+
+                // de-dupe guard
                 if (_lastLineByChat.TryGetValue(chatId, out var last) && last == line)
                     return;
                 _lastLineByChat[chatId] = line;
@@ -148,6 +155,10 @@ public partial class ChatViewModel : ObservableObject
         {
             User = msg.Value;
             try { await _chat.ChangeDisplayNameAsync(User); } catch { /* noop */ }
+
+            // Recompute labels for all chats (our identity changed)
+            foreach (var c in Chats)
+                c.Label = ComputeChatLabel(c.Id);
         });
 
         _chat.OnGetCurrentDisplayName = () => User;
@@ -155,6 +166,36 @@ public partial class ChatViewModel : ObservableObject
         ConnectCommand = new AsyncRelayCommand(ConnectAsync);
         SendCommand = new AsyncRelayCommand(SendAsync);
         StartDmCommand = new AsyncRelayCommand<string>(StartDmAsync);
+    }
+
+    // Compute a nice label for each chat (Lobby or the "other user" for DMs)
+    private string ComputeChatLabel(string chatId)
+    {
+        if (string.Equals(chatId, "Lobby", StringComparison.OrdinalIgnoreCase))
+            return "Lobby";
+
+        if (chatId.StartsWith("dm:", StringComparison.OrdinalIgnoreCase))
+        {
+            // dm:Alice|Bob → show the other participant (not me)
+            var body = chatId.Substring(3);
+            var parts = body.Split('|');
+            var other = parts.FirstOrDefault(p => !p.Equals(User, StringComparison.OrdinalIgnoreCase));
+            return other ?? chatId;
+        }
+
+        return chatId; // fallback
+    }
+
+    private ChatItem EnsureChatItem(string chatId)
+    {
+        var item = Chats.FirstOrDefault(c => c.Id.Equals(chatId, StringComparison.OrdinalIgnoreCase));
+        if (item is null)
+        {
+            item = new ChatItem(chatId);
+            item.Label = ComputeChatLabel(chatId);
+            Chats.Add(item);
+        }
+        return item;
     }
 
     // Called when user selects a chat
@@ -221,22 +262,11 @@ public partial class ChatViewModel : ObservableObject
             return;
 
         var chatId = await _chat.CreateDmAsync(otherDisplayName);
-        if (string.IsNullOrWhiteSpace(chatId))
-            return;
+        if (string.IsNullOrWhiteSpace(chatId)) return;
 
         var item = EnsureChatItem(chatId);
+        item.Label = otherDisplayName; // set nice label
         SelectedChat = item;
         await _chat.JoinChatAsync(chatId);
-    }
-
-    private ChatItem EnsureChatItem(string chatId)
-    {
-        var item = Chats.FirstOrDefault(c => c.Id.Equals(chatId, StringComparison.OrdinalIgnoreCase));
-        if (item is null)
-        {
-            item = new ChatItem(chatId);
-            Chats.Add(item);
-        }
-        return item;
     }
 }

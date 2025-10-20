@@ -6,67 +6,51 @@ namespace Chatter.Server.Hubs;
 
 public class ChatHub : Hub
 {
+    private const string LobbyId = "Lobby";
+
+    // connectionId -> displayName (may be empty until SetDisplayName is called)
     private static readonly ConcurrentDictionary<string, string> _names = new();
 
-    // Track which chats exist and who's in them (display-name based for demo)
+    // chatId -> set of displayNames who are members of that chat (by logical identity)
     private static readonly ConcurrentDictionary<string, HashSet<string>> _chatMembers =
         new(StringComparer.OrdinalIgnoreCase);
 
-    // Keep track of who joined each chat by connectionId
-    // (Thread-safe set; you can use ConcurrentDictionary<string, byte> as a HashSet substitute)
-    private static readonly ConcurrentDictionary<string, ConcurrentDictionary<string, byte>> _chatMembersByConn
-    = new(StringComparer.OrdinalIgnoreCase);
+    // chatId -> set of connectionIds that have joined the SignalR group for that chat
+    private static readonly ConcurrentDictionary<string, ConcurrentDictionary<string, byte>> _chatMembersByConn =
+        new(StringComparer.OrdinalIgnoreCase);
 
-    // Keeps track of DM participants per chatId
-    private static readonly ConcurrentDictionary<string, (string User1, string User2)> _dmParticipants 
-        = new(StringComparer.OrdinalIgnoreCase);
+    // dm chatId -> (user1, user2)
+    private static readonly ConcurrentDictionary<string, (string User1, string User2)> _dmParticipants =
+        new(StringComparer.OrdinalIgnoreCase);
 
-    // Keeps track of which connectionId belongs to which displayName
-    private static readonly ConcurrentDictionary<string, string> _connectionToDisplayName 
-        = new(StringComparer.OrdinalIgnoreCase);
+    // connectionId -> displayName
+    private static readonly ConcurrentDictionary<string, string> _connectionToDisplayName =
+        new(StringComparer.OrdinalIgnoreCase);
 
-    // Keeps track of which displayName is connected with which connectionIds (for multiple tabs/devices)
-    private static readonly ConcurrentDictionary<string, HashSet<string>> _displayNameToConnections 
-        = new(StringComparer.OrdinalIgnoreCase);
+    // displayName -> set of connectionIds (tabs/devices)
+    private static readonly ConcurrentDictionary<string, HashSet<string>> _displayNameToConnections =
+        new(StringComparer.OrdinalIgnoreCase);
 
-
-    private const string LobbyId = "Lobby";
-
-    // Check if a chat is a DM (two participants)
-    private bool IsDirectMessageChat(string chatId, out string[] participants)
-    {
-        if (_dmParticipants.TryGetValue(chatId, out var tup))
-        {
-            participants = new[] { tup.User1, tup.User2 };
-            return true;
-        }
-        participants = Array.Empty<string>();
-        return false;
-    }
-
-    // Utility: resolve live connectionIds for display names
-    private IEnumerable<string> ResolveLiveConnectionsFor(IEnumerable<string> displayNames)
-    {
-        foreach (var dn in displayNames)
-            if (_displayNameToConnections.TryGetValue(dn, out var set))
-                foreach (var cid in set)
-                    yield return cid;
-    }
+    // ----- Connection lifecycle -----
 
     public override async Task OnConnectedAsync()
     {
+        // Mark as connected but unnamed for now
         _names[Context.ConnectionId] = string.Empty;
 
+        // Ensure Lobby chat exists
         _chatMembers.TryAdd(LobbyId, new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+
+        // Add this connection to the Lobby SIGNALR group so it can receive lobby traffic
         await Groups.AddToGroupAsync(Context.ConnectionId, LobbyId);
-        await BroadcastRosterAsync();
+
+        // IMPORTANT: Do NOT broadcast roster here; the user is still "Unknown".
         await base.OnConnectedAsync();
     }
 
-
-    // Remove the connection from all indexes when a socket drops
     public override async Task OnDisconnectedAsync(Exception? ex)
     {
+        // Remove reverse indexes
         if (_connectionToDisplayName.TryRemove(Context.ConnectionId, out var name))
         {
             if (_displayNameToConnections.TryGetValue(name, out var set))
@@ -77,6 +61,7 @@ public class ChatHub : Hub
             }
         }
 
+        // Remove this connectionId from all group membership tracking
         foreach (var kvp in _chatMembersByConn)
             kvp.Value.TryRemove(Context.ConnectionId, out _);
 
@@ -86,41 +71,67 @@ public class ChatHub : Hub
         await base.OnDisconnectedAsync(ex);
     }
 
-    // Called from your existing SetDisplayName(displayName)
+    // ----- Identity -----
+
+    // Called by client once it knows the user's display name
     public async Task SetDisplayName(string displayName)
     {
-        // NEW: keep _names in sync so GetMe() works correctly
         _names[Context.ConnectionId] = displayName;
 
         _connectionToDisplayName[Context.ConnectionId] = displayName;
-
         _displayNameToConnections.AddOrUpdate(displayName,
             _ => new HashSet<string>(StringComparer.OrdinalIgnoreCase) { Context.ConnectionId },
             (_, set) => { set.Add(Context.ConnectionId); return set; });
 
-        await BroadcastRosterAsync();
-    }
+        // Ensure the user is a logical member of Lobby
+        _chatMembers.AddOrUpdate(LobbyId,
+            _ => new HashSet<string>(StringComparer.OrdinalIgnoreCase) { displayName },
+            (_, set) => { set.Add(displayName); return set; });
 
+        await BroadcastRosterAsync();
+        await SendChatsToCallerAsync(displayName);
+    }
 
     public async Task ChangeDisplayName(string newDisplayName)
     {
         var connId = Context.ConnectionId;
-        var old = _names.TryGetValue(connId, out var prev) ? prev : "Unknown";
+        var old = _names.TryGetValue(connId, out var prev) && !string.IsNullOrWhiteSpace(prev) ? prev : "Unknown";
+
+        // Update primary map
         _names[connId] = newDisplayName;
 
-        // migrate membership in all chats
+        // Move this connection in reverse indexes
+        if (_connectionToDisplayName.TryGetValue(connId, out var prevName))
+        {
+            if (_displayNameToConnections.TryGetValue(prevName, out var prevSet))
+            {
+                prevSet.Remove(connId);
+                if (prevSet.Count == 0) _displayNameToConnections.TryRemove(prevName, out _);
+            }
+        }
+        _connectionToDisplayName[connId] = newDisplayName;
+        _displayNameToConnections.AddOrUpdate(newDisplayName,
+            _ => new HashSet<string>(StringComparer.OrdinalIgnoreCase) { connId },
+            (_, set) => { set.Add(connId); return set; });
+
+        // Migrate membership in all chats from old -> new
         foreach (var set in _chatMembers.Values)
         {
             if (set.Remove(old))
                 set.Add(newDisplayName);
         }
 
-        await Clients.All.SendAsync("DisplayNameChanged", old, newDisplayName);
+        // Make sure this connection is in the Lobby SIGNALR group (defensive)
+        await Groups.AddToGroupAsync(connId, LobbyId);
+
+        // Broadcast both styles so client can handle either
+        await Clients.Group(LobbyId).SendAsync("DisplayNameChanged", old, newDisplayName);
+
         await BroadcastRosterAsync();
         await SendChatsToCallerAsync(newDisplayName);
     }
 
-    // ====== Chats API ======
+    // ----- Chats API -----
 
     // Returns list of chat ids for the current user (Lobby + DMs they’re part of)
     public Task<List<string>> GetMyChats()
@@ -132,8 +143,9 @@ public class ChatHub : Hub
             .OrderBy(id => id, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
-        // make sure lobby is always present
+        // Ensure lobby present
         if (!list.Contains(LobbyId)) list.Insert(0, LobbyId);
+
         return Task.FromResult(list);
     }
 
@@ -146,38 +158,25 @@ public class ChatHub : Hub
         set.Add(me);
         set.Add(otherDisplayName);
 
-        // NEW: mark this chat as a DM between the two users
+        // Track participants for DM notify
         _dmParticipants[chatId] = (me, otherDisplayName);
 
+        // Sender joins the group
         await Groups.AddToGroupAsync(Context.ConnectionId, chatId);
 
-        // Tell the recipient the chat now exists (so it shows up in their left list)
+        // Notify recipient that a chat exists (so it appears in their list)
         var recipientConns = ConnectionsFor(otherDisplayName).ToList();
         if (recipientConns.Count > 0)
             await Clients.Clients(recipientConns).SendAsync("AddedChat", chatId, me);
 
-        // Optional: Add to the sender too (UI already has the tab via Join, but harmless):
+        // Also add on the caller (harmless redundancy)
         await Clients.Caller.SendAsync("AddedChat", chatId, me);
 
+        // Optional global "chats updated"
         await Clients.All.SendAsync("ChatsUpdated", new[] { chatId });
+
         return chatId;
     }
-
-
-    // // Create a DM server-side
-    // public Task<string> CreateDmChat(string user1, string user2)
-    // {
-    //     var chatId = $"dm:{Guid.NewGuid():N}";
-    //     _dmParticipants[chatId] = (user1, user2);
-
-    //     // Tell both users a new chat exists (appears in their left list)
-    //     var both = new[] { user1, user2 };
-    //     var connIds = ResolveLiveConnectionsFor(both);
-    //     foreach (var cid in connIds)
-    //         _ = Clients.Client(cid).SendAsync("AddedChat", chatId, /* createdBy: */ user1);
-
-    //     return Task.FromResult(chatId);
-    // }
 
     public async Task JoinChat(string chatId)
     {
@@ -195,44 +194,42 @@ public class ChatHub : Hub
         return Task.CompletedTask;
     }
 
-    // When sending to a chat:
     public async Task SendToChat(string chatId, string displayName, string message)
     {
-        // 1) Broadcast to everyone who joined the chat group
+        // 1) Deliver to all connections currently joined to this chat group
         await Clients.Group(chatId).SendAsync("ReceiveChatMessage", chatId, displayName, message);
 
-        // 2) If DM: notify recipient(s) who haven't joined yet
+        // 2) If DM, notify the other participant(s) who are online but haven't joined this chat group yet
         if (IsDirectMessageChat(chatId, out var participants))
         {
-            // group members = connectionIds that joined this chat
+            // which connectionIds are already in the group?
             var groupMembers = _chatMembersByConn.TryGetValue(chatId, out var members)
                 ? members.Keys
                 : Enumerable.Empty<string>();
 
-            // all live connections for both DM participants
+            // All live connectionIds for both DM participants
             var allConnIds = ResolveLiveConnectionsFor(participants);
 
-            // current sender's connectionId (exclude from notify)
+            // Exclude sender's current connectionId and any that are already in the group
             var senderConnId = Context.ConnectionId;
-
-            // notify only connectionIds that are (a) live, (b) not in group, (c) not the sender
-            var notInGroup = allConnIds
-                .Where(cid => cid != senderConnId && !groupMembers.Contains(cid));
+            var notInGroup = allConnIds.Where(cid => cid != senderConnId && !groupMembers.Contains(cid));
 
             foreach (var cid in notInGroup)
                 await Clients.Client(cid).SendAsync("DmNotify", chatId, displayName, message);
         }
     }
-    // ====== Existing message + roster ======
+
+    // ----- Legacy global broadcast (kept for compatibility) -----
 
     public Task SendMessage(string user, string message)
         => Clients.All.SendAsync("ReceiveMessage", user, message);
 
+    // ----- Roster -----
+
     public Task<IReadOnlyList<string>> GetOnlineUsers()
     {
-        var list = _names.Values
-            .Where(n => !string.IsNullOrWhiteSpace(n))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
+        // Use reverse index keys to avoid dups and exclude empties
+        var list = _displayNameToConnections.Keys
             .OrderBy(n => n, StringComparer.OrdinalIgnoreCase)
             .ToList()
             .AsReadOnly();
@@ -245,6 +242,7 @@ public class ChatHub : Hub
         var online = _displayNameToConnections.Keys
             .OrderBy(x => x, StringComparer.OrdinalIgnoreCase)
             .ToList();
+
         return Clients.All.SendAsync("OnlineUsers", online);
     }
 
@@ -261,6 +259,8 @@ public class ChatHub : Hub
         return Clients.Caller.SendAsync("ChatsForMe", list);
     }
 
+    // ----- Helpers -----
+
     private static string MakeDmId(string a, string b)
     {
         var pair = new[] { a, b }.OrderBy(x => x, StringComparer.OrdinalIgnoreCase).ToArray();
@@ -270,11 +270,33 @@ public class ChatHub : Hub
     private string GetMe()
         => _names.TryGetValue(Context.ConnectionId, out var me) && !string.IsNullOrWhiteSpace(me) ? me : "Unknown";
 
+    private static bool IsDm(string chatId)
+        => chatId.StartsWith("dm:", StringComparison.OrdinalIgnoreCase);
 
-    private static bool IsDm(string chatId) =>
-        chatId.StartsWith("dm:", StringComparison.OrdinalIgnoreCase);
+    private bool IsDirectMessageChat(string chatId, out string[] participants)
+    {
+        if (_dmParticipants.TryGetValue(chatId, out var tup))
+        {
+            participants = new[] { tup.User1, tup.User2 };
+            return true;
+        }
+        participants = Array.Empty<string>();
+        return false;
+    }
 
-    private IEnumerable<string> ConnectionsFor(string displayName) =>
-        _names.Where(kvp => string.Equals(kvp.Value, displayName, StringComparison.OrdinalIgnoreCase))
-              .Select(kvp => kvp.Key);
+    private IEnumerable<string> ConnectionsFor(string displayName)
+        => _names.Where(kvp => string.Equals(kvp.Value, displayName, StringComparison.OrdinalIgnoreCase))
+                 .Select(kvp => kvp.Key);
+
+    private IEnumerable<string> ResolveLiveConnectionsFor(IEnumerable<string> displayNames)
+    {
+        foreach (var dn in displayNames)
+        {
+            if (_displayNameToConnections.TryGetValue(dn, out var set))
+            {
+                foreach (var cid in set)
+                    yield return cid;
+            }
+        }
+    }
 }

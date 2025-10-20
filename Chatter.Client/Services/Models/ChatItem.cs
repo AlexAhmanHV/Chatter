@@ -8,5 +8,6 @@ public partial class ChatItem : ObservableObject
 
     public string Id { get; }
 
+    [ObservableProperty] private string label = string.Empty;
     [ObservableProperty] private int unread;
 }

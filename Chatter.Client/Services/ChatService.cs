@@ -8,15 +8,22 @@ public class ChatService
     private readonly SupabaseAuthService _auth;
     private HubConnection? _conn;
 
+    // Legacy global (optional)
     public event Action<string, string>? MessageReceived;
-    public event Action<string, string>? DisplayNameChanged;
-    public event Action<IReadOnlyList<string>>? ChatsForMeUpdated;
-    public event Action<IReadOnlyList<string>>? ChatsUpdated; // optional:
-    public event Action<string, string, string>? ChatMessageReceived; // (chatId,user,msg)
+
+    // Lists & rosters
     public event Action<IReadOnlyList<string>>? OnlineUsersUpdated;
+    public event Action<IReadOnlyList<string>>? ChatsForMeUpdated;
+    public event Action<IReadOnlyList<string>>? ChatsUpdated;
+
+    // Per-chat messaging
+    public event Action<string, string, string>? ChatMessageReceived; // (chatId, user, msg)
+
+    // DMs
     public event Action<string, string>? AddedChat;                // (chatId, fromUser)
     public event Action<string, string, string>? DmNotify;         // (chatId, fromUser, message)
 
+    private const string LobbyId = "Lobby";
 
     public Func<string?>? OnGetCurrentDisplayName { get; set; }
     public bool IsConnected => _conn?.State == HubConnectionState.Connected;
@@ -33,33 +40,41 @@ public class ChatService
             .WithAutomaticReconnect()
             .Build();
 
-        // Global broadcast (legacy)
+        // ----- Legacy broadcast (optional) -----
         _conn.On<string, string>("ReceiveMessage", (user, msg) =>
             MessageReceived?.Invoke(user, msg));
 
+        // ----- Name-change → route into Lobby -----
+        // Server may send either of these; we support both.
         _conn.On<string, string>("DisplayNameChanged", (oldName, newName) =>
-            DisplayNameChanged?.Invoke(oldName, newName));
+        ChatMessageReceived?.Invoke(LobbyId, "system",
+        $"{oldName} changed their name to “{newName}”."));
 
-        // Roster
+        _conn.On<string>("LobbySystemMessage", text =>
+            ChatMessageReceived?.Invoke(LobbyId, "system", text));
+
+        // ----- Roster & chat lists -----
         _conn.On<List<string>>("OnlineUsers", list =>
             OnlineUsersUpdated?.Invoke((list ?? new()).AsReadOnly()));
 
-        // Chats + per-chat messages
         _conn.On<List<string>>("ChatsForMe", list =>
             ChatsForMeUpdated?.Invoke((list ?? new()).AsReadOnly()));
 
         _conn.On<List<string>>("ChatsUpdated", list =>
             ChatsUpdated?.Invoke((list ?? new()).AsReadOnly()));
 
+        // ----- Per-chat messages -----
         _conn.On<string, string, string>("ReceiveChatMessage", (chatId, user, msg) =>
             ChatMessageReceived?.Invoke(chatId, user, msg));
 
-            _conn.On<string, string>("AddedChat", (chatId, fromUser) =>
-        AddedChat?.Invoke(chatId, fromUser));
+        // ----- DM helpers -----
+        _conn.On<string, string>("AddedChat", (chatId, fromUser) =>
+            AddedChat?.Invoke(chatId, fromUser));
 
         _conn.On<string, string, string>("DmNotify", (chatId, fromUser, msg) =>
-        DmNotify?.Invoke(chatId, fromUser, msg));
+            DmNotify?.Invoke(chatId, fromUser, msg));
 
+        // ----- Reconnect: restore identity + refresh lists -----
         _conn.Reconnected += async _ =>
         {
             try
@@ -68,28 +83,27 @@ public class ChatService
                 if (!string.IsNullOrWhiteSpace(name))
                     await SetDisplayNameAsync(name!);
 
-                // refresh roster and chats
                 var roster = await GetOnlineUsersAsync();
                 OnlineUsersUpdated?.Invoke(roster);
 
                 var myChats = await GetMyChatsAsync();
                 ChatsForMeUpdated?.Invoke(myChats);
             }
-            catch { }
+            catch
+            {
+                // ignore
+            }
         };
 
+        // ----- Start + initial seed -----
         await _conn.StartAsync();
 
-        // After connect: set name, seed roster + chats
         var initialName = OnGetCurrentDisplayName?.Invoke();
         if (!string.IsNullOrWhiteSpace(initialName))
             await SetDisplayNameAsync(initialName!);
 
-        var initialRoster = await GetOnlineUsersAsync();
-        OnlineUsersUpdated?.Invoke(initialRoster);
-
-        var myChats2 = await GetMyChatsAsync();
-        ChatsForMeUpdated?.Invoke(myChats2);
+        OnlineUsersUpdated?.Invoke(await GetOnlineUsersAsync());
+        ChatsForMeUpdated?.Invoke(await GetMyChatsAsync());
     }
 
     // ===== Global (legacy) =====
