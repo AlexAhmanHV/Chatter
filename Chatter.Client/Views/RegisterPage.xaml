@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="Chatter.Client.Views.RegisterPage"
+             Title="Create account">
+
+  <VerticalStackLayout Padding="30" Spacing="14" VerticalOptions="Center">
+    <Label Text="Create your account" FontSize="24" HorizontalOptions="Center"/>
+
+    <Entry Placeholder="Email" Keyboard="Email" Text="{Binding Email}" />
+    <Entry Placeholder="Display name" Text="{Binding DisplayName}" />
+    <Entry Placeholder="Password" IsPassword="True" Text="{Binding Password}" />
+
+    <Button Text="Create account" Command="{Binding RegisterCommand}" />
+  </VerticalStackLayout>
+</ContentPage>

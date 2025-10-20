@@ -4,6 +4,8 @@ using CommunityToolkit.Mvvm.Input;
 using Chatter.Client.Services;
 using Microsoft.Maui.ApplicationModel; // MainThread
 using Microsoft.Maui.Controls;         // Application (DisplayAlert)
+using CommunityToolkit.Mvvm.Messaging;
+using Chatter.Client.Messages;
 
 namespace Chatter.Client.ViewModels;
 
@@ -11,10 +13,9 @@ public partial class ChatViewModel : ObservableObject
 {
     private readonly ChatService _chat;
 
-    // TODO: set this to your server's HTTPS URL/port
     private const string BaseUrl = "http://localhost:5291";
 
-    [ObservableProperty] private string user = "User";
+    [ObservableProperty] private string user = string.Empty;
     [ObservableProperty] private string? outgoingMessage;
 
     public ObservableCollection<string> Messages { get; } = new();
@@ -29,6 +30,13 @@ public partial class ChatViewModel : ObservableObject
         _chat.MessageReceived += (u, m) =>
             MainThread.BeginInvokeOnMainThread(() => Messages.Add($"{u}: {m}"));
 
+        // 🔔 Update User when settings change the display name
+        WeakReferenceMessenger.Default.Register<DisplayNameChangedMessage>(this, (_, msg) =>
+        {
+            User = msg.Value;
+            Messages.Add($"📝 Display name updated to '{User}'.");
+        });
+
         ConnectCommand = new AsyncRelayCommand(ConnectAsync);
         SendCommand = new AsyncRelayCommand(SendAsync);
     }
@@ -37,8 +45,6 @@ public partial class ChatViewModel : ObservableObject
     {
         try
         {
-            // Username is already set at login — no need to validate here
-
             await _chat.StartAsync(BaseUrl);
             Messages.Add("📶 Connected to server.");
         }
@@ -62,7 +68,6 @@ public partial class ChatViewModel : ObservableObject
         var msg = OutgoingMessage!;
         OutgoingMessage = string.Empty;
 
-        // Do not add locally; rely on ReceiveMessage event to avoid duplicates.
         await _chat.SendAsync(User, msg);
     }
 }

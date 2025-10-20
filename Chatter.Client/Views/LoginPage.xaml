@@ -6,7 +6,7 @@
     <VerticalStackLayout Padding="24" Spacing="16" VerticalOptions="Center">
         <Label Text="Chatter" FontSize="28" HorizontalOptions="Center" />
 
-        <Entry Placeholder="Username"
+        <Entry Placeholder="Email"
                Text="{Binding Username}"
                ReturnType="Next" />
 
@@ -24,11 +24,8 @@
             </DataTrigger>
         </Button.Triggers>
         </Button>
+        <Button Text="Create account" Clicked="OnCreateAccountClicked" />
 
-        <!-- Small hint so testers know the hardcoded creds -->
-        <Label Text="Try: admin / password"
-               FontSize="12"
-               Opacity="0.6"
-               HorizontalOptions="Center" />
+
     </VerticalStackLayout>
 </ContentPage>

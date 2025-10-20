@@ -16,23 +16,26 @@ public partial class LoginPage : ContentPage
         vm.LoginSucceeded += OnLoginSucceeded;
     }
 
-    private async void OnLoginSucceeded(string username)
+    private async void OnLoginSucceeded(string displayName)
     {
         var chatPage = _services.GetRequiredService<ChatPage>();
 
         if (chatPage.BindingContext is ViewModels.ChatViewModel chatVm)
         {
-            chatVm.User = username;                    // set chat username
+            chatVm.User = displayName;   // ✅ show display name everywhere
         }
 
-        // Replace login with chat in the navigation stack
         Navigation.InsertPageBefore(chatPage, this);
-        await Navigation.PopAsync();                   // navigates to ChatPage
+        await Navigation.PopAsync();
 
-        // Auto-connect after landing on ChatPage
         if (chatPage.BindingContext is ViewModels.ChatViewModel vm)
         {
             await vm.ConnectCommand.ExecuteAsync(null);
         }
+    }
+    private async void OnCreateAccountClicked(object sender, EventArgs e)
+    {
+        var registerPage = _services.GetRequiredService<RegisterPage>();
+        await Navigation.PushAsync(registerPage);
     }
 }
