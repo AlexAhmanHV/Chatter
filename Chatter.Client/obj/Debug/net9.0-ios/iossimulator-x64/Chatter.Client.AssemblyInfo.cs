@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("Chatter.Client")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0+2c596b335483652b34c37afe1d0e70fc0ac011cf")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0+527389dcaedfcc8c909eec955423f14df07e42f7")]
 [assembly: System.Reflection.AssemblyProductAttribute("Chatter.Client")]
 [assembly: System.Reflection.AssemblyTitleAttribute("Chatter.Client")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

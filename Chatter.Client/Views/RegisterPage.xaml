@@ -5,13 +5,314 @@
     xmlns:vm="clr-namespace:Chatter.Client.ViewModels"
     x:Class="Chatter.Client.Views.RegisterPage"
     x:DataType="vm:RegisterViewModel"
-    Title="Create account">
+    Title="Create account"
+    BackgroundColor="#0B1220">
 
-    <VerticalStackLayout Padding="24" Spacing="14">
-        <Entry Text="{Binding Email}" Placeholder="Email" Keyboard="Email" />
-        <Entry Text="{Binding Password}" Placeholder="Password" IsPassword="True" />
-        <Entry Text="{Binding ConfirmPassword}" Placeholder="Confirm password" IsPassword="True" />
-        <Button Text="Register" Command="{Binding RegisterCommand}" />
-    </VerticalStackLayout>
+    <!-- ===== Page Resources / Theme Tokens ===== -->
+    <ContentPage.Resources>
+        <ResourceDictionary>
+            <!-- Palette -->
+            <Color x:Key="PrimaryStart">#6EE7F9</Color>     <!-- cyan -->
+            <Color x:Key="PrimaryEnd">#8B5CF6</Color>       <!-- violet -->
+            <Color x:Key="CardBg">#101827</Color>           <!-- near-black card -->
+            <Color x:Key="TextPrimary">#E5E7EB</Color>      <!-- light text -->
+            <Color x:Key="TextSecondary">#9CA3AF</Color>    <!-- muted text -->
+            <Color x:Key="StrokeIdle">#1F2937</Color>       <!-- idle border -->
+            <Color x:Key="StrokeFocus">#8B5CF6</Color>      <!-- focus border -->
+            <Color x:Key="FieldBg">#0D1524</Color>
 
+            <!-- Radii / spacing -->
+            <x:Double x:Key="RadiusLg">20</x:Double>
+            <x:Double x:Key="RadiusMd">14</x:Double>
+
+            <!-- Typography -->
+            <Style TargetType="Label" x:Key="H1">
+                <Setter Property="FontSize" Value="34" />
+                <Setter Property="FontAttributes" Value="Bold" />
+                <Setter Property="TextColor" Value="{StaticResource TextPrimary}" />
+                <Setter Property="HorizontalOptions" Value="Center" />
+            </Style>
+
+            <Style TargetType="Label" x:Key="Subtle">
+                <Setter Property="FontSize" Value="13" />
+                <Setter Property="TextColor" Value="{StaticResource TextSecondary}" />
+            </Style>
+
+            <!-- Field container with focus states -->
+            <Style TargetType="Border" x:Key="FieldBorder">
+                <Setter Property="Stroke" Value="{StaticResource StrokeIdle}" />
+                <Setter Property="StrokeThickness" Value="1.5" />
+                <Setter Property="BackgroundColor" Value="{StaticResource FieldBg}" />
+                <Setter Property="Padding" Value="14,12" />
+                <Setter Property="StrokeShape">
+                    <Setter.Value>
+                        <RoundRectangle CornerRadius="{StaticResource RadiusMd}" />
+                    </Setter.Value>
+                </Setter>
+                <Setter Property="Shadow">
+                    <Setter.Value>
+                        <Shadow Opacity="0.25" Radius="12" Offset="0,6" />
+                    </Setter.Value>
+                </Setter>
+                <Setter Property="VisualStateManager.VisualStateGroups">
+                    <Setter.Value>
+                        <VisualStateGroupList>
+                            <VisualStateGroup>
+                                <VisualState x:Name="Normal" />
+                                <VisualState x:Name="Focused">
+                                    <VisualState.Setters>
+                                        <Setter Property="Stroke" Value="{StaticResource StrokeFocus}" />
+                                        <Setter Property="StrokeThickness" Value="2" />
+                                    </VisualState.Setters>
+                                </VisualState>
+                            </VisualStateGroup>
+                        </VisualStateGroupList>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <!-- Primary gradient button -->
+            <Style TargetType="Button" x:Key="PrimaryBtn">
+                <Setter Property="TextColor" Value="White" />
+                <Setter Property="FontSize" Value="16" />
+                <Setter Property="FontAttributes" Value="Bold" />
+                <Setter Property="CornerRadius" Value="16" />
+                <Setter Property="Padding" Value="0,16" />
+                <Setter Property="Background">
+                    <Setter.Value>
+                        <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                            <GradientStop Color="{StaticResource PrimaryStart}" Offset="0.0" />
+                            <GradientStop Color="{StaticResource PrimaryEnd}" Offset="1.0" />
+                        </LinearGradientBrush>
+                    </Setter.Value>
+                </Setter>
+                <Setter Property="Shadow">
+                    <Setter.Value>
+                        <Shadow Opacity="0.35" Radius="16" Offset="0,6" />
+                    </Setter.Value>
+                </Setter>
+                <Setter Property="VisualStateManager.VisualStateGroups">
+                    <Setter.Value>
+                        <VisualStateGroupList>
+                            <VisualStateGroup>
+                                <VisualState x:Name="Normal" />
+                                <VisualState x:Name="Pressed">
+                                    <VisualState.Setters>
+                                        <Setter Property="Opacity" Value="0.85" />
+                                    </VisualState.Setters>
+                                </VisualState>
+                                <VisualState x:Name="Disabled">
+                                    <VisualState.Setters>
+                                        <Setter Property="Opacity" Value="0.6" />
+                                    </VisualState.Setters>
+                                </VisualState>
+                            </VisualStateGroup>
+                        </VisualStateGroupList>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <!-- Outline/ghost button (if you add a secondary CTA later) -->
+            <Style TargetType="Button" x:Key="OutlineBtn">
+                <Setter Property="TextColor" Value="{StaticResource TextPrimary}" />
+                <Setter Property="BackgroundColor" Value="Transparent" />
+                <Setter Property="FontSize" Value="16" />
+                <Setter Property="FontAttributes" Value="Bold" />
+                <Setter Property="CornerRadius" Value="16" />
+                <Setter Property="Padding" Value="0,16" />
+                <Setter Property="BorderColor" Value="{StaticResource StrokeFocus}" />
+                <Setter Property="BorderWidth" Value="1.5" />
+                <Setter Property="Shadow">
+                    <Setter.Value>
+                        <Shadow Opacity="0.2" Radius="12" Offset="0,4" />
+                    </Setter.Value>
+                </Setter>
+            </Style>
+        </ResourceDictionary>
+    </ContentPage.Resources>
+
+    <!-- ===== Layout ===== -->
+    <Grid>
+        <!-- Background gradient -->
+        <Grid.Background>
+            <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                <GradientStop Color="#0B1220" Offset="0.0" />
+                <GradientStop Color="#0B1220" Offset="0.35" />
+                <GradientStop Color="#0A0F1A" Offset="1.0" />
+            </LinearGradientBrush>
+        </Grid.Background>
+
+        <!-- Decorative gradient blobs -->
+        <Ellipse WidthRequest="280" HeightRequest="280" Opacity="0.28"
+                 HorizontalOptions="Start" VerticalOptions="Start" TranslationX="-120" TranslationY="-100">
+            <Ellipse.Fill>
+                <RadialGradientBrush Radius="0.9" Center="0.7,0.4">
+                    <GradientStop Color="{StaticResource PrimaryStart}" Offset="0" />
+                    <GradientStop Color="#00000000" Offset="1" />
+                </RadialGradientBrush>
+            </Ellipse.Fill>
+        </Ellipse>
+
+        <Ellipse WidthRequest="340" HeightRequest="340" Opacity="0.22"
+                 HorizontalOptions="End" VerticalOptions="End" TranslationX="80" TranslationY="120">
+            <Ellipse.Fill>
+                <RadialGradientBrush Radius="1.0" Center="0.3,0.6">
+                    <GradientStop Color="{StaticResource PrimaryEnd}" Offset="0" />
+                    <GradientStop Color="#00000000" Offset="1" />
+                </RadialGradientBrush>
+            </Ellipse.Fill>
+        </Ellipse>
+
+        <ScrollView>
+            <VerticalStackLayout Padding="28,56" Spacing="24" VerticalOptions="Center">
+
+                <!-- Header -->
+                <VerticalStackLayout Spacing="8" Margin="0,0,0,4">
+                    <Label Text="✨" FontSize="48" HorizontalOptions="Center" />
+                    <Label Text="Join Chatter" Style="{StaticResource H1}" />
+                    <Label Text="Create your account to get started"
+                           HorizontalOptions="Center"
+                           TextColor="{StaticResource TextSecondary}"
+                           Opacity="0.95" />
+                </VerticalStackLayout>
+
+                <!-- Card -->
+                <Border Padding="24,28"
+                        BackgroundColor="{StaticResource CardBg}"
+                        StrokeThickness="1"
+                        Stroke="{StaticResource StrokeIdle}"
+                        Margin="0,8,0,0">
+                    <Border.StrokeShape>
+                        <RoundRectangle CornerRadius="{StaticResource RadiusLg}" />
+                    </Border.StrokeShape>
+                    <Border.Shadow>
+                        <Shadow Opacity="0.35" Radius="24" Offset="0,14" />
+                    </Border.Shadow>
+
+                    <VerticalStackLayout Spacing="18">
+
+                        <!-- Email -->
+                        <VerticalStackLayout Spacing="8">
+                            <Label Text="Email address" Style="{StaticResource Subtle}" FontAttributes="Bold" />
+                            <Border Style="{StaticResource FieldBorder}">
+                                <Grid ColumnDefinitions="24,*,Auto" ColumnSpacing="10" VerticalOptions="Center">
+                                    <Label Grid.Column="0" Text="📧" FontSize="16" VerticalOptions="Center" />
+                                    <Entry Grid.Column="1"
+                                           Placeholder="you@example.com"
+                                           Text="{Binding Email}"
+                                           Keyboard="Email"
+                                           ReturnType="Next"
+                                           TextColor="{StaticResource TextPrimary}"
+                                           PlaceholderColor="{StaticResource TextSecondary}"
+                                           BackgroundColor="Transparent" />
+                                </Grid>
+                            </Border>
+                        </VerticalStackLayout>
+
+                        <!-- Password -->
+                        <VerticalStackLayout Spacing="8">
+                            <Label Text="Password" Style="{StaticResource Subtle}" FontAttributes="Bold" />
+                            <Border Style="{StaticResource FieldBorder}">
+                                <Grid ColumnDefinitions="24,*" ColumnSpacing="10" VerticalOptions="Center">
+                                    <Label Grid.Column="0" Text="🔒" FontSize="16" VerticalOptions="Center" />
+                                    <Entry Grid.Column="1"
+                                           Placeholder="At least 8 characters"
+                                           Text="{Binding Password}"
+                                           IsPassword="True"
+                                           ReturnType="Next"
+                                           TextColor="{StaticResource TextPrimary}"
+                                           PlaceholderColor="{StaticResource TextSecondary}"
+                                           BackgroundColor="Transparent" />
+                                </Grid>
+                            </Border>
+                            <Label Text="Must be at least 8 characters"
+                                   FontSize="12"
+                                   TextColor="{StaticResource TextSecondary}"
+                                   Margin="4,0,0,0" />
+                        </VerticalStackLayout>
+
+                        <!-- Confirm Password -->
+                        <VerticalStackLayout Spacing="8">
+                            <Label Text="Confirm password" Style="{StaticResource Subtle}" FontAttributes="Bold" />
+                            <Border Style="{StaticResource FieldBorder}">
+                                <Grid ColumnDefinitions="24,*" ColumnSpacing="10" VerticalOptions="Center">
+                                    <Label Grid.Column="0" Text="✅" FontSize="16" VerticalOptions="Center" />
+                                    <Entry Grid.Column="1"
+                                           Placeholder="Re-enter your password"
+                                           Text="{Binding ConfirmPassword}"
+                                           IsPassword="True"
+                                           ReturnType="Go"
+                                           TextColor="{StaticResource TextPrimary}"
+                                           PlaceholderColor="{StaticResource TextSecondary}"
+                                           BackgroundColor="Transparent" />
+                                </Grid>
+                            </Border>
+                        </VerticalStackLayout>
+
+                        <!-- Terms line -->
+                        <HorizontalStackLayout Spacing="8" Margin="0,4,0,0">
+                            <Label Text="📋" FontSize="14" VerticalOptions="Center" />
+                            <Label VerticalOptions="Center">
+                                <Label.FormattedText>
+                                    <FormattedString>
+                                        <Span Text="By signing up, you agree to our "
+                                              FontSize="12"
+                                              TextColor="{StaticResource TextSecondary}" />
+                                        <Span Text="Terms"
+                                              FontSize="12"
+                                              TextColor="{StaticResource PrimaryStart}"
+                                              FontAttributes="Bold"
+                                              TextDecorations="Underline" />
+                                        <Span Text=" and "
+                                              FontSize="12"
+                                              TextColor="{StaticResource TextSecondary}" />
+                                        <Span Text="Privacy Policy"
+                                              FontSize="12"
+                                              TextColor="{StaticResource PrimaryStart}"
+                                              FontAttributes="Bold"
+                                              TextDecorations="Underline" />
+                                    </FormattedString>
+                                </Label.FormattedText>
+                            </Label>
+                        </HorizontalStackLayout>
+
+                        <!-- Register Button -->
+                        <Button Text="Create account"
+                                Command="{Binding RegisterCommand}"
+                                Style="{StaticResource PrimaryBtn}"
+                                Margin="0,8,0,0" />
+
+                        <!-- Login Link -->
+                        <HorizontalStackLayout Spacing="6" HorizontalOptions="Center" Margin="0,14,0,0">
+                            <Label Text="Already have an account?"
+                                   FontSize="14"
+                                   TextColor="{StaticResource TextSecondary}"
+                                   VerticalOptions="Center" />
+                            <Label Text="Log in"
+                                   FontSize="14"
+                                   TextColor="{StaticResource TextPrimary}"
+                                   FontAttributes="Bold"
+                                   TextDecorations="Underline"
+                                   VerticalOptions="Center">
+                                <Label.GestureRecognizers>
+                                    <TapGestureRecognizer Command="{Binding NavigateToLoginCommand}" />
+                                </Label.GestureRecognizers>
+                            </Label>
+                        </HorizontalStackLayout>
+
+                    </VerticalStackLayout>
+                </Border>
+
+                <!-- Security Badge -->
+                <HorizontalStackLayout Spacing="8" HorizontalOptions="Center" Margin="0,6,0,24">
+                    <Label Text="🔒" FontSize="16" VerticalOptions="Center" />
+                    <Label Text="Your information is secure and encrypted"
+                           FontSize="12"
+                           TextColor="{StaticResource TextSecondary}"
+                           VerticalOptions="Center" />
+                </HorizontalStackLayout>
+
+            </VerticalStackLayout>
+        </ScrollView>
+    </Grid>
 </ContentPage>

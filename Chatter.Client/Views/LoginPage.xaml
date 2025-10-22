@@ -5,37 +5,300 @@
     xmlns:vm="clr-namespace:Chatter.Client.ViewModels"
     x:Class="Chatter.Client.Views.LoginPage"
     x:DataType="vm:LoginViewModel"
-    Title="Welcome">
+    Title="Welcome"
+    BackgroundColor="#0B1220">
 
-    <VerticalStackLayout Padding="24" Spacing="16" VerticalOptions="Center">
-        <Label Text="Chatter" FontSize="28" HorizontalOptions="Center" />
+    <!-- ===== Page Resources / Theme Tokens ===== -->
+    <ContentPage.Resources>
+        <ResourceDictionary>
+            <!-- Palette -->
+            <Color x:Key="PrimaryStart">#6EE7F9</Color>     <!-- cyan -->
+            <Color x:Key="PrimaryEnd">#8B5CF6</Color>       <!-- violet -->
+            <Color x:Key="CardBg">#101827</Color>           <!-- near-black card -->
+            <Color x:Key="TextPrimary">#E5E7EB</Color>      <!-- light text -->
+            <Color x:Key="TextSecondary">#9CA3AF</Color>    <!-- muted text -->
+            <Color x:Key="StrokeIdle">#1F2937</Color>       <!-- idle border -->
+            <Color x:Key="StrokeFocus">#8B5CF6</Color>      <!-- focus border -->
+            <Color x:Key="FieldBg">#0D1524</Color>
 
-        <!-- Name the inputs; no inline Completed handlers -->
-        <Entry x:Name="EmailEntry"
-               Placeholder="Email"
-               Text="{Binding Username}"
-               ReturnType="Next" />
+            <!-- Radii / spacing -->
+            <x:Double x:Key="RadiusLg">20</x:Double>
+            <x:Double x:Key="RadiusMd">14</x:Double>
 
-        <Entry x:Name="PasswordEntry"
-               Placeholder="Password"
-               Text="{Binding Password}"
-               IsPassword="True"
-               ReturnType="Go" />
+            <!-- Typography -->
+            <Style TargetType="Label" x:Key="H1">
+                <Setter Property="FontSize" Value="36" />
+                <Setter Property="FontAttributes" Value="Bold" />
+                <Setter Property="TextColor" Value="{StaticResource TextPrimary}" />
+                <Setter Property="HorizontalOptions" Value="Center" />
+            </Style>
 
-        <Button Text="Log in"
-                Command="{Binding LoginCommand}"
-                IsEnabled="{Binding CanLogin}">
-            <Button.Triggers>
-                <!-- When busy: disable and show different text -->
-                <DataTrigger TargetType="Button" Binding="{Binding IsBusy}" Value="True">
-                    <Setter Property="IsEnabled" Value="False" />
-                    <Setter Property="Text" Value="Logging in..." />
-                </DataTrigger>
-            </Button.Triggers>
-        </Button>
+            <Style TargetType="Label" x:Key="Subtle">
+                <Setter Property="FontSize" Value="13" />
+                <Setter Property="TextColor" Value="{StaticResource TextSecondary}" />
+            </Style>
 
-        <!-- Name the button; no inline Clicked -->
-        <Button x:Name="CreateAccountBtn"
-                Text="Create account" />
-    </VerticalStackLayout>
+            <!-- Field container with focus states -->
+            <Style TargetType="Border" x:Key="FieldBorder">
+                <Setter Property="Stroke" Value="{StaticResource StrokeIdle}" />
+                <Setter Property="StrokeThickness" Value="1.5" />
+                <Setter Property="BackgroundColor" Value="{StaticResource FieldBg}" />
+                <Setter Property="Padding" Value="14,12" />
+                <Setter Property="StrokeShape">
+                    <Setter.Value>
+                        <RoundRectangle CornerRadius="{StaticResource RadiusMd}" />
+                    </Setter.Value>
+                </Setter>
+                <Setter Property="Shadow">
+                    <Setter.Value>
+                        <Shadow Opacity="0.25" Radius="12" Offset="0,6" />
+                    </Setter.Value>
+                </Setter>
+                <Setter Property="VisualStateManager.VisualStateGroups">
+                    <Setter.Value>
+                        <VisualStateGroupList>
+                            <VisualStateGroup>
+                                <VisualState x:Name="Normal" />
+                                <VisualState x:Name="Focused">
+                                    <VisualState.Setters>
+                                        <Setter Property="Stroke" Value="{StaticResource StrokeFocus}" />
+                                        <Setter Property="StrokeThickness" Value="2" />
+                                    </VisualState.Setters>
+                                </VisualState>
+                            </VisualStateGroup>
+                        </VisualStateGroupList>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <!-- Primary gradient button -->
+            <Style TargetType="Button" x:Key="PrimaryBtn">
+                <Setter Property="TextColor" Value="White" />
+                <Setter Property="FontSize" Value="16" />
+                <Setter Property="FontAttributes" Value="Bold" />
+                <Setter Property="CornerRadius" Value="16" />
+                <Setter Property="Padding" Value="0,16" />
+                <Setter Property="Background">
+                    <Setter.Value>
+                        <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                            <GradientStop Color="{StaticResource PrimaryStart}" Offset="0.0" />
+                            <GradientStop Color="{StaticResource PrimaryEnd}" Offset="1.0" />
+                        </LinearGradientBrush>
+                    </Setter.Value>
+                </Setter>
+                <Setter Property="Shadow">
+                    <Setter.Value>
+                        <Shadow Opacity="0.35" Radius="16" Offset="0,6" />
+                    </Setter.Value>
+                </Setter>
+                <Setter Property="VisualStateManager.VisualStateGroups">
+                    <Setter.Value>
+                        <VisualStateGroupList>
+                            <VisualStateGroup>
+                                <VisualState x:Name="Normal" />
+                                <VisualState x:Name="Pressed">
+                                    <VisualState.Setters>
+                                        <Setter Property="Opacity" Value="0.85" />
+                                    </VisualState.Setters>
+                                </VisualState>
+                                <VisualState x:Name="Disabled">
+                                    <VisualState.Setters>
+                                        <Setter Property="Opacity" Value="0.6" />
+                                    </VisualState.Setters>
+                                </VisualState>
+                            </VisualStateGroup>
+                        </VisualStateGroupList>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <!-- Accent for Create Account -->
+            <Color x:Key="SecondaryStart">#60A5FA</Color>   <!-- blue -->
+            <Color x:Key="SecondaryEnd">#22D3EE</Color>     <!-- cyan -->
+
+            <Style TargetType="Button" x:Key="EmphasisSecondaryBtn">
+                <Setter Property="TextColor" Value="White" />
+                <Setter Property="FontSize" Value="16" />
+                <Setter Property="FontAttributes" Value="Bold" />
+                <Setter Property="CornerRadius" Value="16" />
+                <Setter Property="Padding" Value="0,16" />
+                <Setter Property="Background">
+                    <Setter.Value>
+                        <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                            <GradientStop Color="{StaticResource SecondaryStart}" Offset="0.0" />
+                            <GradientStop Color="{StaticResource SecondaryEnd}" Offset="1.0" />
+                        </LinearGradientBrush>
+                    </Setter.Value>
+                </Setter>
+                <Setter Property="BorderColor" Value="#99FFFFFF" />
+                <Setter Property="BorderWidth" Value="1" />
+                <Setter Property="Shadow">
+                    <Setter.Value>
+                        <Shadow Opacity="0.35" Radius="16" Offset="0,6" />
+                    </Setter.Value>
+                </Setter>
+                <Setter Property="VisualStateManager.VisualStateGroups">
+                    <Setter.Value>
+                        <VisualStateGroupList>
+                            <VisualStateGroup>
+                                <VisualState x:Name="Normal" />
+                                <VisualState x:Name="Pressed">
+                                    <VisualState.Setters>
+                                        <Setter Property="Opacity" Value="0.9" />
+                                    </VisualState.Setters>
+                                </VisualState>
+                                <VisualState x:Name="Disabled">
+                                    <VisualState.Setters>
+                                        <Setter Property="Opacity" Value="0.6" />
+                                    </VisualState.Setters>
+                                </VisualState>
+                            </VisualStateGroup>
+                        </VisualStateGroupList>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+        </ResourceDictionary>
+    </ContentPage.Resources>
+
+    <!-- ===== Layout ===== -->
+    <Grid>
+        <!-- Background gradient -->
+        <Grid.Background>
+            <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                <GradientStop Color="#0B1220" Offset="0.0" />
+                <GradientStop Color="#0B1220" Offset="0.35" />
+                <GradientStop Color="#0A0F1A" Offset="1.0" />
+            </LinearGradientBrush>
+        </Grid.Background>
+
+        <!-- Decorative gradient blobs -->
+        <Ellipse WidthRequest="280" HeightRequest="280" Opacity="0.28"
+                 HorizontalOptions="Start" VerticalOptions="Start" TranslationX="-120" TranslationY="-100">
+            <Ellipse.Fill>
+                <RadialGradientBrush Radius="0.9" Center="0.7,0.4">
+                    <GradientStop Color="{StaticResource PrimaryStart}" Offset="0" />
+                    <GradientStop Color="#00000000" Offset="1" />
+                </RadialGradientBrush>
+            </Ellipse.Fill>
+        </Ellipse>
+
+        <Ellipse WidthRequest="340" HeightRequest="340" Opacity="0.22"
+                 HorizontalOptions="End" VerticalOptions="End" TranslationX="80" TranslationY="120">
+            <Ellipse.Fill>
+                <RadialGradientBrush Radius="1.0" Center="0.3,0.6">
+                    <GradientStop Color="{StaticResource PrimaryEnd}" Offset="0" />
+                    <GradientStop Color="#00000000" Offset="1" />
+                </RadialGradientBrush>
+            </Ellipse.Fill>
+        </Ellipse>
+
+        <ScrollView>
+            <VerticalStackLayout Padding="28,56" Spacing="24" VerticalOptions="Center">
+
+                <!-- Brand -->
+                <VerticalStackLayout Spacing="8" Margin="0,0,0,4">
+                    <Label Text="💬" FontSize="56" HorizontalOptions="Center" />
+                    <Label Text="Chatter" Style="{StaticResource H1}" />
+                    <Label Text="Connect with friends and family"
+                           HorizontalOptions="Center"
+                           TextColor="{StaticResource TextSecondary}"
+                           Opacity="0.95" />
+                </VerticalStackLayout>
+
+                <!-- Card -->
+                <Border Padding="24,28"
+                        BackgroundColor="{StaticResource CardBg}"
+                        StrokeThickness="1"
+                        Stroke="{StaticResource StrokeIdle}"
+                        Margin="0,8,0,0">
+                    <Border.StrokeShape>
+                        <RoundRectangle CornerRadius="{StaticResource RadiusLg}" />
+                    </Border.StrokeShape>
+                    <Border.Shadow>
+                        <Shadow Opacity="0.35" Radius="24" Offset="0,14" />
+                    </Border.Shadow>
+
+                    <VerticalStackLayout Spacing="18">
+
+                        <!-- Email -->
+                        <VerticalStackLayout Spacing="8">
+                            <Label Text="Email" Style="{StaticResource Subtle}" FontAttributes="Bold" />
+                            <Border Style="{StaticResource FieldBorder}">
+                                <Grid ColumnDefinitions="24,*,Auto" ColumnSpacing="10" VerticalOptions="Center">
+                                    <Label Grid.Column="0" Text="📧" FontSize="16" VerticalOptions="Center" />
+                                    <Entry Grid.Column="1"
+                                           x:Name="EmailEntry"
+                                           Placeholder="you@example.com"
+                                           Text="{Binding Username}"
+                                           ReturnType="Next"
+                                           Keyboard="Email"
+                                           TextColor="{StaticResource TextPrimary}"
+                                           PlaceholderColor="{StaticResource TextSecondary}"
+                                           BackgroundColor="Transparent" />
+                                    <ActivityIndicator Grid.Column="2"
+                                                       IsVisible="{Binding IsBusy}"
+                                                       IsRunning="{Binding IsBusy}" />
+                                </Grid>
+                            </Border>
+                        </VerticalStackLayout>
+
+                        <!-- Password -->
+                        <VerticalStackLayout Spacing="8">
+                            <Label Text="Password" Style="{StaticResource Subtle}" FontAttributes="Bold" />
+                            <Border Style="{StaticResource FieldBorder}">
+                                <Grid ColumnDefinitions="24,*,Auto" ColumnSpacing="10" VerticalOptions="Center">
+                                    <Label Grid.Column="0" Text="🔒" FontSize="16" VerticalOptions="Center" />
+                                    <Entry Grid.Column="1"
+                                           x:Name="PasswordEntry"
+                                           Placeholder="Enter your password"
+                                           Text="{Binding Password}"
+                                           IsPassword="True"
+                                           ReturnType="Go"
+                                           TextColor="{StaticResource TextPrimary}"
+                                           PlaceholderColor="{StaticResource TextSecondary}"
+                                           BackgroundColor="Transparent" />
+                                </Grid>
+                            </Border>
+                        </VerticalStackLayout>
+
+                        <!-- Log in (now secondary emphasis style) -->
+                        <Button Text="Log in"
+                                Command="{Binding LoginCommand}"
+                                IsEnabled="{Binding CanLogin}"
+                                Style="{StaticResource EmphasisSecondaryBtn}">
+                            <Button.Triggers>
+                                <DataTrigger TargetType="Button" Binding="{Binding IsBusy}" Value="True">
+                                    <Setter Property="IsEnabled" Value="False" />
+                                    <Setter Property="Text" Value="Signing you in…" />
+                                </DataTrigger>
+                            </Button.Triggers>
+                        </Button>
+
+                        <!-- Divider -->
+                        <Grid ColumnDefinitions="*,Auto,*" Margin="0,6,0,0" ColumnSpacing="12">
+                            <BoxView Grid.Column="0" HeightRequest="1" BackgroundColor="{StaticResource StrokeIdle}" VerticalOptions="Center" />
+                            <Label Grid.Column="1" Text="or" Style="{StaticResource Subtle}" VerticalOptions="Center" />
+                            <BoxView Grid.Column="2" HeightRequest="1" BackgroundColor="{StaticResource StrokeIdle}" VerticalOptions="Center" />
+                        </Grid>
+
+                        <!-- Create account (now primary gradient) -->
+                        <Button x:Name="CreateAccountBtn"
+                                Text="Create account"
+                                Style="{StaticResource PrimaryBtn}" />
+
+                    </VerticalStackLayout>
+                </Border>
+
+                <!-- Terms -->
+                <Label
+                    Text="By continuing, you agree to our Terms of Service and Privacy Policy"
+                    HorizontalOptions="Center"
+                    HorizontalTextAlignment="Center"
+                    TextColor="{StaticResource TextSecondary}"
+                    FontSize="12"
+                    Margin="6,2,6,24" />
+
+            </VerticalStackLayout>
+        </ScrollView>
+    </Grid>
 </ContentPage>

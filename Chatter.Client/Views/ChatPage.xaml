@@ -1,196 +1,457 @@
+<?xml version="1.0" encoding="utf-8" ?>
 <ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              xmlns:models="clr-namespace:Chatter.Client.Models"
              x:Class="Chatter.Client.Views.ChatPage"
              x:Name="ChatPageRoot"
-             Title="Chat">
+             Title="Chat"
+             BackgroundColor="#0B1220"
+             NavigationPage.HasNavigationBar="True"
+             NavigationPage.BarBackgroundColor="#0B1220"
+             NavigationPage.BarTextColor="#E5E7EB">
 
+  <!-- Toolbar -->
   <ContentPage.ToolbarItems>
-    <ToolbarItem x:Name="SettingsItem" Text="Settings" />
+    <ToolbarItem x:Name="SettingsItem"
+                 Text="Settings"
+                 Order="Secondary"
+                 Priority="0"
+                 Clicked="OnSettingsClicked">
+      <ToolbarItem.IconImageSource>
+        <FontImageSource Glyph="⚙" Size="22" Color="#E5E7EB" />
+      </ToolbarItem.IconImageSource>
+    </ToolbarItem>
   </ContentPage.ToolbarItems>
 
-  <Grid ColumnSpacing="0" RowSpacing="0" Padding="0">
+  <!-- =================== Resources =================== -->
+  <ContentPage.Resources>
+    <ResourceDictionary>
+      <!-- Palette -->
+      <Color x:Key="PrimaryStart">#6EE7F9</Color>
+      <Color x:Key="PrimaryEnd">#8B5CF6</Color>
+      <Color x:Key="CardBg">#101827</Color>
+      <Color x:Key="PanelBg">#0D1524</Color>
+      <Color x:Key="StrokeIdle">#1F2937</Color>
+      <Color x:Key="StrokeFocus">#8B5CF6</Color>
+      <Color x:Key="TextPrimary">#E5E7EB</Color>
+      <Color x:Key="TextSecondary">#9CA3AF</Color>
+      <Color x:Key="BubbleBg">#0F1B2E</Color>
+
+      <x:Double x:Key="RadiusLg">20</x:Double>
+      <x:Double x:Key="RadiusMd">14</x:Double>
+
+      <!-- Section header gradient -->
+      <LinearGradientBrush x:Key="HeaderBrush" StartPoint="0,0" EndPoint="1,0">
+        <GradientStop Color="{StaticResource PrimaryStart}" Offset="0.0" />
+        <GradientStop Color="{StaticResource PrimaryEnd}" Offset="1.0" />
+      </LinearGradientBrush>
+
+      <!-- Primary gradient button -->
+      <Style TargetType="Button" x:Key="PrimaryBtn">
+        <Setter Property="TextColor" Value="White" />
+        <Setter Property="FontSize" Value="15" />
+        <Setter Property="FontAttributes" Value="Bold" />
+        <Setter Property="CornerRadius" Value="14" />
+        <Setter Property="HeightRequest" Value="48" />
+        <Setter Property="Background">
+          <Setter.Value>
+            <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+              <GradientStop Color="{StaticResource PrimaryStart}" Offset="0.0" />
+              <GradientStop Color="{StaticResource PrimaryEnd}" Offset="1.0" />
+            </LinearGradientBrush>
+          </Setter.Value>
+        </Setter>
+        <Setter Property="Shadow">
+          <Setter.Value>
+            <Shadow Opacity="0.35" Radius="14" Offset="0,6" />
+          </Setter.Value>
+        </Setter>
+      </Style>
+
+      <!-- Input field container with focus state -->
+      <Style TargetType="Border" x:Key="FieldBorder">
+        <Setter Property="Stroke" Value="{StaticResource StrokeIdle}" />
+        <Setter Property="StrokeThickness" Value="1.5" />
+        <Setter Property="BackgroundColor" Value="{StaticResource PanelBg}" />
+        <Setter Property="Padding" Value="14,12" />
+        <Setter Property="StrokeShape">
+          <Setter.Value>
+            <RoundRectangle CornerRadius="{StaticResource RadiusMd}" />
+          </Setter.Value>
+        </Setter>
+        <Setter Property="VisualStateManager.VisualStateGroups">
+          <Setter.Value>
+            <VisualStateGroupList>
+              <VisualStateGroup>
+                <VisualState x:Name="Normal" />
+                <VisualState x:Name="Focused">
+                  <VisualState.Setters>
+                    <Setter Property="Stroke" Value="{StaticResource StrokeFocus}" />
+                    <Setter Property="StrokeThickness" Value="2" />
+                  </VisualState.Setters>
+                </VisualState>
+              </VisualStateGroup>
+            </VisualStateGroupList>
+          </Setter.Value>
+        </Setter>
+      </Style>
+
+      <!-- Card container -->
+      <Style TargetType="Border" x:Key="Card">
+        <Setter Property="BackgroundColor" Value="{StaticResource CardBg}" />
+        <Setter Property="Stroke" Value="{StaticResource StrokeIdle}" />
+        <Setter Property="StrokeThickness" Value="1" />
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="StrokeShape">
+          <Setter.Value>
+            <RoundRectangle CornerRadius="{StaticResource RadiusLg}" />
+          </Setter.Value>
+        </Setter>
+        <Setter Property="Shadow">
+          <Setter.Value>
+            <Shadow Opacity="0.25" Radius="18" Offset="0,10" />
+          </Setter.Value>
+        </Setter>
+      </Style>
+
+      <!-- Pill for counts/badges -->
+      <Style TargetType="Border" x:Key="Pill">
+        <Setter Property="Padding" Value="10,4" />
+        <Setter Property="Background">
+          <Setter.Value>
+            <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+              <GradientStop Color="{StaticResource PrimaryStart}" Offset="0.0" />
+              <GradientStop Color="{StaticResource PrimaryEnd}" Offset="1.0" />
+            </LinearGradientBrush>
+          </Setter.Value>
+        </Setter>
+        <Setter Property="StrokeThickness" Value="0" />
+        <Setter Property="StrokeShape">
+          <Setter.Value>
+            <RoundRectangle CornerRadius="12" />
+          </Setter.Value>
+        </Setter>
+      </Style>
+
+    </ResourceDictionary>
+  </ContentPage.Resources>
+
+  <!-- =================== Layout =================== -->
+  <Grid ColumnSpacing="0" RowSpacing="0" Padding="16">
     <Grid.ColumnDefinitions>
-      <ColumnDefinition Width="240" />
-      <ColumnDefinition Width="*" />
       <ColumnDefinition Width="280" />
+      <ColumnDefinition Width="*" />
+      <ColumnDefinition Width="300" />
     </Grid.ColumnDefinitions>
 
+    <!-- Decorative gradient blobs -->
+    <Ellipse Grid.ColumnSpan="3" WidthRequest="280" HeightRequest="280" Opacity="0.22"
+             HorizontalOptions="Start" VerticalOptions="Start" TranslationX="-120" TranslationY="-120">
+      <Ellipse.Fill>
+        <RadialGradientBrush Radius="0.9" Center="0.7,0.4">
+          <GradientStop Color="{StaticResource PrimaryStart}" Offset="0" />
+          <GradientStop Color="#00000000" Offset="1" />
+        </RadialGradientBrush>
+      </Ellipse.Fill>
+    </Ellipse>
+    <Ellipse Grid.ColumnSpan="3" WidthRequest="340" HeightRequest="340" Opacity="0.18"
+             HorizontalOptions="End" VerticalOptions="End" TranslationX="80" TranslationY="100">
+      <Ellipse.Fill>
+        <RadialGradientBrush Radius="1.0" Center="0.3,0.6">
+          <GradientStop Color="{StaticResource PrimaryEnd}" Offset="0" />
+          <GradientStop Color="#00000000" Offset="1" />
+        </RadialGradientBrush>
+      </Ellipse.Fill>
+    </Ellipse>
+
     <!-- LEFT: Chats list -->
-    <Border Grid.Column="0" StrokeThickness="0"
-            BackgroundColor="{AppThemeBinding Light=#F7F7F7, Dark=#1A1A1A}">
-      <VerticalStackLayout Padding="12" Spacing="8">
-        <Label Text="Chats" FontAttributes="Bold" />
+    <Border Grid.Column="0" Style="{StaticResource Card}" Margin="0,0,12,0">
+      <VerticalStackLayout Spacing="0">
+        <!-- Header -->
+        <Border Padding="20,22" StrokeThickness="0" Background="{StaticResource HeaderBrush}">
+          <VerticalStackLayout Spacing="6">
+            <Label Text="💬 Messages" FontSize="20" FontAttributes="Bold" TextColor="White" />
+            <Label Text="Your conversations" FontSize="12" TextColor="White" Opacity="0.85" />
+          </VerticalStackLayout>
+        </Border>
 
-        <CollectionView x:Name="ChatsCollection"
-                        ItemsSource="{Binding Chats}"
-                        SelectionMode="Single"
-                        SelectedItem="{Binding SelectedChat}">
-          <CollectionView.ItemTemplate>
-            <DataTemplate>
-              <Grid Padding="6" ColumnSpacing="8">
-                <Grid.ColumnDefinitions>
-                  <ColumnDefinition Width="Auto" />
-                  <ColumnDefinition Width="*" />
-                  <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
+        <!-- Chats List -->
+        <ScrollView Padding="12,14">
+          <CollectionView x:Name="ChatsCollection"
+                          ItemsSource="{Binding Chats}"
+                          SelectionMode="Single"
+                          SelectedItem="{Binding SelectedChat}">
+            <CollectionView.ItemTemplate>
+              <DataTemplate>
+                <Border BackgroundColor="{StaticResource PanelBg}" Padding="12" Margin="0,0,0,10" StrokeThickness="1" Stroke="{StaticResource StrokeIdle}">
+                  <Border.StrokeShape>
+                    <RoundRectangle CornerRadius="12" />
+                  </Border.StrokeShape>
+                  <Grid ColumnSpacing="10">
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="Auto" />
+                      <ColumnDefinition Width="*" />
+                      <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
 
-                <!-- Delete button -->
-                <Button Grid.Column="0"
-                        Text="✖"
-                        FontSize="14"
-                        TextColor="Black"
-                        WidthRequest="28"
-                        HeightRequest="28"
-                        Padding="0"
-                        BackgroundColor="#E6E6E6"
-                        CornerRadius="14"
-                        BorderColor="#CCCCCC"
-                        BorderWidth="1"
-                        HorizontalOptions="Center"
-                        VerticalOptions="Center"
-                        Command="{Binding BindingContext.DeleteChatCommand, Source={x:Reference ChatPageRoot}}"
-                        CommandParameter="{Binding .}">
-                  <Button.Triggers>
-                    <DataTrigger TargetType="Button" Binding="{Binding Id}" Value="Lobby">
-                      <Setter Property="IsVisible" Value="False" />
-                      <Setter Property="IsEnabled" Value="False" />
-                    </DataTrigger>
-                  </Button.Triggers>
-                </Button>
+                    <!-- Delete -->
+                    <Border Grid.Column="0" WidthRequest="32" HeightRequest="32" BackgroundColor="#251622" StrokeThickness="0" HorizontalOptions="Center" VerticalOptions="Center">
+                      <Border.StrokeShape>
+                        <RoundRectangle CornerRadius="16" />
+                      </Border.StrokeShape>
+                      <Label Text="✕" FontSize="16" TextColor="#F87171" HorizontalOptions="Center" VerticalOptions="Center"
+                             HorizontalTextAlignment="Center" VerticalTextAlignment="Center">
+                        <Label.GestureRecognizers>
+                          <TapGestureRecognizer Command="{Binding BindingContext.DeleteChatCommand, Source={x:Reference ChatPageRoot}}"
+                                                CommandParameter="{Binding .}" />
+                        </Label.GestureRecognizers>
+                        <Label.Triggers>
+                          <DataTrigger TargetType="Label" Binding="{Binding Id}" Value="Lobby">
+                            <Setter Property="IsVisible" Value="False" />
+                          </DataTrigger>
+                        </Label.Triggers>
+                      </Label>
+                    </Border>
 
-                <!-- Chat label -->
-                <Label Grid.Column="1"
-                       Text="{Binding Label}"
-                       LineBreakMode="TailTruncation">
-                  <Label.Triggers>
-                    <DataTrigger TargetType="Label" Binding="{Binding Id}" Value="Lobby">
-                      <Setter Property="FontAttributes" Value="Bold" />
-                    </DataTrigger>
-                  </Label.Triggers>
-                </Label>
+                    <!-- Chat info -->
+                    <VerticalStackLayout Grid.Column="1" Spacing="2" VerticalOptions="Center">
+                      <Label Text="{Binding Label}" FontSize="14" FontAttributes="Bold" TextColor="{StaticResource TextPrimary}" LineBreakMode="TailTruncation">
+                        <Label.Triggers>
+                          <DataTrigger TargetType="Label" Binding="{Binding Id}" Value="Lobby">
+                            <Setter Property="TextColor" Value="{StaticResource PrimaryStart}" />
+                          </DataTrigger>
+                        </Label.Triggers>
+                      </Label>
+                      <Label Text="Tap to open" FontSize="11" TextColor="{StaticResource TextSecondary}" />
+                    </VerticalStackLayout>
 
-                <!-- Unread badge -->
-                <Border Grid.Column="2"
-                        BackgroundColor="#CCFF3B30"
-                        Padding="6,2"
-                        StrokeThickness="0"
-                        HorizontalOptions="End"
-                        VerticalOptions="Center"
-                        IsVisible="True">
-                  <Border.Triggers>
-                    <DataTrigger TargetType="Border" Binding="{Binding Unread}" Value="0">
-                      <Setter Property="IsVisible" Value="False" />
-                    </DataTrigger>
-                  </Border.Triggers>
-                  <Label Text="{Binding Unread}" FontAttributes="Bold" FontSize="12" />
+                    <!-- Unread -->
+                    <Border Grid.Column="2" Style="{StaticResource Pill}" VerticalOptions="Center" IsVisible="True">
+                      <Border.Triggers>
+                        <DataTrigger TargetType="Border" Binding="{Binding Unread}" Value="0">
+                          <Setter Property="IsVisible" Value="False" />
+                        </DataTrigger>
+                      </Border.Triggers>
+                      <Label Text="{Binding Unread}" FontAttributes="Bold" FontSize="11" TextColor="White" />
+                    </Border>
+                  </Grid>
                 </Border>
-              </Grid>
-            </DataTemplate>
-          </CollectionView.ItemTemplate>
-        </CollectionView>
+              </DataTemplate>
+            </CollectionView.ItemTemplate>
+          </CollectionView>
+        </ScrollView>
       </VerticalStackLayout>
     </Border>
 
     <!-- MIDDLE: Current conversation -->
-    <Grid Grid.Column="1" Padding="16">
+    <Grid Grid.Column="1" Margin="0" RowSpacing="0">
       <Grid.RowDefinitions>
+        <RowDefinition Height="Auto" />
         <RowDefinition Height="*" />
         <RowDefinition Height="Auto" />
       </Grid.RowDefinitions>
 
-      <CollectionView Grid.Row="0" ItemsSource="{Binding CurrentChatMessages}">
-        <CollectionView.ItemTemplate>
-          <DataTemplate>
-            <Label Text="{Binding .}" LineBreakMode="WordWrap" Margin="0,2"/>
-          </DataTemplate>
-        </CollectionView.ItemTemplate>
-      </CollectionView>
+      <!-- Chat header -->
+      <Border Grid.Row="0" Style="{StaticResource Card}" Padding="20,16" Margin="0,0,12,12">
+        <HorizontalStackLayout Spacing="12">
+          <Border WidthRequest="40" HeightRequest="40" StrokeThickness="0" Background="{StaticResource HeaderBrush}">
+            <Border.StrokeShape>
+              <RoundRectangle CornerRadius="20" />
+            </Border.StrokeShape>
+            <Label Text="💬" FontSize="18" HorizontalOptions="Center" VerticalOptions="Center"
+                   HorizontalTextAlignment="Center" VerticalTextAlignment="Center" />
+          </Border>
+          <VerticalStackLayout Spacing="2" VerticalOptions="Center">
+            <Label Text="{Binding SelectedChat.Label, FallbackValue='Select a chat'}"
+                   FontSize="16" FontAttributes="Bold" TextColor="{StaticResource TextPrimary}" />
+            <HorizontalStackLayout Spacing="8">
+              <Label Text="Messages" FontSize="12" TextColor="{StaticResource TextSecondary}" />
+              <Border Style="{StaticResource Pill}" Padding="8,2" VerticalOptions="Center">
+                <Label Text="{Binding CurrentChatMessages.Count, StringFormat='{0}'}"
+                       FontSize="11" FontAttributes="Bold" TextColor="White" />
+              </Border>
+            </HorizontalStackLayout>
+          </VerticalStackLayout>
+        </HorizontalStackLayout>
+      </Border>
 
-      <Grid Grid.Row="1" ColumnSpacing="8" Padding="0,12,0,0">
-        <Grid.ColumnDefinitions>
-          <ColumnDefinition Width="*" />
-          <ColumnDefinition Width="Auto" />
-        </Grid.ColumnDefinitions>
+      <!-- Messages area -->
+      <Border Grid.Row="1" Style="{StaticResource Card}" Padding="16,12" Margin="0,0,12,12">
+        <ScrollView>
+          <CollectionView ItemsSource="{Binding CurrentChatMessages}">
+            <CollectionView.ItemsLayout>
+              <LinearItemsLayout Orientation="Vertical" ItemSpacing="10" />
+            </CollectionView.ItemsLayout>
+            <CollectionView.ItemTemplate>
+              <DataTemplate>
+                <!-- Single bubble -->
+                <Border BackgroundColor="{StaticResource BubbleBg}" Padding="14,10" Stroke="{StaticResource StrokeIdle}" StrokeThickness="1">
+                  <Border.StrokeShape>
+                    <RoundRectangle CornerRadius="12" />
+                  </Border.StrokeShape>
+                  <Border.Shadow>
+                    <Shadow Opacity="0.15" Radius="10" Offset="0,4" />
+                  </Border.Shadow>
+                  <Label Text="{Binding .}" LineBreakMode="WordWrap" TextColor="{StaticResource TextPrimary}" FontSize="14" />
+                </Border>
+              </DataTemplate>
+            </CollectionView.ItemTemplate>
+          </CollectionView>
+        </ScrollView>
+      </Border>
 
-        <Entry x:Name="MessageEntry"
-               Grid.Column="0"
-               Placeholder="{Binding MessagePlaceholder}"
-               Text="{Binding OutgoingMessage}"
-               Keyboard="Chat"
-               ReturnType="Send" />
+      <!-- Composer -->
+      <Border Grid.Row="2" Style="{StaticResource Card}" Padding="16" Margin="0,0,12,0">
+        <Grid ColumnSpacing="10">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
+          </Grid.ColumnDefinitions>
 
-        <Button Grid.Column="1"
-                Text="Send"
-                Command="{Binding SendCommand}"
-                IsEnabled="{Binding CanSend}" />
-      </Grid>
+          <Border Grid.Column="0" Style="{StaticResource FieldBorder}">
+            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8" VerticalOptions="Center">
+              <Label Grid.Column="0" Text="✍️" VerticalOptions="Center" />
+              <Entry Grid.Column="1"
+                     x:Name="MessageEntry"
+                     Placeholder="{Binding MessagePlaceholder}"
+                     Text="{Binding OutgoingMessage}"
+                     ReturnType="Send"
+                     TextColor="{StaticResource TextPrimary}"
+                     PlaceholderColor="{StaticResource TextSecondary}"
+                     BackgroundColor="Transparent" />
+            </Grid>
+          </Border>
+
+          <Button Grid.Column="1"
+                  Text="Send"
+                  Command="{Binding SendCommand}"
+                  IsEnabled="{Binding CanSend}"
+                  Style="{StaticResource PrimaryBtn}"
+                  WidthRequest="110" />
+        </Grid>
+      </Border>
     </Grid>
 
-    <!-- RIGHT: People (online + offline) -->
-    <Border Grid.Column="2" StrokeThickness="0"
-            BackgroundColor="{AppThemeBinding Light=#F5F5F7, Dark=#1E1E1E}">
-      <VerticalStackLayout Padding="16" Spacing="8">
-        <Label Text="{Binding User, StringFormat='Chatting as: {0}'}"
-               FontSize="14"
-               FontAttributes="Italic"
-               TextColor="Gray"
-               Margin="0,0,0,6" />
-
-        <HorizontalStackLayout Spacing="8" Margin="0,8,0,8">
-          <Label Text="My status:" VerticalTextAlignment="Center"/>
-          <Picker WidthRequest="160" SelectedIndexChanged="OnMyStatusChanged">
-            <Picker.Items>
-              <x:String>Online</x:String>
-              <x:String>Away</x:String>
-              <x:String>Busy</x:String>
-            </Picker.Items>
-          </Picker>
-        </HorizontalStackLayout>
-
-        <Label Text="People" FontAttributes="Bold" />
-
-        <HorizontalStackLayout Spacing="12">
-          <Label Text="{Binding People.Count, StringFormat='Total: {0}'}" FontSize="12" TextColor="Gray" />
-          <Label Text="{Binding OnlineUsers.Count, StringFormat='Online: {0}'}" FontSize="12" TextColor="Gray" />
-          <Label Text="{Binding OfflineCount, StringFormat='Offline: {0}'}" FontSize="12" TextColor="Gray" />
-        </HorizontalStackLayout>
-
-        <!-- Add x:Name so code-behind can reference PeopleList -->
-        <CollectionView x:Name="PeopleList"
-                        ItemsSource="{Binding People}"
-                        SelectionMode="Single">
-          <CollectionView.ItemTemplate>
-            <DataTemplate>
-              <Grid Padding="0,6">
-                <Grid.ColumnDefinitions>
-                  <ColumnDefinition Width="Auto"/>
-                  <ColumnDefinition Width="*" />
-                </Grid.ColumnDefinitions>
-
-                <!-- Presence dot by Status -->
-                <Ellipse WidthRequest="10" HeightRequest="10" VerticalOptions="Center">
-                  <Ellipse.Triggers>
-                    <DataTrigger TargetType="Ellipse" Binding="{Binding Status}" Value="{x:Static models:PresenceStatus.Busy}">
-                      <Setter Property="Fill" Value="#FF3B30" />
-                    </DataTrigger>
-                    <DataTrigger TargetType="Ellipse" Binding="{Binding Status}" Value="{x:Static models:PresenceStatus.Away}">
-                      <Setter Property="Fill" Value="#FFCC00" />
-                    </DataTrigger>
-                    <DataTrigger TargetType="Ellipse" Binding="{Binding Status}" Value="{x:Static models:PresenceStatus.Online}">
-                      <Setter Property="Fill" Value="LimeGreen" />
-                    </DataTrigger>
-                    <DataTrigger TargetType="Ellipse" Binding="{Binding Status}" Value="{x:Static models:PresenceStatus.Offline}">
-                      <Setter Property="Fill" Value="#9E9E9E" />
-                    </DataTrigger>
-                  </Ellipse.Triggers>
-                </Ellipse>
-
-                <Label Grid.Column="1" Text="{Binding Name}" Margin="8,0,0,0" />
+    <!-- RIGHT: People panel -->
+    <Border Grid.Column="2" Style="{StaticResource Card}">
+      <VerticalStackLayout Spacing="0">
+        <!-- User header -->
+        <Border Padding="20,22" StrokeThickness="0" Background="{StaticResource HeaderBrush}">
+          <VerticalStackLayout Spacing="14">
+            <Label Text="{Binding User, StringFormat='👤 {0}'}"
+                   FontSize="16" FontAttributes="Bold" TextColor="White" />
+            <!-- Status picker -->
+            <Border BackgroundColor="White" Padding="10,8" StrokeThickness="0">
+              <Border.StrokeShape>
+                <RoundRectangle CornerRadius="10" />
+              </Border.StrokeShape>
+              <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+                <Label Grid.Column="0" Text="Status:" VerticalOptions="Center" TextColor="#374151" FontSize="14" FontAttributes="Bold" />
+                <Picker Grid.Column="1"
+                        SelectedIndexChanged="OnMyStatusChanged"
+                        TextColor="#374151"
+                        FontSize="14"
+                        BackgroundColor="Transparent">
+                  <Picker.Items>
+                    <x:String>Online</x:String>
+                    <x:String>Away</x:String>
+                    <x:String>Busy</x:String>
+                  </Picker.Items>
+                </Picker>
               </Grid>
-            </DataTemplate>
-          </CollectionView.ItemTemplate>
-        </CollectionView>
+            </Border>
+          </VerticalStackLayout>
+        </Border>
+
+        <!-- People -->
+        <VerticalStackLayout Padding="16,16" Spacing="12">
+          <Label Text="👥 People" FontSize="16" FontAttributes="Bold" TextColor="{StaticResource TextPrimary}" />
+
+          <!-- Stats -->
+          <Grid ColumnDefinitions="*,*,*" ColumnSpacing="8">
+            <Border Grid.Column="0" BackgroundColor="#082638" Padding="10,12" StrokeThickness="0">
+              <Border.StrokeShape><RoundRectangle CornerRadius="10" /></Border.StrokeShape>
+              <VerticalStackLayout Spacing="2">
+                <Label Text="{Binding People.Count}" FontSize="18" FontAttributes="Bold" TextColor="#6EE7F9" HorizontalOptions="Center" />
+                <Label Text="Total" FontSize="11" TextColor="#8ECDED" HorizontalOptions="Center" />
+              </VerticalStackLayout>
+            </Border>
+            <Border Grid.Column="1" BackgroundColor="#052A22" Padding="10,12" StrokeThickness="0">
+              <Border.StrokeShape><RoundRectangle CornerRadius="10" /></Border.StrokeShape>
+              <VerticalStackLayout Spacing="2">
+                <Label Text="{Binding OnlineUsers.Count}" FontSize="18" FontAttributes="Bold" TextColor="#34D399" HorizontalOptions="Center" />
+                <Label Text="Online" FontSize="11" TextColor="#6EE7C1" HorizontalOptions="Center" />
+              </VerticalStackLayout>
+            </Border>
+            <Border Grid.Column="2" BackgroundColor="#1B2432" Padding="10,12" StrokeThickness="0">
+              <Border.StrokeShape><RoundRectangle CornerRadius="10" /></Border.StrokeShape>
+              <VerticalStackLayout Spacing="2">
+                <Label Text="{Binding OfflineCount}" FontSize="18" FontAttributes="Bold" TextColor="#9CA3AF" HorizontalOptions="Center" />
+                <Label Text="Offline" FontSize="11" TextColor="#9CA3AF" HorizontalOptions="Center" />
+              </VerticalStackLayout>
+            </Border>
+          </Grid>
+
+          <!-- People list -->
+          <ScrollView>
+            <CollectionView x:Name="PeopleList" ItemsSource="{Binding People}" SelectionMode="Single">
+              <CollectionView.ItemTemplate>
+                <DataTemplate>
+                  <Border BackgroundColor="{StaticResource PanelBg}" Padding="12,10" Margin="0,0,0,10" StrokeThickness="1" Stroke="{StaticResource StrokeIdle}">
+                    <Border.StrokeShape><RoundRectangle CornerRadius="12" /></Border.StrokeShape>
+                    <Grid ColumnSpacing="12">
+                      <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*" />
+                      </Grid.ColumnDefinitions>
+
+                      <!-- Status indicator -->
+                      <Border Grid.Column="0" WidthRequest="32" HeightRequest="32" StrokeThickness="2" Stroke="{StaticResource CardBg}" VerticalOptions="Center">
+                        <Border.StrokeShape><RoundRectangle CornerRadius="16" /></Border.StrokeShape>
+                        <Ellipse WidthRequest="28" HeightRequest="28">
+                          <Ellipse.Triggers>
+                            <DataTrigger TargetType="Ellipse" Binding="{Binding Status}" Value="{x:Static models:PresenceStatus.Busy}">
+                              <Setter Property="Fill" Value="#DC2626" />
+                            </DataTrigger>
+                            <DataTrigger TargetType="Ellipse" Binding="{Binding Status}" Value="{x:Static models:PresenceStatus.Away}">
+                              <Setter Property="Fill" Value="#F59E0B" />
+                            </DataTrigger>
+                            <DataTrigger TargetType="Ellipse" Binding="{Binding Status}" Value="{x:Static models:PresenceStatus.Online}">
+                              <Setter Property="Fill" Value="#10B981" />
+                            </DataTrigger>
+                            <DataTrigger TargetType="Ellipse" Binding="{Binding Status}" Value="{x:Static models:PresenceStatus.Offline}">
+                              <Setter Property="Fill" Value="#6B7280" />
+                            </DataTrigger>
+                          </Ellipse.Triggers>
+                        </Ellipse>
+                      </Border>
+
+                      <VerticalStackLayout Grid.Column="1" Spacing="2" VerticalOptions="Center">
+                        <Label Text="{Binding Name}" FontSize="14" FontAttributes="Bold" TextColor="{StaticResource TextPrimary}" />
+                        <Label FontSize="12" TextColor="{StaticResource TextSecondary}">
+                          <Label.Triggers>
+                            <DataTrigger TargetType="Label" Binding="{Binding Status}" Value="{x:Static models:PresenceStatus.Busy}">
+                              <Setter Property="Text" Value="Busy" />
+                            </DataTrigger>
+                            <DataTrigger TargetType="Label" Binding="{Binding Status}" Value="{x:Static models:PresenceStatus.Away}">
+                              <Setter Property="Text" Value="Away" />
+                            </DataTrigger>
+                            <DataTrigger TargetType="Label" Binding="{Binding Status}" Value="{x:Static models:PresenceStatus.Online}">
+                              <Setter Property="Text" Value="Online" />
+                            </DataTrigger>
+                            <DataTrigger TargetType="Label" Binding="{Binding Status}" Value="{x:Static models:PresenceStatus.Offline}">
+                              <Setter Property="Text" Value="Offline" />
+                            </DataTrigger>
+                          </Label.Triggers>
+                        </Label>
+                      </VerticalStackLayout>
+                    </Grid>
+                  </Border>
+                </DataTemplate>
+              </CollectionView.ItemTemplate>
+            </CollectionView>
+          </ScrollView>
+        </VerticalStackLayout>
       </VerticalStackLayout>
     </Border>
   </Grid>
