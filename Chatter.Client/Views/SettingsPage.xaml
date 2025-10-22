@@ -9,7 +9,10 @@
 
   <VerticalStackLayout Padding="24" Spacing="14">
     <Label Text="Display name" />
-    <Entry Text="{Binding DisplayName}" Placeholder="Your name" />
+    <Entry Text="{Binding DisplayName}"
+           Placeholder="Your name"
+           ReturnType="Done"
+           ReturnCommand="{Binding SaveCommand}" />
     <Button Text="Save" Command="{Binding SaveCommand}" />
   </VerticalStackLayout>
 

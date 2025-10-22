@@ -1,4 +1,6 @@
-// Services/ChatService.cs
+using System;
+using System.Collections.Generic;
+using System.Threading.Tasks;
 using Microsoft.AspNetCore.SignalR.Client;
 
 namespace Chatter.Client.Services;
@@ -8,7 +10,10 @@ public class ChatService
     private readonly SupabaseAuthService _auth;
     private HubConnection? _conn;
 
-    // Legacy global (optional)
+    // Renames (others)
+    public event Action<string, string>? OtherDisplayNameChanged;
+
+    // Optional legacy global broadcast
     public event Action<string, string>? MessageReceived;
 
     // Lists & rosters
@@ -16,7 +21,7 @@ public class ChatService
     public event Action<IReadOnlyList<string>>? ChatsForMeUpdated;
     public event Action<IReadOnlyList<string>>? ChatsUpdated;
 
-    // Per-chat messaging
+    // Per-chat messages
     public event Action<string, string, string>? ChatMessageReceived; // (chatId, user, msg)
 
     // DMs
@@ -25,10 +30,38 @@ public class ChatService
 
     private const string LobbyId = "Lobby";
 
+    // Aliases snapshot (oldName -> latestName), if server supports
+    public event Action<Dictionary<string, string>>? NameAliasesReceived;
+
+    // Presence
+    // A snapshot/delta from server: displayName -> "online|away|busy|offline"
+    public event Action<Dictionary<string, string>>? StatusesUpdated;
+    // A single-user change push (optional)
+    public event Action<string, string>? StatusChanged;
+
     public Func<string?>? OnGetCurrentDisplayName { get; set; }
     public bool IsConnected => _conn?.State == HubConnectionState.Connected;
 
     public ChatService(SupabaseAuthService auth) => _auth = auth;
+
+    // --- Presence APIs ---
+    public Task SetStatusAsync(string status) =>
+        _conn?.SendAsync("SetStatus", status) ?? Task.CompletedTask;
+
+    public async Task<Dictionary<string, string>> GetStatusesAsync()
+    {
+        if (_conn is null) return new();
+        var dict = await _conn.InvokeAsync<Dictionary<string, string>>("GetStatuses");
+        return dict ?? new();
+    }
+
+    // --- Aliases API (optional, if server supports) ---
+    public async Task<Dictionary<string, string>> GetNameAliasesAsync()
+    {
+        if (_conn is null) return new();
+        var dict = await _conn.InvokeAsync<Dictionary<string, string>>("GetNameAliases");
+        return dict ?? new();
+    }
 
     public async Task StartAsync(string baseUrl)
     {
@@ -40,16 +73,27 @@ public class ChatService
             .WithAutomaticReconnect()
             .Build();
 
+        // ----- Presence pushes -----
+        // Server can push a batch map under "Statuses"
+        _conn.On<Dictionary<string, string>>("Statuses", dict =>
+            StatusesUpdated?.Invoke(dict ?? new()));
+
+        // Or a single change
+        _conn.On<string, string>("StatusChanged", (displayName, status) =>
+            StatusChanged?.Invoke(displayName, status));
+
         // ----- Legacy broadcast (optional) -----
         _conn.On<string, string>("ReceiveMessage", (user, msg) =>
             MessageReceived?.Invoke(user, msg));
 
-        // ----- Name-change → route into Lobby -----
-        // Server may send either of these; we support both.
+        // ----- Name change notifications -----
         _conn.On<string, string>("DisplayNameChanged", (oldName, newName) =>
-        ChatMessageReceived?.Invoke(LobbyId, "system",
-        $"{oldName} changed their name to “{newName}”."));
+            ChatMessageReceived?.Invoke(LobbyId, "system",
+                $"{oldName} changed their name to “{newName}”."));
+        _conn.On<string, string>("DisplayNameChanged", (oldName, newName) =>
+            OtherDisplayNameChanged?.Invoke(oldName, newName));
 
+        // Optional lobby system message
         _conn.On<string>("LobbySystemMessage", text =>
             ChatMessageReceived?.Invoke(LobbyId, "system", text));
 
@@ -70,11 +114,10 @@ public class ChatService
         // ----- DM helpers -----
         _conn.On<string, string>("AddedChat", (chatId, fromUser) =>
             AddedChat?.Invoke(chatId, fromUser));
-
         _conn.On<string, string, string>("DmNotify", (chatId, fromUser, msg) =>
             DmNotify?.Invoke(chatId, fromUser, msg));
 
-        // ----- Reconnect: restore identity + refresh lists -----
+        // ----- Reconnect: restore identity + refresh lists + statuses + aliases -----
         _conn.Reconnected += async _ =>
         {
             try
@@ -83,11 +126,18 @@ public class ChatService
                 if (!string.IsNullOrWhiteSpace(name))
                     await SetDisplayNameAsync(name!);
 
-                var roster = await GetOnlineUsersAsync();
-                OnlineUsersUpdated?.Invoke(roster);
+                OnlineUsersUpdated?.Invoke(await GetOnlineUsersAsync());
+                ChatsForMeUpdated?.Invoke(await GetMyChatsAsync());
 
-                var myChats = await GetMyChatsAsync();
-                ChatsForMeUpdated?.Invoke(myChats);
+                var statuses = await GetStatusesAsync();
+                StatusesUpdated?.Invoke(statuses);
+
+                try
+                {
+                    var aliases = await GetNameAliasesAsync();
+                    NameAliasesReceived?.Invoke(aliases);
+                }
+                catch { /* optional */ }
             }
             catch
             {
@@ -98,12 +148,29 @@ public class ChatService
         // ----- Start + initial seed -----
         await _conn.StartAsync();
 
+        // (optional) server may push an initial "Statuses" event right after connect;
+        // but we proactively fetch a snapshot to be safe:
+        try
+        {
+            var statuses = await GetStatusesAsync();
+            StatusesUpdated?.Invoke(statuses);
+        }
+        catch { /* optional */ }
+
         var initialName = OnGetCurrentDisplayName?.Invoke();
         if (!string.IsNullOrWhiteSpace(initialName))
             await SetDisplayNameAsync(initialName!);
 
         OnlineUsersUpdated?.Invoke(await GetOnlineUsersAsync());
         ChatsForMeUpdated?.Invoke(await GetMyChatsAsync());
+
+        // Seed aliases (if supported)
+        try
+        {
+            var initialAliases = await GetNameAliasesAsync();
+            NameAliasesReceived?.Invoke(initialAliases);
+        }
+        catch { /* optional */ }
     }
 
     // ===== Global (legacy) =====

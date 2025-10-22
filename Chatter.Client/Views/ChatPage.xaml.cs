@@ -86,4 +86,20 @@ public partial class ChatPage : ContentPage
             vm.IsActive = false;
         base.OnDisappearing();
     }
+
+    private async void OnMyStatusChanged(object sender, EventArgs e)
+{
+    if (BindingContext is not ChatViewModel vm) return;
+    if (sender is not Picker p) return;
+
+    var sel = (p.SelectedIndex) switch
+    {
+        0 => PresenceStatus.Online,
+        1 => PresenceStatus.Away,
+        2 => PresenceStatus.Busy,
+        _ => PresenceStatus.Online
+    };
+
+    await vm.SetMyStatusCommand.ExecuteAsync(sel);
+}
 }

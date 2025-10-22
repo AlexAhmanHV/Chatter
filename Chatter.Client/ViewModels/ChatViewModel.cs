@@ -4,7 +4,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using CommunityToolkit.Mvvm.Messaging;
 using Chatter.Client.Messages;
-using Chatter.Client.Models;
+using Chatter.Client.Models;     // UserPresenceItem, PresenceStatus
 using Chatter.Client.Services;
 using Microsoft.Maui.ApplicationModel;
 using Microsoft.Maui.Controls;
@@ -25,73 +25,227 @@ public partial class ChatViewModel : ObservableObject
     [ObservableProperty] private string? outgoingMessage;
     [ObservableProperty] private string messagePlaceholder = "Type a message…";
 
-    // All known users with online/offline status
+    // RIGHT: roster (people + status)
     public ObservableCollection<UserPresenceItem> People { get; } = new();
 
-    // Tracks every user we've ever seen (online or via chats), case-insensitive
+    // Track directory of everyone we've encountered (DMs / roster), case-insensitive
     private readonly HashSet<string> _knownUsers = new(StringComparer.OrdinalIgnoreCase);
 
-    public bool CanSend => !string.IsNullOrWhiteSpace(OutgoingMessage) && SelectedChat != null;
+    // Locally hidden chats (UI-only remove)
+    private readonly HashSet<string> _hiddenChats = new(StringComparer.OrdinalIgnoreCase);
 
-    // Handy for the right panel counters (no XAML converter needed)
-    public int OfflineCount => Math.Max(0, People.Count - OnlineUsers.Count);
+    // Presence cache: canonical name -> status
+    private readonly Dictionary<string, PresenceStatus> _statusByName = new(StringComparer.OrdinalIgnoreCase);
 
     // whether ChatPage is currently visible
     [ObservableProperty] private bool isActive;
 
-    // RIGHT: roster (legacy list you still reference)
-    public ObservableCollection<string> OnlineUsers { get; } = new();
-
-    // LEFT: chats list + selected chat (ChatItem for unread badges)
+    // LEFT: chats
     public ObservableCollection<ChatItem> Chats { get; } = new();
     [ObservableProperty] private ChatItem? selectedChat;
 
-    // MIDDLE: messages for selected chat
+    // MIDDLE: current chat messages
     public ObservableCollection<string> CurrentChatMessages { get; } = new();
 
     // Per-chat message buffers
     private readonly Dictionary<string, ObservableCollection<string>> _chatMessages =
         new(StringComparer.OrdinalIgnoreCase);
 
-    // Legacy global broadcast (optional)
+    // Optional legacy broadcast
     public ObservableCollection<string> Messages { get; } = new();
+
+    // Quick legacy list of online names (canonical)
+    public ObservableCollection<string> OnlineUsers { get; } = new();
+
+    // UI helpers
+    public bool CanSend => !string.IsNullOrWhiteSpace(OutgoingMessage) && SelectedChat != null;
+    public int OfflineCount => Math.Max(0, People.Count - OnlineUsers.Count);
 
     public IAsyncRelayCommand ConnectCommand { get; }
     public IAsyncRelayCommand SendCommand { get; }
     public IAsyncRelayCommand<string> StartDmCommand { get; }
+    public IRelayCommand<ChatItem> DeleteChatCommand { get; }
 
     // ---- Draft helpers ----
     private static bool IsDraftId(string id) => id.StartsWith("draft:", StringComparison.OrdinalIgnoreCase);
     private static string DraftOf(string other) => $"draft:{other}";
     private static string DraftLabel(string other) => $"{other} (draft)";
 
-    // Keep CanSend in sync with text changes
+    // ---- Name aliasing & history ----
+    private static readonly StringComparer Ci = StringComparer.OrdinalIgnoreCase;
+
+    // old -> newer (may chain)
+    private readonly Dictionary<string, string> _nameAliases = new(StringComparer.OrdinalIgnoreCase);
+
+    // canonical current name -> list of previous names (for "Alex (Alexander, Alexa)")
+    private readonly Dictionary<string, List<string>> _aliasHistoryByCurrent =
+        new(StringComparer.OrdinalIgnoreCase);
+
+    private List<string> GetHistoryList(string current)
+    {
+        if (!_aliasHistoryByCurrent.TryGetValue(current, out var list))
+        {
+            list = new List<string>();
+            _aliasHistoryByCurrent[current] = list;
+        }
+        return list;
+    }
+
+    // If you expose status control in UI
+    [ObservableProperty] private PresenceStatus myStatus = PresenceStatus.Online;
+    public IAsyncRelayCommand<PresenceStatus> SetMyStatusCommand { get; }
+
+    private static PresenceStatus ParseStatus(string s) => (s ?? "").ToLowerInvariant() switch
+    {
+        "busy" => PresenceStatus.Busy,
+        "away" => PresenceStatus.Away,
+        "online" => PresenceStatus.Online,
+        _ => PresenceStatus.Offline
+    };
+    private static string StatusToWire(PresenceStatus s) => s switch
+    {
+        PresenceStatus.Busy => "busy",
+        PresenceStatus.Away => "away",
+        PresenceStatus.Online => "online",
+        _ => "offline"
+    };
+
+    // Canonical resolver with path compression
+    private string Canon(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return name;
+
+        string cur = name;
+        var seen = new HashSet<string>(Ci) { cur };
+
+        while (_nameAliases.TryGetValue(cur, out var next) && !Ci.Equals(next, cur) && !seen.Contains(next))
+        {
+            seen.Add(next);
+            cur = next;
+        }
+        foreach (var s in seen) _nameAliases[s] = cur;
+        return cur;
+    }
+
+    private string ResolveName(string name) => Canon(name);
+
+    private string FormatNameWithAliases(string anyName)
+    {
+        var current = Canon(anyName);
+        if (_aliasHistoryByCurrent.TryGetValue(current, out var hist) && hist.Count > 0)
+        {
+            var previous = hist.Where(n => !Ci.Equals(n, current)).Distinct(Ci).ToList();
+            return previous.Count > 0 ? $"{current} ({string.Join(", ", previous)})" : current;
+        }
+        return current;
+    }
+
+    private void RenameKnownUser(string oldName, string newName)
+    {
+        if (Ci.Equals(oldName, newName)) return;
+
+        var oldCur = Canon(oldName);
+        var newCur = Canon(newName);
+        if (Ci.Equals(oldCur, newCur)) return;
+
+        _nameAliases[oldCur] = newCur;
+
+        // Merge history buckets (+include old canonical)
+        var oldHist = _aliasHistoryByCurrent.TryGetValue(oldCur, out var oh) ? oh : new List<string>();
+        var newHist = _aliasHistoryByCurrent.TryGetValue(newCur, out var nh) ? nh : new List<string>();
+        foreach (var s in oldHist) if (!newHist.Any(x => Ci.Equals(x, s))) newHist.Add(s);
+        if (!newHist.Any(x => Ci.Equals(x, oldCur))) newHist.Add(oldCur);
+        _aliasHistoryByCurrent[newCur] = newHist;
+        _aliasHistoryByCurrent.Remove(oldCur);
+
+        // Directory swap
+        if (_knownUsers.RemoveWhere(n => Ci.Equals(Canon(n), oldCur)) > 0)
+            _knownUsers.Add(newCur);
+
+        // Remove any People entries backed by the old canonical; they’ll get re-added
+        for (int i = People.Count - 1; i >= 0; i--)
+            if (Ci.Equals(Canon(People[i].Name), oldCur))
+                People.RemoveAt(i);
+
+        // Move status
+        if (_statusByName.Remove(oldCur, out var st))
+            _statusByName[newCur] = st;
+
+        NormalizeKnownUsers();
+        RecomputePeople(OnlineUsers);
+
+        // Fix DM labels
+        foreach (var chat in Chats)
+            if (chat.Id.StartsWith("dm:", StringComparison.OrdinalIgnoreCase))
+                chat.Label = ComputeChatLabel(chat.Id);
+
+        UpdateMessagePlaceholder();
+    }
+
+    // Keep CanSend reactive to text changes
     partial void OnOutgoingMessageChanged(string? value) => OnPropertyChanged(nameof(CanSend));
 
     public ChatViewModel(ChatService chat)
     {
         _chat = chat;
 
-        // keep OfflineCount in sync with the collections
         People.CollectionChanged += (_, __) => OnPropertyChanged(nameof(OfflineCount));
         OnlineUsers.CollectionChanged += (_, __) => OnPropertyChanged(nameof(OfflineCount));
 
-        // ===== Legacy broadcasts =====
+        // Others rename → collapse aliases
+        _chat.OtherDisplayNameChanged += (oldName, newName) =>
+            MainThread.BeginInvokeOnMainThread(() => RenameKnownUser(oldName, newName));
+
+        // Optional: server sends alias map snapshot
+        _chat.NameAliasesReceived += dict =>
+        {
+            if (dict is null || dict.Count == 0) return;
+            MainThread.BeginInvokeOnMainThread(() =>
+            {
+                foreach (var kv in dict)
+                {
+                    var oldCur = Canon(kv.Key);
+                    var newCur = Canon(kv.Value);
+                    if (!Ci.Equals(oldCur, newCur))
+                        _nameAliases[oldCur] = newCur;
+                }
+                NormalizeKnownUsers();
+                RecomputePeople(OnlineUsers);
+                foreach (var chat in Chats)
+                    if (chat.Id.StartsWith("dm:", StringComparison.OrdinalIgnoreCase))
+                        chat.Label = ComputeChatLabel(chat.Id);
+            });
+        };
+
+        // Statuses broadcast (name -> "online"/"away"/"busy"/"offline")
+        // If your ChatService exposes 'StatusesUpdated'
+        try
+        {
+            _chat.StatusesUpdated += dict =>
+                MainThread.BeginInvokeOnMainThread(() =>
+                {
+                    _statusByName.Clear();
+                    foreach (var kv in dict)
+                        _statusByName[Canon(kv.Key)] = ParseStatus(kv.Value);
+                    RecomputePeople(OnlineUsers);
+                });
+        }
+        catch { /* if not present, no-op */ }
+
+        // Legacy broadcast
         _chat.MessageReceived += (u, m) =>
             MainThread.BeginInvokeOnMainThread(() => Messages.Add($"{u}: {m}"));
 
-        // ===== Roster (online + offline) =====
+        // Roster
         _chat.OnlineUsersUpdated += onlineList =>
             MainThread.BeginInvokeOnMainThread(() =>
             {
-                // Track all we've seen
                 foreach (var n in onlineList)
-                    _knownUsers.Add(n);
-
+                    _knownUsers.Add(Canon(n));
                 RecomputePeople(onlineList);
             });
 
-        // ===== Chats list =====
+        // Chats list
         _chat.ChatsForMeUpdated += list =>
             MainThread.BeginInvokeOnMainThread(() =>
             {
@@ -99,11 +253,12 @@ public partial class ChatViewModel : ObservableObject
 
                 foreach (var id in list)
                 {
+                    if (_hiddenChats.Contains(id)) continue;
                     var item = EnsureChatItem(id);
                     item.Label = ComputeChatLabel(id);
                 }
 
-                // keep local drafts even if server doesn't know them yet
+                // drop chats that server no longer lists (keep drafts)
                 for (int i = Chats.Count - 1; i >= 0; i--)
                 {
                     var cid = Chats[i].Id;
@@ -112,7 +267,7 @@ public partial class ChatViewModel : ObservableObject
                         Chats.RemoveAt(i);
                 }
 
-                // 🔝 keep Lobby at index 0
+                // keep Lobby on top
                 var lobby = Chats.FirstOrDefault(c => c.Id.Equals("Lobby", StringComparison.OrdinalIgnoreCase));
                 if (lobby is not null && Chats.IndexOf(lobby) != 0)
                     Chats.Move(Chats.IndexOf(lobby), 0);
@@ -123,15 +278,20 @@ public partial class ChatViewModel : ObservableObject
                 UpdateMessagePlaceholder();
             });
 
-        // ===== Messages from joined groups =====
+        // Messages from joined chats
         _chat.ChatMessageReceived += (chatId, u, m) =>
             MainThread.BeginInvokeOnMainThread(() =>
             {
+                // Unhide on activity
+                if (_hiddenChats.Remove(chatId))
+                {
+                    var unhidden = EnsureChatItem(chatId);
+                    unhidden.Label = ComputeChatLabel(chatId);
+                }
+
                 var line = string.Equals(u, "system", StringComparison.OrdinalIgnoreCase) ? m : $"{u}: {m}";
 
-                // de-dupe guard
-                if (_lastLineByChat.TryGetValue(chatId, out var last) && last == line)
-                    return;
+                if (_lastLineByChat.TryGetValue(chatId, out var last) && last == line) return;
                 _lastLineByChat[chatId] = line;
 
                 if (!_chatMessages.TryGetValue(chatId, out var list))
@@ -140,49 +300,41 @@ public partial class ChatViewModel : ObservableObject
 
                 bool isViewingThis = IsActive && SelectedChat?.Id == chatId;
 
-                if (isViewingThis)
-                {
-                    CurrentChatMessages.Add(line);
-                }
-                else
-                {
-                    EnsureChatItem(chatId).Unread++;
-                }
+                if (isViewingThis) CurrentChatMessages.Add(line);
+                else EnsureChatItem(chatId).Unread++;
             });
 
-        // ===== Recipient gets a new chat created but not opened =====
-        // Only relevant for the *recipient*. The sender already has a draft swapped to real.
+        // New chat created (recipient)
         _chat.AddedChat += (chatId, fromUser) =>
             MainThread.BeginInvokeOnMainThread(() =>
             {
-                // 1) Ignore the echo on the sender's client
-                if (string.Equals(fromUser, User, StringComparison.OrdinalIgnoreCase))
-                    return;
+                if (Ci.Equals(fromUser, User)) return;
+                if (_hiddenChats.Contains(chatId)) return;
 
-                // 2) If we already have this chat (e.g., draft was swapped), don't create/overwrite labels
                 var existing = Chats.FirstOrDefault(c => c.Id.Equals(chatId, StringComparison.OrdinalIgnoreCase));
                 if (existing is not null)
                 {
-                    // Ensure label is correct (other participant), not 'fromUser'
                     existing.Label = ComputeChatLabel(chatId);
                     return;
                 }
 
-                // 3) Create the item for the recipient, label via chat id logic
                 var item = EnsureChatItem(chatId);
                 item.Label = ComputeChatLabel(chatId);
-                // no unread bump (no message yet)
             });
 
-        // ===== Recipient gets a DM message (not in group yet) =====
+        // DM notify (recipient not in group)
         _chat.DmNotify += (chatId, fromUser, msg) =>
             MainThread.BeginInvokeOnMainThread(() =>
             {
+                if (_hiddenChats.Remove(chatId))
+                {
+                    var unhidden = EnsureChatItem(chatId);
+                    unhidden.Label = ComputeChatLabel(chatId);
+                }
+
                 var line = $"{fromUser}: {msg}";
 
-                // de-dupe guard
-                if (_lastLineByChat.TryGetValue(chatId, out var last) && last == line)
-                    return;
+                if (_lastLineByChat.TryGetValue(chatId, out var last) && last == line) return;
                 _lastLineByChat[chatId] = line;
 
                 if (!_chatMessages.TryGetValue(chatId, out var list))
@@ -191,29 +343,24 @@ public partial class ChatViewModel : ObservableObject
 
                 bool isViewingThis = IsActive && SelectedChat?.Id == chatId;
 
-                if (isViewingThis)
-                {
-                    CurrentChatMessages.Add(line);
-                }
-                else
-                {
-                    EnsureChatItem(chatId).Unread++;
-                }
+                if (isViewingThis) CurrentChatMessages.Add(line);
+                else EnsureChatItem(chatId).Unread++;
             });
 
-        // ===== Settings → display name changed =====
+        // Self: display name changed
         WeakReferenceMessenger.Default.Register<DisplayNameChangedMessage>(this, async (_, msg) =>
         {
+            var oldName = User;
             User = msg.Value;
-            try { await _chat.ChangeDisplayNameAsync(User); } catch { /* noop */ }
 
-            // Recompute labels for all chats (our identity changed)
+            try { await _chat.ChangeDisplayNameAsync(User); } catch { /* ignore */ }
+
             foreach (var chatItem in Chats)
-            {
                 chatItem.Label = ComputeChatLabel(chatItem.Id);
-            }
 
-            // And refresh the input placeholder once
+            if (!string.IsNullOrWhiteSpace(oldName) && !Ci.Equals(oldName, User))
+                RenameKnownUser(oldName, User);
+
             UpdateMessagePlaceholder();
         });
 
@@ -222,14 +369,16 @@ public partial class ChatViewModel : ObservableObject
         ConnectCommand = new AsyncRelayCommand(ConnectAsync);
         SendCommand = new AsyncRelayCommand(SendAsync);
         StartDmCommand = new AsyncRelayCommand<string>(StartDmAsync);
+        DeleteChatCommand = new RelayCommand<ChatItem>(DeleteChat);
+        SetMyStatusCommand = new AsyncRelayCommand<PresenceStatus>(SetMyStatusAsync);
     }
 
-    // Compute a nice label for each chat (Lobby or the "other user" for DMs)
+    // Labels for chats
     private string ComputeChatLabel(string chatId)
     {
         if (IsDraftId(chatId))
         {
-            var other = chatId.Substring("draft:".Length);
+            var other = ResolveName(chatId.Substring("draft:".Length));
             return DraftLabel(other);
         }
 
@@ -238,14 +387,14 @@ public partial class ChatViewModel : ObservableObject
 
         if (chatId.StartsWith("dm:", StringComparison.OrdinalIgnoreCase))
         {
-            // dm:Alice|Bob → show the other participant (not me)
             var body = chatId.Substring(3);
             var parts = body.Split('|');
-            var other = parts.FirstOrDefault(p => !p.Equals(User, StringComparison.OrdinalIgnoreCase));
-            return other ?? chatId;
+            var meCanon = Canon(User);
+            var other = parts.FirstOrDefault(p => !Ci.Equals(Canon(p), meCanon));
+            return other is null ? chatId : FormatNameWithAliases(other);
         }
 
-        return chatId; // fallback
+        return chatId;
     }
 
     private ChatItem EnsureChatItem(string chatId)
@@ -253,24 +402,21 @@ public partial class ChatViewModel : ObservableObject
         var item = Chats.FirstOrDefault(c => c.Id.Equals(chatId, StringComparison.OrdinalIgnoreCase));
         if (item is null)
         {
-            item = new ChatItem(chatId);
-            item.Label = ComputeChatLabel(chatId);
+            item = new ChatItem(chatId) { Label = ComputeChatLabel(chatId) };
             Chats.Add(item);
         }
         return item;
     }
 
-    // swap a local draft item for a real channel id (and migrate buffers)
+    // Swap draft -> real chat
     private void SwapDraftToReal(string draftId, string realChatId)
     {
-        // Move message buffer (if any)
         if (_chatMessages.TryGetValue(draftId, out var draftMsgs))
         {
             _chatMessages[realChatId] = draftMsgs;
             _chatMessages.Remove(draftId);
         }
 
-        // Replace item in Chats (assume ChatItem.Id is read-only)
         var draftItem = Chats.FirstOrDefault(c => c.Id.Equals(draftId, StringComparison.OrdinalIgnoreCase));
         if (draftItem != null)
         {
@@ -282,7 +428,6 @@ public partial class ChatViewModel : ObservableObject
         }
         else
         {
-            // If somehow missing, just ensure and select
             var newItem = EnsureChatItem(realChatId);
             newItem.Label = ComputeChatLabel(realChatId);
             SelectedChat = newItem;
@@ -291,28 +436,22 @@ public partial class ChatViewModel : ObservableObject
         RefreshVisibleChat();
     }
 
-    // Called when user selects a chat
+    // When selection changes
     partial void OnSelectedChatChanged(ChatItem? value)
     {
         RefreshVisibleChat();
         UpdateMessagePlaceholder();
 
-        // Let the UI re-check CanSend whenever selection changes
         OnPropertyChanged(nameof(CanSend));
 
-        if (value is not null)
+        if (value is not null && !value.Id.StartsWith("draft:", StringComparison.OrdinalIgnoreCase))
         {
-            // Do not join drafts; there's no server channel yet
-            if (!value.Id.StartsWith("draft:", StringComparison.OrdinalIgnoreCase))
-            {
-                _ = _chat.JoinChatAsync(value.Id);
-            }
+            _ = _chat.JoinChatAsync(value.Id);
         }
     }
 
     private void UpdateMessagePlaceholder()
     {
-        // Default when nothing is selected
         if (SelectedChat is null)
         {
             MessagePlaceholder = "Type a message…";
@@ -321,32 +460,29 @@ public partial class ChatViewModel : ObservableObject
 
         var id = SelectedChat.Id;
 
-        // LOBBY (custom phrasing)
         if (string.Equals(id, "Lobby", StringComparison.OrdinalIgnoreCase))
         {
             MessagePlaceholder = "Write a message in the lobby...";
             return;
         }
 
-        // DRAFT DM: draft:Other
         if (id.StartsWith("draft:", StringComparison.OrdinalIgnoreCase))
         {
-            var other = id.Substring("draft:".Length);
+            var other = FormatNameWithAliases(id.Substring("draft:".Length));
             MessagePlaceholder = $"Type a message to {other}";
             return;
         }
 
-        // REAL DM: dm:Alice|Bob → pick the one that's not me
         if (id.StartsWith("dm:", StringComparison.OrdinalIgnoreCase))
         {
             var body = id.Substring(3);
             var parts = body.Split('|');
-            var other = parts.FirstOrDefault(p => !p.Equals(User, StringComparison.OrdinalIgnoreCase));
-            MessagePlaceholder = $"Type a message to {other ?? "this chat"}";
+            var meCanon = Canon(User);
+            var other = parts.FirstOrDefault(p => !Ci.Equals(Canon(p), meCanon));
+            MessagePlaceholder = $"Type a message to {FormatNameWithAliases(other ?? "this chat")}";
             return;
         }
 
-        // Groups or anything else
         MessagePlaceholder = $"Type a message to {ComputeChatLabel(id)}";
     }
 
@@ -359,7 +495,6 @@ public partial class ChatViewModel : ObservableObject
             foreach (var line in list)
                 CurrentChatMessages.Add(line);
 
-        // Now that the chat is visible, clear unread
         SelectedChat.Unread = 0;
     }
 
@@ -372,6 +507,47 @@ public partial class ChatViewModel : ObservableObject
 
             if (!string.IsNullOrWhiteSpace(User))
                 await _chat.SetDisplayNameAsync(User);
+
+            // (Best-effort) pull initial alias & status snapshots if ChatService offers them
+            try
+            {
+                var aliasMethod = _chat.GetType().GetMethod("GetNameAliasesAsync", Type.EmptyTypes);
+                if (aliasMethod is not null)
+                {
+                    var task = (Task<Dictionary<string, string>>)aliasMethod.Invoke(_chat, null)!;
+                    var dict = await task.ConfigureAwait(false);
+                    if (dict is not null)
+                    {
+                        foreach (var kv in dict)
+                        {
+                            var oldCur = Canon(kv.Key);
+                            var newCur = Canon(kv.Value);
+                            if (!Ci.Equals(oldCur, newCur))
+                                _nameAliases[oldCur] = newCur;
+                        }
+                        NormalizeKnownUsers();
+                        RecomputePeople(OnlineUsers);
+                        foreach (var chat in Chats)
+                            if (chat.Id.StartsWith("dm:", StringComparison.OrdinalIgnoreCase))
+                                chat.Label = ComputeChatLabel(chat.Id);
+                    }
+                }
+
+                var getStatuses = _chat.GetType().GetMethod("GetStatusesAsync", Type.EmptyTypes);
+                if (getStatuses is not null)
+                {
+                    var stTask = (Task<Dictionary<string, string>>)getStatuses.Invoke(_chat, null)!;
+                    var statuses = await stTask.ConfigureAwait(false);
+                    if (statuses is not null)
+                    {
+                        _statusByName.Clear();
+                        foreach (var kv in statuses)
+                            _statusByName[Canon(kv.Key)] = ParseStatus(kv.Value);
+                        RecomputePeople(OnlineUsers);
+                    }
+                }
+            }
+            catch { /* snapshot is optional */ }
         }
         catch (Exception ex)
         {
@@ -393,29 +569,23 @@ public partial class ChatViewModel : ObservableObject
         var msg = OutgoingMessage!;
         OutgoingMessage = string.Empty;
 
-        // If it's a draft DM, create-on-send
         if (IsDraftId(SelectedChat.Id))
         {
             var other = SelectedChat.Label?.Replace(" (draft)", "")
                         ?? SelectedChat.Id.Substring("draft:".Length);
 
-            // Preferred path: call ChatService.SendDmFirstAsync (server should create + send atomically)
             var realChatId = await TrySendDmFirstAsync(other, User, msg);
 
-            // Fallback (compiles today): use existing endpoints if SendDmFirstAsync is not yet implemented.
             if (string.IsNullOrWhiteSpace(realChatId))
             {
                 realChatId = await _chat.CreateDmAsync(other);
                 if (!string.IsNullOrWhiteSpace(realChatId))
-                {
                     await _chat.SendToChatAsync(realChatId, User, msg);
-                }
             }
 
             if (!string.IsNullOrWhiteSpace(realChatId))
             {
                 SwapDraftToReal(SelectedChat.Id, realChatId);
-                // join the real chat so subsequent messages flow normally
                 _ = _chat.JoinChatAsync(realChatId);
             }
 
@@ -427,7 +597,6 @@ public partial class ChatViewModel : ObservableObject
 
     private async Task<string?> TrySendDmFirstAsync(string otherDisplayName, string fromUser, string message)
     {
-        // Use reflection so this file compiles even if ChatService doesn't have SendDmFirstAsync yet.
         var m = _chat.GetType().GetMethod("SendDmFirstAsync", new[] { typeof(string), typeof(string), typeof(string) });
         if (m is null) return null;
 
@@ -442,74 +611,139 @@ public partial class ChatViewModel : ObservableObject
             otherDisplayName.Equals(User, StringComparison.OrdinalIgnoreCase))
             return;
 
-        // Do NOT hit the server here. Just open a local draft.
         var draftId = DraftOf(otherDisplayName);
         var item = EnsureChatItem(draftId);
         item.Label = DraftLabel(otherDisplayName);
         SelectedChat = item;
 
-        // no JoinChatAsync, no server notifications yet
+        // Ensure the draft target shows in People (offline until online)
+        _knownUsers.Add(ResolveName(otherDisplayName));
+        RecomputePeople(OnlineUsers);
+    }
+
+    private async Task SetMyStatusAsync(PresenceStatus status)
+    {
+        MyStatus = status;
+
+        // Optimistically reflect locally
+        var me = Canon(User);
+        _statusByName[me] = status;
+        RecomputePeople(OnlineUsers);
+
+        // Ask server (if API available)
+        try
+        {
+            var m = _chat.GetType().GetMethod("SetStatusAsync", new[] { typeof(string) });
+            if (m is not null)
+            {
+                var t = (Task)m.Invoke(_chat, new object[] { StatusToWire(status) })!;
+                await t.ConfigureAwait(false);
+            }
+        }
+        catch { /* ignore */ }
+    }
+
+    private void NormalizeKnownUsers()
+    {
+        var canon = _knownUsers.Select(Canon).Distinct(Ci).ToList();
+        _knownUsers.Clear();
+        foreach (var n in canon) _knownUsers.Add(n);
     }
 
     // -------- Presence helper (ONLINE + OFFLINE) --------
     private void RecomputePeople(IEnumerable<string> onlineNow)
     {
-        var onlineSet = new HashSet<string>(onlineNow, StringComparer.OrdinalIgnoreCase);
+        var onlineSet = new HashSet<string>(onlineNow.Select(Canon), Ci);
 
-        // Seed known users with people from chats (so DM partners show up even when offline)
+        // Seed from DM chats (so partners appear even if offline). Skip myself.
         foreach (var chat in Chats)
         {
-            // dm:Alice|Bob → both; Lobby ignored
             if (chat.Id.StartsWith("dm:", StringComparison.OrdinalIgnoreCase))
             {
                 var body = chat.Id.Substring(3);
                 foreach (var p in body.Split('|'))
-                    _knownUsers.Add(p);
+                {
+                    if (!Ci.Equals(p, User))
+                        _knownUsers.Add(Canon(p));
+                }
             }
         }
 
-        // Build a sorted list: online first, then offline; then by name
-        var names = _knownUsers.ToList();
+        // Build canonical list, sorted: online first, then by name
+        var names = _knownUsers.Select(Canon).Distinct(Ci).ToList();
         names.Sort((a, b) =>
         {
-            var aOnline = onlineSet.Contains(a);
-            var bOnline = onlineSet.Contains(b);
-            var onlineCmp = bOnline.CompareTo(aOnline); // true before false
-            return onlineCmp != 0 ? onlineCmp : string.Compare(a, b, StringComparison.OrdinalIgnoreCase);
+            var aOn = onlineSet.Contains(a);
+            var bOn = onlineSet.Contains(b);
+            var cmp = bOn.CompareTo(aOn);
+            return cmp != 0 ? cmp : StringComparer.OrdinalIgnoreCase.Compare(a, b);
         });
 
-        // Sync People collection
-        // 1) Update / add
-        foreach (var name in names)
-        {
-            var item = People.FirstOrDefault(p => p.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
-            if (item is null)
-            {
-                People.Add(new UserPresenceItem(name, onlineSet.Contains(name)));
-            }
-            else
-            {
-                item.IsOnline = onlineSet.Contains(name);
-            }
-        }
-
-        // 2) Remove entries no longer known (rare)
+        // Remove stale / non-canonical entries
         for (int i = People.Count - 1; i >= 0; i--)
         {
-            if (!names.Contains(People[i].Name, StringComparer.OrdinalIgnoreCase))
+            var name = People[i].Name;
+            var isCanonical = Ci.Equals(name, Canon(name));
+            var stillExists = names.Contains(name, Ci);
+            if (!isCanonical || !stillExists)
                 People.RemoveAt(i);
         }
 
-        // 3) Reorder collection to match our sorted "names"
-        // (CollectionView doesn't sort by itself)
+        // Add/update with computed status:
+        // prefer server-provided status; fall back to online/offline by presence list
+        foreach (var n in names)
+        {
+            var status = _statusByName.TryGetValue(n, out var st)
+                ? st
+                : (onlineSet.Contains(n) ? PresenceStatus.Online : PresenceStatus.Offline);
+
+            var item = People.FirstOrDefault(p => Ci.Equals(p.Name, n));
+            if (item is null)
+            {
+                People.Add(new UserPresenceItem(n, status));
+            }
+            else
+            {
+                // mutable Status property → triggers UI color update
+                item.Status = status;
+            }
+        }
+
+        // Reorder to match sorted list
         for (int i = 0; i < names.Count; i++)
         {
-            var idx = People.IndexOf(People.First(p => p.Name.Equals(names[i], StringComparison.OrdinalIgnoreCase)));
+            var idx = People.IndexOf(People.First(p => Ci.Equals(p.Name, names[i])));
             if (idx != i) People.Move(idx, i);
         }
 
-        // Keep the quick "OnlineUsers" list in sync if you still use it elsewhere
+        // Keep quick list in sync
         OnlineUsers.Clear();
         foreach (var n in onlineSet) OnlineUsers.Add(n);
+    }
+
+    // ---- Local UI "Delete" (hide) a chat; auto-unhide on activity ----
+    private void DeleteChat(ChatItem? item)
+    {
+        if (item is null) return;
+        var id = item.Id;
+
+        if (string.Equals(id, "Lobby", StringComparison.OrdinalIgnoreCase))
+            return;
+
+        _hiddenChats.Add(id);
+
+        var existing = Chats.FirstOrDefault(c => c.Id.Equals(id, StringComparison.OrdinalIgnoreCase));
+        if (existing != null) Chats.Remove(existing);
+
+        if (SelectedChat?.Id == id)
+        {
+            var next = Chats.FirstOrDefault(c => !_hiddenChats.Contains(c.Id))
+                       ?? Chats.FirstOrDefault(c => string.Equals(c.Id, "Lobby", StringComparison.OrdinalIgnoreCase))
+                       ?? Chats.FirstOrDefault();
+            SelectedChat = next;
+        }
+
+        UpdateMessagePlaceholder();
+        OnPropertyChanged(nameof(CanSend));
     }
 }

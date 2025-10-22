@@ -1,18 +1,19 @@
 <ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:models="clr-namespace:Chatter.Client.Models"
              x:Class="Chatter.Client.Views.ChatPage"
+             x:Name="ChatPageRoot"
              Title="Chat">
 
-  <!-- Give the toolbar item a name; no inline Clicked -->
   <ContentPage.ToolbarItems>
     <ToolbarItem x:Name="SettingsItem" Text="Settings" />
   </ContentPage.ToolbarItems>
 
   <Grid ColumnSpacing="0" RowSpacing="0" Padding="0">
     <Grid.ColumnDefinitions>
-      <ColumnDefinition Width="240" />  <!-- LEFT: chats -->
-      <ColumnDefinition Width="*" />    <!-- MIDDLE: conversation -->
-      <ColumnDefinition Width="280" />  <!-- RIGHT: people -->
+      <ColumnDefinition Width="240" />
+      <ColumnDefinition Width="*" />
+      <ColumnDefinition Width="280" />
     </Grid.ColumnDefinitions>
 
     <!-- LEFT: Chats list -->
@@ -21,30 +22,56 @@
       <VerticalStackLayout Padding="12" Spacing="8">
         <Label Text="Chats" FontAttributes="Bold" />
 
-        <CollectionView ItemsSource="{Binding Chats}"
+        <CollectionView x:Name="ChatsCollection"
+                        ItemsSource="{Binding Chats}"
                         SelectionMode="Single"
                         SelectedItem="{Binding SelectedChat}">
           <CollectionView.ItemTemplate>
             <DataTemplate>
-              <Grid Padding="8" ColumnSpacing="8">
+              <Grid Padding="6" ColumnSpacing="8">
                 <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="Auto" />
                   <ColumnDefinition Width="*" />
                   <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
 
+                <!-- Delete button -->
+                <Button Grid.Column="0"
+                        Text="✖"
+                        FontSize="14"
+                        TextColor="Black"
+                        WidthRequest="28"
+                        HeightRequest="28"
+                        Padding="0"
+                        BackgroundColor="#E6E6E6"
+                        CornerRadius="14"
+                        BorderColor="#CCCCCC"
+                        BorderWidth="1"
+                        HorizontalOptions="Center"
+                        VerticalOptions="Center"
+                        Command="{Binding BindingContext.DeleteChatCommand, Source={x:Reference ChatPageRoot}}"
+                        CommandParameter="{Binding .}">
+                  <Button.Triggers>
+                    <DataTrigger TargetType="Button" Binding="{Binding Id}" Value="Lobby">
+                      <Setter Property="IsVisible" Value="False" />
+                      <Setter Property="IsEnabled" Value="False" />
+                    </DataTrigger>
+                  </Button.Triggers>
+                </Button>
+
                 <!-- Chat label -->
-                <Label Text="{Binding Label}" LineBreakMode="TailTruncation">
+                <Label Grid.Column="1"
+                       Text="{Binding Label}"
+                       LineBreakMode="TailTruncation">
                   <Label.Triggers>
-                    <DataTrigger TargetType="Label"
-                                 Binding="{Binding Id}"
-                                 Value="Lobby">
+                    <DataTrigger TargetType="Label" Binding="{Binding Id}" Value="Lobby">
                       <Setter Property="FontAttributes" Value="Bold" />
                     </DataTrigger>
                   </Label.Triggers>
                 </Label>
 
                 <!-- Unread badge -->
-                <Border Grid.Column="1"
+                <Border Grid.Column="2"
                         BackgroundColor="#CCFF3B30"
                         Padding="6,2"
                         StrokeThickness="0"
@@ -52,10 +79,7 @@
                         VerticalOptions="Center"
                         IsVisible="True">
                   <Border.Triggers>
-                    <!-- Hide when unread is 0 -->
-                    <DataTrigger TargetType="Border"
-                                 Binding="{Binding Unread}"
-                                 Value="0">
+                    <DataTrigger TargetType="Border" Binding="{Binding Unread}" Value="0">
                       <Setter Property="IsVisible" Value="False" />
                     </DataTrigger>
                   </Border.Triggers>
@@ -89,7 +113,6 @@
           <ColumnDefinition Width="Auto" />
         </Grid.ColumnDefinitions>
 
-        <!-- Name the entry; no inline Completed -->
         <Entry x:Name="MessageEntry"
                Grid.Column="0"
                Placeholder="{Binding MessagePlaceholder}"
@@ -114,16 +137,26 @@
                TextColor="Gray"
                Margin="0,0,0,6" />
 
+        <HorizontalStackLayout Spacing="8" Margin="0,8,0,8">
+          <Label Text="My status:" VerticalTextAlignment="Center"/>
+          <Picker WidthRequest="160" SelectedIndexChanged="OnMyStatusChanged">
+            <Picker.Items>
+              <x:String>Online</x:String>
+              <x:String>Away</x:String>
+              <x:String>Busy</x:String>
+            </Picker.Items>
+          </Picker>
+        </HorizontalStackLayout>
+
         <Label Text="People" FontAttributes="Bold" />
 
-        <!-- Counters -->
-<HorizontalStackLayout Spacing="12">
-  <Label Text="{Binding People.Count, StringFormat='Total: {0}'}" FontSize="12" TextColor="Gray" />
-  <Label Text="{Binding OnlineUsers.Count, StringFormat='Online: {0}'}" FontSize="12" TextColor="Gray" />
-  <Label Text="{Binding OfflineCount, StringFormat='Offline: {0}'}" FontSize="12" TextColor="Gray" />
-</HorizontalStackLayout>
+        <HorizontalStackLayout Spacing="12">
+          <Label Text="{Binding People.Count, StringFormat='Total: {0}'}" FontSize="12" TextColor="Gray" />
+          <Label Text="{Binding OnlineUsers.Count, StringFormat='Online: {0}'}" FontSize="12" TextColor="Gray" />
+          <Label Text="{Binding OfflineCount, StringFormat='Offline: {0}'}" FontSize="12" TextColor="Gray" />
+        </HorizontalStackLayout>
 
-        <!-- Name the list; no inline SelectionChanged -->
+        <!-- Add x:Name so code-behind can reference PeopleList -->
         <CollectionView x:Name="PeopleList"
                         ItemsSource="{Binding People}"
                         SelectionMode="Single">
@@ -135,28 +168,25 @@
                   <ColumnDefinition Width="*" />
                 </Grid.ColumnDefinitions>
 
-                <!-- Presence dot -->
-                <Ellipse WidthRequest="8"
-                         HeightRequest="8"
-                         VerticalOptions="Center">
+                <!-- Presence dot by Status -->
+                <Ellipse WidthRequest="10" HeightRequest="10" VerticalOptions="Center">
                   <Ellipse.Triggers>
-                    <DataTrigger TargetType="Ellipse"
-                                 Binding="{Binding IsOnline}"
-                                 Value="True">
+                    <DataTrigger TargetType="Ellipse" Binding="{Binding Status}" Value="{x:Static models:PresenceStatus.Busy}">
+                      <Setter Property="Fill" Value="#FF3B30" />
+                    </DataTrigger>
+                    <DataTrigger TargetType="Ellipse" Binding="{Binding Status}" Value="{x:Static models:PresenceStatus.Away}">
+                      <Setter Property="Fill" Value="#FFCC00" />
+                    </DataTrigger>
+                    <DataTrigger TargetType="Ellipse" Binding="{Binding Status}" Value="{x:Static models:PresenceStatus.Online}">
                       <Setter Property="Fill" Value="LimeGreen" />
                     </DataTrigger>
-                    <DataTrigger TargetType="Ellipse"
-                                 Binding="{Binding IsOnline}"
-                                 Value="False">
-                      <Setter Property="Fill" Value="#FF3B30" />
+                    <DataTrigger TargetType="Ellipse" Binding="{Binding Status}" Value="{x:Static models:PresenceStatus.Offline}">
+                      <Setter Property="Fill" Value="#9E9E9E" />
                     </DataTrigger>
                   </Ellipse.Triggers>
                 </Ellipse>
 
-                <!-- Name -->
-                <Label Grid.Column="1"
-                       Text="{Binding Name}"
-                       Margin="8,0,0,0" />
+                <Label Grid.Column="1" Text="{Binding Name}" Margin="8,0,0,0" />
               </Grid>
             </DataTemplate>
           </CollectionView.ItemTemplate>
