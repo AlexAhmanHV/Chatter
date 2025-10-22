@@ -348,16 +348,12 @@
               <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
                 <Label Grid.Column="0" Text="Status:" VerticalOptions="Center" TextColor="#374151" FontSize="14" FontAttributes="Bold" />
                 <Picker Grid.Column="1"
-                        SelectedIndexChanged="OnMyStatusChanged"
+                        ItemsSource="{Binding StatusOptions}"
+                        SelectedItem="{Binding MyStatus}"
+                        ItemDisplayBinding="{Binding .}"
                         TextColor="#374151"
                         FontSize="14"
-                        BackgroundColor="Transparent">
-                  <Picker.Items>
-                    <x:String>Online</x:String>
-                    <x:String>Away</x:String>
-                    <x:String>Busy</x:String>
-                  </Picker.Items>
-                </Picker>
+                        BackgroundColor="Transparent" />
               </Grid>
             </Border>
           </VerticalStackLayout>

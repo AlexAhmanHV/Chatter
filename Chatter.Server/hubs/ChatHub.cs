@@ -27,11 +27,11 @@ public class ChatHub : Hub
     private static readonly ConcurrentDictionary<string, (string User1, string User2)> _dmParticipants =
         new(StringComparer.OrdinalIgnoreCase);
 
-    // connectionId -> displayName
+    // connectionId -> displayName (canonical)
     private static readonly ConcurrentDictionary<string, string> _connectionToDisplayName =
         new(StringComparer.OrdinalIgnoreCase);
 
-    // displayName -> set of connectionIds (tabs/devices)
+    // displayName (canonical) -> set of connectionIds (tabs/devices)
     private static readonly ConcurrentDictionary<string, HashSet<string>> _displayNameToConnections =
         new(StringComparer.OrdinalIgnoreCase);
 
@@ -39,27 +39,23 @@ public class ChatHub : Hub
     private static readonly ConcurrentDictionary<string, string> _statusByDisplayName =
         new(StringComparer.OrdinalIgnoreCase);
 
-    private static readonly string[] _validStatuses = new[] { "online", "away", "busy" };
     private static readonly StringComparer Ci = StringComparer.OrdinalIgnoreCase;
 
-    private static readonly ConcurrentDictionary<string, string> _statusByName =
-    new(StringComparer.OrdinalIgnoreCase); // name -> "online"/"away"/"busy"/"offline"  
     // ----- Connection lifecycle -----
 
-public override async Task OnConnectedAsync()
-{
-    _names[Context.ConnectionId] = string.Empty;
-    _chatMembers.TryAdd(LobbyId, new HashSet<string>(StringComparer.OrdinalIgnoreCase));
-    await Groups.AddToGroupAsync(Context.ConnectionId, LobbyId);
-    await base.OnConnectedAsync();
-    // Send everyone an updated online roster and statuses (new connection soon sets name)
-    await BroadcastRosterAsync();
-    await BroadcastStatusesAsync();
-}
+    public override async Task OnConnectedAsync()
+    {
+        _names[Context.ConnectionId] = string.Empty;
+        _chatMembers.TryAdd(LobbyId, new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+        await Groups.AddToGroupAsync(Context.ConnectionId, LobbyId);
+        await base.OnConnectedAsync();
+
+        await BroadcastRosterAsync();
+        await BroadcastStatusesAsync();
+    }
 
     public override async Task OnDisconnectedAsync(Exception? ex)
     {
-        // Remove reverse indexes
         if (_connectionToDisplayName.TryRemove(Context.ConnectionId, out var name))
         {
             if (_displayNameToConnections.TryGetValue(name, out var set))
@@ -70,7 +66,7 @@ public override async Task OnConnectedAsync()
             }
         }
 
-        // Remove this connectionId from all group membership tracking
+        // Remove this connectionId from all per-chat connection membership tracking
         foreach (var kvp in _chatMembersByConn)
             kvp.Value.TryRemove(Context.ConnectionId, out _);
 
@@ -78,17 +74,15 @@ public override async Task OnConnectedAsync()
 
         await BroadcastRosterAsync();
 
-        // Let clients recompute status; also push a targeted event for the name we just lost
         if (!string.IsNullOrWhiteSpace(name))
             await Clients.All.SendAsync("StatusChanged", name, GetEffectiveStatus(name));
-            await BroadcastRosterAsync();
-            await BroadcastStatusesAsync();
+
+        await BroadcastStatusesAsync();
         await base.OnDisconnectedAsync(ex);
     }
 
     // ----- Identity / Aliases -----
 
-    // Called by client once it knows the user's display name
     public async Task SetDisplayName(string displayName)
     {
         var connId = Context.ConnectionId;
@@ -112,26 +106,25 @@ public override async Task OnConnectedAsync()
         await BroadcastRosterAsync();
         await SendChatsToCallerAsync(canon);
 
-        // Also send current status snapshot for this user
+        // Send current status snapshot for this user
         await Clients.Caller.SendAsync("StatusChanged", canon, GetEffectiveStatus(canon));
 
-        // Send alias snapshot (optional but useful for new clients)
+        // Send alias snapshot (optional)
         await Clients.Caller.SendAsync("NameAliases", await GetNameAliases());
 
-            _statusByName.AddOrUpdate(displayName, _ => "online", (_, __) => "online");
-    
-    await BroadcastStatusesAsync();
-    await SendChatsToCallerAsync(displayName);
+        await BroadcastStatusesAsync();
     }
 
     private Task BroadcastStatusesAsync()
-{
-    // Send a compact name->status dictionary
-    var snapshot = _statusByName.ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.OrdinalIgnoreCase);
-    return Clients.All.SendAsync("Statuses", snapshot);
-}
+    {
+        var names = _displayNameToConnections.Keys
+            .Concat(_statusByDisplayName.Keys)
+            .Distinct(StringComparer.OrdinalIgnoreCase);
 
-    // User changes their visible name
+        var snapshot = names.ToDictionary(n => n, n => GetEffectiveStatus(n), StringComparer.OrdinalIgnoreCase);
+        return Clients.All.SendAsync("Statuses", snapshot);
+    }
+
     public async Task ChangeDisplayName(string newDisplayName)
     {
         var connId = Context.ConnectionId;
@@ -140,29 +133,18 @@ public override async Task OnConnectedAsync()
             ? prev
             : "Unknown";
 
-        var newCanon = Canon(newDisplayName); // may compress to existing current
+        var newCanon = Canon(newDisplayName);
 
-        // If the canonical result equals old, nothing to do
         if (Ci.Equals(newCanon, old))
         {
-            // still re-seed alias snapshot to caller (harmless)
             await Clients.Caller.SendAsync("NameAliases", await GetNameAliases());
             return;
         }
 
-
-            _names[connId] = newDisplayName;
-
-    if (_statusByName.TryRemove(old, out var oldStatus))
-        _statusByName[newDisplayName] = oldStatus;
-
-        // Update aliases: old current -> new current
         _aliases[old] = newCanon;
 
-        // Update primary map
         _names[connId] = newCanon;
 
-        // Move this connection in reverse indexes
         if (_connectionToDisplayName.TryGetValue(connId, out var prevName))
         {
             if (_displayNameToConnections.TryGetValue(prevName, out var prevSet))
@@ -176,14 +158,13 @@ public override async Task OnConnectedAsync()
             _ => new HashSet<string>(StringComparer.OrdinalIgnoreCase) { connId },
             (_, set) => { set.Add(connId); return set; });
 
-        // Migrate membership in all chats from old -> new
         foreach (var set in _chatMembers.Values)
         {
             if (set.Remove(old))
                 set.Add(newCanon);
         }
 
-        // Keep DM participant index consistent (just refresh tuple if encountered)
+        // Fix DM participants to canonical
         foreach (var kv in _dmParticipants.ToArray())
         {
             var (u1, u2) = kv.Value;
@@ -193,69 +174,59 @@ public override async Task OnConnectedAsync()
                 _dmParticipants[kv.Key] = (c1, c2);
         }
 
-        // Make sure this connection is in the Lobby SIGNALR group (defensive)
         await Groups.AddToGroupAsync(connId, LobbyId);
 
-        // Broadcast both styles so client can handle either
         await Clients.Group(LobbyId).SendAsync("DisplayNameChanged", old, newCanon);
         await Clients.Group(LobbyId).SendAsync("DisplayNameChanged", old, newDisplayName);
 
         await BroadcastRosterAsync();
 
-        // Push status for the affected name
         await Clients.All.SendAsync("StatusChanged", newCanon, GetEffectiveStatus(newCanon));
-
-        // Refresh their chat list
         await SendChatsToCallerAsync(newCanon);
-
-        // Send alias snapshot to everyone (optional: could send only to caller)
         await Clients.All.SendAsync("NameAliases", await GetNameAliases());
         await BroadcastStatusesAsync();
-        await SendChatsToCallerAsync(newDisplayName);
     }
 
-    // Returns dictionary of old->new aliases (canonicalized)
     public Task<Dictionary<string, string>> GetNameAliases()
     {
-        // Build a stable copy with path compression applied
         var copy = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var kv in _aliases.ToArray())
         {
             var canonOld = Canon(kv.Key);
             var canonNew = Canon(kv.Value);
             if (!Ci.Equals(canonOld, canonNew))
-                copy[kv.Key] = canonNew; // keep original key so clients can map any seen old name
+                copy[kv.Key] = canonNew;
         }
         return Task.FromResult(copy);
     }
 
     // ----- Status -----
 
-    // Client sets their own status: "online" | "away" | "busy"
-public async Task SetStatus(string status) // "online" | "away" | "busy" | "offline"
-{
-    var me = GetMe();
-    if (string.IsNullOrWhiteSpace(me)) return;
+    public async Task SetStatus(string status) // "online" | "away" | "busy" | "offline"
+    {
+        var me = GetMe();
+        if (string.IsNullOrWhiteSpace(me)) return;
 
-    // Validate
-    status = (status ?? "").ToLowerInvariant();
-    if (status is not ("online" or "away" or "busy" or "offline"))
-        status = "online";
+        status = (status ?? "").ToLowerInvariant();
+        if (status is not ("online" or "away" or "busy" or "offline"))
+            status = "online";
 
-    _statusByName[me] = status;
+        _statusByDisplayName[me] = status;
 
-    // (optional) A system line in Lobby:
-    await Clients.Group(LobbyId).SendAsync("LobbySystemMessage", $"{me} is now {status}.");
+        await Clients.Group(LobbyId).SendAsync("LobbySystemMessage", $"{me} is now {status}.");
+        await Clients.All.SendAsync("StatusChanged", me, GetEffectiveStatus(me));
+        await BroadcastStatusesAsync();
+    }
 
-    await BroadcastStatusesAsync();
-}
+    public Task<Dictionary<string,string>> GetStatuses()
+    {
+        var names = _displayNameToConnections.Keys
+            .Concat(_statusByDisplayName.Keys)
+            .Distinct(StringComparer.OrdinalIgnoreCase);
 
-    // Snapshot of statuses for all known users
-public Task<Dictionary<string,string>> GetStatuses()
-{
-    var snapshot = _statusByName.ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.OrdinalIgnoreCase);
-    return Task.FromResult(snapshot);
-}
+        var snapshot = names.ToDictionary(n => n, n => GetEffectiveStatus(n), StringComparer.OrdinalIgnoreCase);
+        return Task.FromResult(snapshot);
+    }
 
     private static string GetEffectiveStatus(string displayName)
     {
@@ -269,7 +240,6 @@ public Task<Dictionary<string,string>> GetStatuses()
 
     // ----- Chats API -----
 
-    // Returns list of chat ids for the current user (Lobby + DMs they’re part of)
     public Task<List<string>> GetMyChats()
     {
         var me = GetMe();
@@ -279,7 +249,6 @@ public Task<Dictionary<string,string>> GetStatuses()
             .OrderBy(id => id, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
-        // Ensure lobby present
         if (!list.Contains(LobbyId)) list.Insert(0, LobbyId);
 
         return Task.FromResult(list);
@@ -295,14 +264,26 @@ public Task<Dictionary<string,string>> GetStatuses()
         set.Add(me);
         set.Add(other);
 
-        // Track participants for DM notify (canonical)
         _dmParticipants[chatId] = (me, other);
 
-        // Sender joins the group
-        await Groups.AddToGroupAsync(Context.ConnectionId, chatId);
+        // Ensure the per-chat connection membership dictionary exists
+        var connMap = _chatMembersByConn.GetOrAdd(chatId, _ => new ConcurrentDictionary<string, byte>());
 
-        // Notify recipient that a chat exists (so it appears in their list)
+        // Join sender to group + track it
+        await Groups.AddToGroupAsync(Context.ConnectionId, chatId);
+        connMap[Context.ConnectionId] = 1;
+
+        // Find all current recipient connections
         var recipientConns = ConnectionsFor(other).ToList();
+
+        // Make recipient connections join the SignalR group immediately (so first message arrives)
+        foreach (var cid in recipientConns)
+        {
+            await Groups.AddToGroupAsync(cid, chatId);
+            connMap[cid] = 1;
+        }
+
+        // Notify recipient so the chat appears in their list
         if (recipientConns.Count > 0)
             await Clients.Clients(recipientConns).SendAsync("AddedChat", chatId, me);
 
@@ -312,6 +293,14 @@ public Task<Dictionary<string,string>> GetStatuses()
         // Optional global "chats updated"
         await Clients.All.SendAsync("ChatsUpdated", new[] { chatId });
 
+        return chatId;
+    }
+
+    // Create a DM and immediately send the first message
+    public async Task<string> SendDmFirst(string otherDisplayName, string fromUser, string message)
+    {
+        var chatId = await CreateDm(otherDisplayName);
+        await SendToChat(chatId, fromUser, message);   // will hit both group + DmNotify (if any not in group)
         return chatId;
     }
 
@@ -328,6 +317,8 @@ public Task<Dictionary<string,string>> GetStatuses()
         _ = Groups.RemoveFromGroupAsync(Context.ConnectionId, chatId);
         if (_chatMembers.TryGetValue(chatId, out var set))
             set.Remove(me);
+        if (_chatMembersByConn.TryGetValue(chatId, out var conns))
+            conns.TryRemove(Context.ConnectionId, out _);
         return Task.CompletedTask;
     }
 
@@ -341,15 +332,12 @@ public Task<Dictionary<string,string>> GetStatuses()
         // 2) If DM, notify the other participant(s) who are online but haven't joined this chat group yet
         if (IsDirectMessageChat(chatId, out var participants))
         {
-            // which connectionIds are already in the group?
             var groupMembers = _chatMembersByConn.TryGetValue(chatId, out var members)
                 ? members.Keys
                 : Enumerable.Empty<string>();
 
-            // All live connectionIds for both DM participants
             var allConnIds = ResolveLiveConnectionsFor(participants);
 
-            // Exclude sender's current connectionId and any that are already in the group
             var senderConnId = Context.ConnectionId;
             var notInGroup = allConnIds.Where(cid => cid != senderConnId && !groupMembers.Contains(cid));
 
@@ -367,7 +355,6 @@ public Task<Dictionary<string,string>> GetStatuses()
 
     public Task<IReadOnlyList<string>> GetOnlineUsers()
     {
-        // Use reverse index keys to avoid dups and exclude empties
         var list = _displayNameToConnections.Keys
             .OrderBy(n => n, StringComparer.OrdinalIgnoreCase)
             .ToList()
@@ -441,7 +428,6 @@ public Task<Dictionary<string,string>> GetStatuses()
 
     // ----- Alias canonicalization helpers -----
 
-    // Follow alias chain to latest name, with path compression
     private static string Canon(string name)
     {
         if (string.IsNullOrWhiteSpace(name)) return name;
@@ -457,7 +443,6 @@ public Task<Dictionary<string,string>> GetStatuses()
             cur = next;
         }
 
-        // path compression
         foreach (var s in seen)
             _aliases[s] = cur;
 
