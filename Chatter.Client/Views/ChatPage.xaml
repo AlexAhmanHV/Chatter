@@ -3,8 +3,9 @@
              x:Class="Chatter.Client.Views.ChatPage"
              Title="Chat">
 
+  <!-- Give the toolbar item a name; no inline Clicked -->
   <ContentPage.ToolbarItems>
-    <ToolbarItem Text="Settings" Clicked="OnSettingsClicked" />
+    <ToolbarItem x:Name="SettingsItem" Text="Settings" />
   </ContentPage.ToolbarItems>
 
   <Grid ColumnSpacing="0" RowSpacing="0" Padding="0">
@@ -32,16 +33,15 @@
                 </Grid.ColumnDefinitions>
 
                 <!-- Chat label -->
-                <!-- Chat label -->
-<Label Text="{Binding Label}" LineBreakMode="TailTruncation">
-  <Label.Triggers>
-    <DataTrigger TargetType="Label"
-                 Binding="{Binding Id}"
-                 Value="Lobby">
-      <Setter Property="FontAttributes" Value="Bold" />
-    </DataTrigger>
-  </Label.Triggers>
-</Label>
+                <Label Text="{Binding Label}" LineBreakMode="TailTruncation">
+                  <Label.Triggers>
+                    <DataTrigger TargetType="Label"
+                                 Binding="{Binding Id}"
+                                 Value="Lobby">
+                      <Setter Property="FontAttributes" Value="Bold" />
+                    </DataTrigger>
+                  </Label.Triggers>
+                </Label>
 
                 <!-- Unread badge -->
                 <Border Grid.Column="1"
@@ -54,8 +54,8 @@
                   <Border.Triggers>
                     <!-- Hide when unread is 0 -->
                     <DataTrigger TargetType="Border"
-                                Binding="{Binding Unread}"
-                                Value="0">
+                                 Binding="{Binding Unread}"
+                                 Value="0">
                       <Setter Property="IsVisible" Value="False" />
                     </DataTrigger>
                   </Border.Triggers>
@@ -89,31 +89,44 @@
           <ColumnDefinition Width="Auto" />
         </Grid.ColumnDefinitions>
 
-        <Entry Grid.Column="0"
-               Placeholder="{Binding SelectedChat.Id, StringFormat='Message {0}…'}"
-               Text="{Binding OutgoingMessage}" />
+        <!-- Name the entry; no inline Completed -->
+        <Entry x:Name="MessageEntry"
+               Grid.Column="0"
+               Placeholder="{Binding MessagePlaceholder}"
+               Text="{Binding OutgoingMessage}"
+               Keyboard="Chat"
+               ReturnType="Send" />
+
         <Button Grid.Column="1"
                 Text="Send"
-                Command="{Binding SendCommand}" />
+                Command="{Binding SendCommand}"
+                IsEnabled="{Binding CanSend}" />
       </Grid>
     </Grid>
 
-    <!-- RIGHT: People online -->
+    <!-- RIGHT: People (online + offline) -->
     <Border Grid.Column="2" StrokeThickness="0"
             BackgroundColor="{AppThemeBinding Light=#F5F5F7, Dark=#1E1E1E}">
       <VerticalStackLayout Padding="16" Spacing="8">
-         <Label Text="{Binding User, StringFormat='Chatting as: {0}'}"
+        <Label Text="{Binding User, StringFormat='Chatting as: {0}'}"
                FontSize="14"
                FontAttributes="Italic"
                TextColor="Gray"
                Margin="0,0,0,6" />
-        <Label Text="People online" FontAttributes="Bold" />
-        <Label Text="{Binding OnlineUsers.Count, StringFormat='Total: {0}'}"
-               FontSize="12" TextColor="Gray" />
 
-        <CollectionView ItemsSource="{Binding OnlineUsers}"
-                        SelectionMode="Single"
-                        SelectionChanged="OnOnlineUserSelected">
+        <Label Text="People" FontAttributes="Bold" />
+
+        <!-- Counters -->
+<HorizontalStackLayout Spacing="12">
+  <Label Text="{Binding People.Count, StringFormat='Total: {0}'}" FontSize="12" TextColor="Gray" />
+  <Label Text="{Binding OnlineUsers.Count, StringFormat='Online: {0}'}" FontSize="12" TextColor="Gray" />
+  <Label Text="{Binding OfflineCount, StringFormat='Offline: {0}'}" FontSize="12" TextColor="Gray" />
+</HorizontalStackLayout>
+
+        <!-- Name the list; no inline SelectionChanged -->
+        <CollectionView x:Name="PeopleList"
+                        ItemsSource="{Binding People}"
+                        SelectionMode="Single">
           <CollectionView.ItemTemplate>
             <DataTemplate>
               <Grid Padding="0,6">
@@ -121,8 +134,29 @@
                   <ColumnDefinition Width="Auto"/>
                   <ColumnDefinition Width="*" />
                 </Grid.ColumnDefinitions>
-                <Ellipse WidthRequest="8" HeightRequest="8" Fill="LimeGreen" VerticalOptions="Center" />
-                <Label Grid.Column="1" Text="{Binding .}" Margin="8,0,0,0" />
+
+                <!-- Presence dot -->
+                <Ellipse WidthRequest="8"
+                         HeightRequest="8"
+                         VerticalOptions="Center">
+                  <Ellipse.Triggers>
+                    <DataTrigger TargetType="Ellipse"
+                                 Binding="{Binding IsOnline}"
+                                 Value="True">
+                      <Setter Property="Fill" Value="LimeGreen" />
+                    </DataTrigger>
+                    <DataTrigger TargetType="Ellipse"
+                                 Binding="{Binding IsOnline}"
+                                 Value="False">
+                      <Setter Property="Fill" Value="#FF3B30" />
+                    </DataTrigger>
+                  </Ellipse.Triggers>
+                </Ellipse>
+
+                <!-- Name -->
+                <Label Grid.Column="1"
+                       Text="{Binding Name}"
+                       Margin="8,0,0,0" />
               </Grid>
             </DataTemplate>
           </CollectionView.ItemTemplate>

@@ -6,29 +6,36 @@
     x:Class="Chatter.Client.Views.LoginPage"
     x:DataType="vm:LoginViewModel"
     Title="Welcome">
+
     <VerticalStackLayout Padding="24" Spacing="16" VerticalOptions="Center">
         <Label Text="Chatter" FontSize="28" HorizontalOptions="Center" />
 
-        <Entry Placeholder="Email"
+        <!-- Name the inputs; no inline Completed handlers -->
+        <Entry x:Name="EmailEntry"
+               Placeholder="Email"
                Text="{Binding Username}"
                ReturnType="Next" />
 
-        <Entry Placeholder="Password"
+        <Entry x:Name="PasswordEntry"
+               Placeholder="Password"
                Text="{Binding Password}"
                IsPassword="True"
-               ReturnType="Done" />
+               ReturnType="Go" />
 
-        <Button Text="Log in" Command="{Binding LoginCommand}">
-        <Button.Triggers>
-            <!-- When busy: disable and show different text -->
-            <DataTrigger TargetType="Button" Binding="{Binding IsBusy}" Value="True">
-            <Setter Property="IsEnabled" Value="False" />
-            <Setter Property="Text" Value="Logging in..." />
-            </DataTrigger>
-        </Button.Triggers>
+        <Button Text="Log in"
+                Command="{Binding LoginCommand}"
+                IsEnabled="{Binding CanLogin}">
+            <Button.Triggers>
+                <!-- When busy: disable and show different text -->
+                <DataTrigger TargetType="Button" Binding="{Binding IsBusy}" Value="True">
+                    <Setter Property="IsEnabled" Value="False" />
+                    <Setter Property="Text" Value="Logging in..." />
+                </DataTrigger>
+            </Button.Triggers>
         </Button>
-        <Button Text="Create account" Clicked="OnCreateAccountClicked" />
 
-
+        <!-- Name the button; no inline Clicked -->
+        <Button x:Name="CreateAccountBtn"
+                Text="Create account" />
     </VerticalStackLayout>
 </ContentPage>
