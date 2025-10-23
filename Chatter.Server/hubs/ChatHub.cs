@@ -448,4 +448,12 @@ public class ChatHub : Hub
 
         return cur;
     }
+
+    // ADD this to your ChatHub class
+public async Task Typing(string channelId, string userName, bool isTyping)
+{
+    // Broadcast to everyone else in the channel
+    await Clients.OthersInGroup(channelId)
+        .SendAsync("Typing", channelId, userName, isTyping);
+}
 }

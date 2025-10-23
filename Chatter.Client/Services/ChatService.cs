@@ -10,6 +10,8 @@ public class ChatService
     private readonly SupabaseAuthService _auth;
     private HubConnection? _conn;
 
+    public event EventHandler<(string ChannelId, string User, bool IsTyping)>? TypingChanged;
+
     // Renames (others)
     public event Action<string, string>? OtherDisplayNameChanged;
 
@@ -34,9 +36,7 @@ public class ChatService
     public event Action<Dictionary<string, string>>? NameAliasesReceived;
 
     // Presence
-    // A snapshot/delta from server: displayName -> "online|away|busy|offline"
     public event Action<Dictionary<string, string>>? StatusesUpdated;
-    // A single-user change push (optional)
     public event Action<string, string>? StatusChanged;
 
     public Func<string?>? OnGetCurrentDisplayName { get; set; }
@@ -73,12 +73,18 @@ public class ChatService
             .WithAutomaticReconnect()
             .Build();
 
+        // ----- Typing indicator -----
+        _conn.On<string, string, bool>("Typing", (channelId, user, isTyping) => // FIX: _connection -> _conn
+        {
+            // FIX: give the tuple element names to match the event signature
+            var payload = (ChannelId: channelId, User: user, IsTyping: isTyping);
+            TypingChanged?.Invoke(this, payload);
+        });
+
         // ----- Presence pushes -----
-        // Server can push a batch map under "Statuses"
         _conn.On<Dictionary<string, string>>("Statuses", dict =>
             StatusesUpdated?.Invoke(dict ?? new()));
 
-        // Or a single change
         _conn.On<string, string>("StatusChanged", (displayName, status) =>
             StatusChanged?.Invoke(displayName, status));
 
@@ -93,7 +99,6 @@ public class ChatService
         _conn.On<string, string>("DisplayNameChanged", (oldName, newName) =>
             OtherDisplayNameChanged?.Invoke(oldName, newName));
 
-        // Optional lobby system message
         _conn.On<string>("LobbySystemMessage", text =>
             ChatMessageReceived?.Invoke(LobbyId, "system", text));
 
@@ -148,8 +153,6 @@ public class ChatService
         // ----- Start + initial seed -----
         await _conn.StartAsync();
 
-        // (optional) server may push an initial "Statuses" event right after connect;
-        // but we proactively fetch a snapshot to be safe:
         try
         {
             var statuses = await GetStatusesAsync();
@@ -164,7 +167,6 @@ public class ChatService
         OnlineUsersUpdated?.Invoke(await GetOnlineUsersAsync());
         ChatsForMeUpdated?.Invoke(await GetMyChatsAsync());
 
-        // Seed aliases (if supported)
         try
         {
             var initialAliases = await GetNameAliasesAsync();
@@ -183,6 +185,9 @@ public class ChatService
 
     public Task ChangeDisplayNameAsync(string newName) =>
         _conn?.SendAsync("ChangeDisplayName", newName) ?? Task.CompletedTask;
+
+    public Task SendTypingAsync(string channelId, string user, bool isTyping)
+        => _conn?.InvokeAsync("Typing", channelId, user, isTyping) ?? Task.CompletedTask; // FIX: _connection -> _conn + null-safe
 
     // ===== Roster =====
     public async Task<IReadOnlyList<string>> GetOnlineUsersAsync()

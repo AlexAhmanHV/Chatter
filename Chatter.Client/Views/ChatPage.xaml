@@ -302,13 +302,19 @@
 
       <!-- Composer -->
       <Border Grid.Row="2" Style="{StaticResource Card}" Padding="16" Margin="0,0,12,0">
-        <Grid ColumnSpacing="10">
+        <Grid ColumnSpacing="10" RowSpacing="4">
+          <!-- Two rows: input/send on row 0, typing indicator on row 1 -->
+          <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+          </Grid.RowDefinitions>
           <Grid.ColumnDefinitions>
             <ColumnDefinition Width="*" />
             <ColumnDefinition Width="Auto" />
           </Grid.ColumnDefinitions>
 
-          <Border Grid.Column="0" Style="{StaticResource FieldBorder}">
+          <!-- Row 0: input -->
+          <Border Grid.Row="0" Grid.Column="0" Style="{StaticResource FieldBorder}">
             <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8" VerticalOptions="Center">
               <Label Grid.Column="0" Text="✍️" VerticalOptions="Center" />
               <Entry Grid.Column="1"
@@ -322,12 +328,22 @@
             </Grid>
           </Border>
 
-          <Button Grid.Column="1"
+          <!-- Row 0: send -->
+          <Button Grid.Row="0" Grid.Column="1"
                   Text="Send"
                   Command="{Binding SendCommand}"
                   IsEnabled="{Binding CanSend}"
                   Style="{StaticResource PrimaryBtn}"
                   WidthRequest="110" />
+
+          <!-- Row 1: Typing indicator -->
+          <Label Grid.Row="1" Grid.ColumnSpan="2"
+       Text="{Binding TypingUser, StringFormat='{0} is typing…'}"
+       IsVisible="{Binding IsPeerTyping}"
+       FontAttributes="Italic"
+       FontSize="12"
+       TextColor="{StaticResource TextSecondary}"
+       Margin="6,6,0,0" />
         </Grid>
       </Border>
     </Grid>
