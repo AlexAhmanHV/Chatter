@@ -1,21 +1,46 @@
 <?xml version="1.0" encoding="utf-8" ?>
+<!--
+File: Views/EmojiHelpPage.xaml
+
+What this does:
+- Purpose: Modal that lists supported emoji shortcodes so users can discover what to type.
+- How: Binds the page to List<EmojiItem> (EmojiCatalog.All). Uses compiled bindings:
+  - Page root sets x:DataType="x:Object" to enable compiled bindings in scope.
+  - Item template sets x:DataType="services:EmojiItem" so Emoji/Shortcode bindings compile.
+-->
+
 <ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:services="clr-namespace:Chatter.Client.Services"
              x:Class="Chatter.Client.Views.EmojiHelpPage"
+             x:DataType="x:Object"
              Title="Emoji"
              BackgroundColor="#0B1220">
+
   <VerticalStackLayout Padding="20" Spacing="14">
-    <Label Text="Type these shortcodes to get emoji" TextColor="#E5E7EB" FontAttributes="Bold" FontSize="18"/>
+
+    <Label Text="Type these shortcodes to get emoji"
+           TextColor="#E5E7EB"
+           FontAttributes="Bold"
+           FontSize="18" />
+
     <CollectionView ItemsSource="{Binding}">
       <CollectionView.ItemTemplate>
-        <DataTemplate>
+        <!-- compiled binding for item rows -->
+        <DataTemplate x:DataType="services:EmojiItem">
           <Grid ColumnDefinitions="Auto,*" Padding="8,6">
-            <Label Grid.Column="0" Text="{Binding Emoji}" FontSize="20"/>
-            <Label Grid.Column="1" Text="{Binding Shortcode}" TextColor="#9CA3AF"/>
+            <Label Grid.Column="0"
+                   Text="{Binding Emoji}"
+                   FontSize="20" />
+            <Label Grid.Column="1"
+                   Text="{Binding Shortcode}"
+                   TextColor="#9CA3AF" />
           </Grid>
         </DataTemplate>
       </CollectionView.ItemTemplate>
     </CollectionView>
+
     <Button Text="Close" Clicked="OnClose" />
+
   </VerticalStackLayout>
 </ContentPage>

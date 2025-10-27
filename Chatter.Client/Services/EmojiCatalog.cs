@@ -1,3 +1,15 @@
+/*
+File: EmojiCatalog.cs
+
+What this does:
+- Purpose: Central catalog of supported emoji shortcodes and their rendered characters for the client UI.
+- How: Exposes a List<EmojiItem> (Shortcode, Emoji). Shortcodes use :colon: syntax and may include synonyms (e.g., :thumbsup: and :+1:).
+- Where used: 
+  - EmojiPickerPage lists/browses these for insertion.
+  - ChatTextParser + EmojiDisplayConverter rely on these shortcodes to render actual emoji in message bubbles.
+- Notes: To add new emoji, append a new EmojiItem with a unique or synonym shortcode; no rebuild of parsing logic is required.
+*/
+
 namespace Chatter.Client.Services;
 
 public record EmojiItem(string Shortcode, string Emoji);
@@ -6,7 +18,6 @@ public static class EmojiCatalog
 {
     public static readonly List<EmojiItem> All = new()
     {
-        // Faces / emotions
         new(":smile:", "😄"),
         new(":grin:", "😁"),
         new(":joy:", "😂"),

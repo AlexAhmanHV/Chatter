@@ -1,39 +1,51 @@
+/*
+File: LoginViewModel.cs
+
+What this does:
+- Purpose: ViewModel for the login screen. Captures username/password, manages busy state, validates inputs,
+  calls SupabaseAuthService to sign in, and raises a success event so the page can navigate.
+- How: Exposes bindable properties (Username, Password, IsBusy), a computed CanLogin, and an AsyncRelayCommand (LoginCommand).
+  On success, derives a friendly display name (falls back to email prefix) and emits LoginSucceeded(displayName).
+*/
+
 using System;
+using System.Linq;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Maui.Controls;
+using Microsoft.Maui.ApplicationModel;
 using Chatter.Client.Services;
 
 namespace Chatter.Client.ViewModels;
 
 public partial class LoginViewModel : ObservableObject
 {
-    [ObservableProperty] private string? username;
-    [ObservableProperty] private string? password;
-    [ObservableProperty] private bool isBusy;
+    // Bindable state (username, password, busy) and derived CanLogin
+    [ObservableProperty] public partial string? Username { get; set; }
+    [ObservableProperty] public partial string? Password { get; set; }
+    [ObservableProperty] public partial bool IsBusy { get; set; }
 
     private readonly SupabaseAuthService _auth;
 
-    // Enables the button (and lets code-behind check validity)
+    // Computed: enables the login button only when inputs are present and not busy.
     public bool CanLogin =>
         !string.IsNullOrWhiteSpace(Username) &&
         !string.IsNullOrWhiteSpace(Password) &&
         !IsBusy;
 
-    // Raised when login succeeds so the page can navigate.
+    // Outputs / events (navigation trigger on success) 
     public event Action<string>? LoginSucceeded;
+
 
     public IAsyncRelayCommand LoginCommand { get; }
 
-    public LoginViewModel(SupabaseAuthService auth /*, ChatService chat */)
+    public LoginViewModel(SupabaseAuthService auth)
     {
         _auth = auth;
 
-        // Wire CanExecute to CanLogin
         LoginCommand = new AsyncRelayCommand(LoginAsync, () => CanLogin);
 
-        // Keep the command's CanExecute in sync with CanLogin
         PropertyChanged += (_, e) =>
         {
             if (e.PropertyName == nameof(CanLogin))
@@ -41,48 +53,61 @@ public partial class LoginViewModel : ObservableObject
         };
     }
 
-    // Make sure changes to these properties notify CanLogin
+    // Notify CanLogin whenever inputs/busy change.
     partial void OnUsernameChanged(string? value) => OnPropertyChanged(nameof(CanLogin));
     partial void OnPasswordChanged(string? value) => OnPropertyChanged(nameof(CanLogin));
     partial void OnIsBusyChanged(bool value)      => OnPropertyChanged(nameof(CanLogin));
 
-    private async Task LoginAsync()
-{
-    if (IsBusy) return;
+    private static Page? GetRootPage() => Application.Current?.Windows?.FirstOrDefault()?.Page;
 
-    // ✅ Validate BEFORE setting IsBusy
-    if (string.IsNullOrWhiteSpace(Username) || string.IsNullOrWhiteSpace(Password))
+    private static Task ShowAlertAsync(string title, string message, string cancel = "OK")
     {
-        await Application.Current.MainPage.DisplayAlert("Missing info", "Please enter email and password.", "OK");
-        return;
+        var page = GetRootPage();
+        if (page is null) return Task.CompletedTask;
+        return MainThread.InvokeOnMainThreadAsync(() => page.DisplayAlert(title, message, cancel));
     }
 
-    IsBusy = true;
-
-    try
+    // Command handler: login flow with validation, auth call, and success event
+    private async Task LoginAsync()
     {
-        var session = await _auth.SignInAsync(Username!, Password!);
-        if (session is null)
+        if (IsBusy) return;
+
+        // Validate before setting IsBusy so the UI stays responsive for simple mistakes.
+        if (string.IsNullOrWhiteSpace(Username) || string.IsNullOrWhiteSpace(Password))
         {
-            await Application.Current.MainPage.DisplayAlert("Login failed", "Invalid credentials.", "OK");
+            await ShowAlertAsync("Missing info", "Please enter email and password.", "OK");
             return;
         }
 
-        var display = _auth.CurrentDisplayName;
-        if (string.IsNullOrWhiteSpace(display))
-        {
-            display = Username!.Contains('@') ? Username!.Split('@')[0] : Username!;
-        }
+        IsBusy = true;
 
-        LoginSucceeded?.Invoke(display!);
+        try
+        {
+            // Local copies satisfy nullability after validation
+            var email = Username!;
+            var pwd   = Password!;
+
+            var session = await _auth.SignInAsync(email, pwd);
+            if (session is null)
+            {
+                await ShowAlertAsync("Login failed", "Invalid credentials.", "OK");
+                return;
+            }
+
+            // Prefer stored display name; otherwise derive from email prefix
+            var display = _auth.CurrentDisplayName;
+            if (string.IsNullOrWhiteSpace(display))
+                display = email.Contains('@') ? email.Split('@')[0] : email;
+
+            LoginSucceeded?.Invoke(display);
+        }
+        catch (Exception ex)
+        {
+            await ShowAlertAsync("Login failed", ex.Message, "OK");
+        }
+        finally
+        {
+            IsBusy = false;
+        }
     }
-    catch (Exception ex)
-    {
-        await Application.Current.MainPage.DisplayAlert("Login failed", ex.Message, "OK");
-    }
-    finally
-    {
-        IsBusy = false;
-    }
-}
 }

@@ -1,4 +1,17 @@
 <?xml version="1.0" encoding="utf-8" ?>
+<!--
+File: RegisterPage.xaml
+
+What this does:
+- Purpose: The registration (sign-up) screen. Collects Email, Password (and optional confirmation), 
+- shows helpful copy, and exposes a single
+- “Create account” action bound to RegisterViewModel.RegisterCommand. Uses the same dark theme + gradient tokens as LoginPage.
+- How: The page binds to RegisterViewModel via x:DataType for compile-time binding checks. Field containers use a reusable FieldBorder style
+  with focus visuals; the primary CTA uses a gradient PrimaryBtn style. The “Log in” link is wired to NavigateToLoginCommand on the VM
+  (make sure your RegisterViewModel exposes it), and the Register button binds to RegisterCommand.
+- Notes: If you don’t implement ConfirmPassword or NavigateToLoginCommand on the VM, remove those bindings or wire them in code-behind.
+-->
+
 <ContentPage
     xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
     xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
@@ -12,16 +25,15 @@
     <ContentPage.Resources>
         <ResourceDictionary>
             <!-- Palette -->
-            <Color x:Key="PrimaryStart">#6EE7F9</Color>     <!-- cyan -->
-            <Color x:Key="PrimaryEnd">#8B5CF6</Color>       <!-- violet -->
-            <Color x:Key="CardBg">#101827</Color>           <!-- near-black card -->
-            <Color x:Key="TextPrimary">#E5E7EB</Color>      <!-- light text -->
-            <Color x:Key="TextSecondary">#9CA3AF</Color>    <!-- muted text -->
-            <Color x:Key="StrokeIdle">#1F2937</Color>       <!-- idle border -->
-            <Color x:Key="StrokeFocus">#8B5CF6</Color>      <!-- focus border -->
+            <Color x:Key="PrimaryStart">#6EE7F9</Color>
+            <Color x:Key="PrimaryEnd">#8B5CF6</Color>
+            <Color x:Key="CardBg">#101827</Color>
+            <Color x:Key="TextPrimary">#E5E7EB</Color>
+            <Color x:Key="TextSecondary">#9CA3AF</Color>
+            <Color x:Key="StrokeIdle">#1F2937</Color>
+            <Color x:Key="StrokeFocus">#8B5CF6</Color>
             <Color x:Key="FieldBg">#0D1524</Color>
 
-            <!-- Radii / spacing -->
             <x:Double x:Key="RadiusLg">20</x:Double>
             <x:Double x:Key="RadiusMd">14</x:Double>
 
@@ -112,7 +124,7 @@
                 </Setter>
             </Style>
 
-            <!-- Outline/ghost button (if you add a secondary CTA later) -->
+            <!-- Outline/ghost button (if we add a secondary CTA later) -->
             <Style TargetType="Button" x:Key="OutlineBtn">
                 <Setter Property="TextColor" Value="{StaticResource TextPrimary}" />
                 <Setter Property="BackgroundColor" Value="Transparent" />
@@ -133,7 +145,6 @@
 
     <!-- ===== Layout ===== -->
     <Grid>
-        <!-- Background gradient -->
         <Grid.Background>
             <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
                 <GradientStop Color="#0B1220" Offset="0.0" />
@@ -231,7 +242,7 @@
                                    Margin="4,0,0,0" />
                         </VerticalStackLayout>
 
-                        <!-- Confirm Password -->
+                        <!-- Confirm Password) -->
                         <VerticalStackLayout Spacing="8">
                             <Label Text="Confirm password" Style="{StaticResource Subtle}" FontAttributes="Bold" />
                             <Border Style="{StaticResource FieldBorder}">
@@ -282,7 +293,7 @@
                                 Style="{StaticResource PrimaryBtn}"
                                 Margin="0,8,0,0" />
 
-                        <!-- Login Link -->
+                        <!-- Login Link  -->
                         <HorizontalStackLayout Spacing="6" HorizontalOptions="Center" Margin="0,14,0,0">
                             <Label Text="Already have an account?"
                                    FontSize="14"

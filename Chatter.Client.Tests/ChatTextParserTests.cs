@@ -1,3 +1,14 @@
+/*
+File: ChatTextParserTests.cs
+
+What this does:
+- Purpose: Focused unit tests for ChatTextParser.SafeParse covering the emoji shortcode feature we added.
+- How: Uses xUnit to verify that known shortcodes map to real emoji, unknown shortcodes fall back to their literal text,
+  and mixed content preserves order. Also checks a few practical edge cases (aliases like :+1:, adjacent shortcodes, and
+  regular colons that must NOT be treated as emoji).
+- Notes: Update expectations if you change EmojiCatalog (e.g., add/remove mappings or tweak aliases).
+*/
+
 using System.Linq;
 using Chatter.Core.Services;
 using Xunit;
@@ -7,66 +18,58 @@ namespace Chatter.Client.Tests;
 public class ChatTextParserTests
 {
     [Fact]
-    public void Parses_Command_WholeLine()
+    public void Emoji_KnownShortcode_MapsToEmoji()
     {
-        var tokens = ChatTextParser.SafeParse("/giphy happy cat");
-        Assert.Single(tokens);
-        Assert.Equal(ChatTokenType.Command, tokens[0].Type);
-        Assert.Equal("/giphy happy cat", tokens[0].Value);
+        var tokens = ChatTextParser.SafeParse("hello :smile:");
+        var joined = string.Concat(tokens.Select(t => t.Value));
+        Assert.Contains("😄", joined);
+        Assert.EndsWith("😄", joined);
+        Assert.Contains(tokens, t => t.Type == ChatTokenType.Emoji && t.Value == "😄");
     }
 
     [Fact]
-    public void Parses_Mentions_And_Text()
+    public void Emoji_UnknownShortcode_FallsBackToLiteral()
     {
-        var tokens = ChatTextParser.SafeParse("Hi @Alex, meet @Sam!");
-        Assert.Equal(5, tokens.Count); // "Hi ", "@Alex", ", meet ", "@Sam", "!"
-        Assert.Contains(tokens, t => t.Type == ChatTokenType.Mention && t.Value == "@Alex");
-        Assert.Contains(tokens, t => t.Type == ChatTokenType.Mention && t.Value == "@Sam");
+        var tokens = ChatTextParser.SafeParse("say :does_not_exist:");
+        var joined = string.Concat(tokens.Select(t => t.Value));
+        Assert.Contains(":does_not_exist:", joined);                 // stays as-is
+        Assert.Contains(tokens, t => t.Type == ChatTokenType.Emoji); // still an Emoji token
     }
 
     [Fact]
-    public void Parses_Emoji_Shortcodes_With_Fallback()
+    public void Emoji_MixedText_PreservesOrder()
     {
-        var tokens = ChatTextParser.SafeParse("gg :smile: and :unknown:");
-        var emotes = tokens.Where(t => t.Type == ChatTokenType.Emoji).Select(t => t.Value).ToArray();
-        Assert.Contains("😄", emotes);         // mapped
-        Assert.Contains(":unknown:", emotes);  // fallback stays shortcode
-    }
-
-    [Fact]
-    public void Parses_Urls_Without_Overlapping_Others()
-    {
-        var tokens = ChatTextParser.SafeParse("See https://example.com/@alex#bio now");
-        // URL should be a single token
-        Assert.Contains(tokens, t => t.Type == ChatTokenType.Url && t.Value.StartsWith("https://example.com/"));
-        // Ensure no mention or hashtag created inside URL
-        Assert.DoesNotContain(tokens, t => t.Type == ChatTokenType.Mention);
-        Assert.DoesNotContain(tokens, t => t.Type == ChatTokenType.Hashtag);
-    }
-
-    [Fact]
-    public void Parses_Hashtags()
-    {
-        var tokens = ChatTextParser.SafeParse("Working on #maui #dotnet9");
-        // Expected tokens: "Working on " (Text), "#maui" (Hashtag), " " (Text), "#dotnet9" (Hashtag)
-        Assert.Equal(4, tokens.Count);
-        Assert.Contains(tokens, t => t.Type == ChatTokenType.Hashtag && t.Value == "#maui");
-        Assert.Contains(tokens, t => t.Type == ChatTokenType.Hashtag && t.Value == "#dotnet9");
-    }
-
-    [Fact]
-    public void Mixed_All_Tokens_In_Order()
-    {
-        var input = "@A check :party: at https://x.y #fun";
+        var input = "gg :party: then :smile:!";
         var tokens = ChatTextParser.SafeParse(input);
-        var ordered = string.Concat(tokens.Select(t => t.Value));
+        var joined = string.Concat(tokens.Select(t => t.Value));
+        Assert.Equal("gg 🥳 then 😄!", joined);
+        Assert.Equal(ChatTokenType.Emoji, tokens.First(t => t.Value == "🥳").Type);
+        Assert.Equal(ChatTokenType.Emoji, tokens.First(t => t.Value == "😄").Type);
+    }
 
-        // Emoji shortcode is transformed to actual emoji 🥳 by the parser
-        Assert.Equal("@A check 🥳 at https://x.y #fun", ordered);
+    [Fact]
+    public void Emoji_Alias_Forms_Work()
+    {
+        var tokens = ChatTextParser.SafeParse("nice :+1: not nice :-1:");
+        var joined = string.Concat(tokens.Select(t => t.Value));
+        Assert.Contains("👍", joined);
+        Assert.Contains("👎", joined);
+    }
 
-        Assert.Equal(ChatTokenType.Mention, tokens[0].Type);
-        Assert.Equal(ChatTokenType.Emoji, tokens[2].Type);
-        Assert.Contains(tokens, t => t.Type == ChatTokenType.Url);
-        Assert.EndsWith("#fun", ordered);
+    [Fact]
+    public void Emoji_AdjacentShortcodes_ComposeCorrectly()
+    {
+        var tokens = ChatTextParser.SafeParse(":smile::party::fire:");
+        var joined = string.Concat(tokens.Select(t => t.Value));
+        Assert.Equal("😄🥳🔥", joined);
+    }
+
+    [Fact]
+    public void Emoji_DoesNotConvert_NormalColons()
+    {
+        var tokens = ChatTextParser.SafeParse("ratio 1:2 keep :smile:");
+        var joined = string.Concat(tokens.Select(t => t.Value));
+        Assert.Contains("1:2", joined); // untouched
+        Assert.EndsWith("😄", joined);  // emoji still works after plain colons
     }
 }

@@ -1,4 +1,12 @@
-// Models/UserPresenceItem.cs
+/*
+File: UserPresenceItem.cs
+
+What this does:
+- Purpose: View-model item representing a single user in the People/roster list with live-updating presence.
+- How: Implements INotifyPropertyChanged to keep the UI in sync when properties change.
+- Where used: Bound to the right-side "People" CollectionView in ChatPage; colors/labels react to Status.
+*/
+
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 
@@ -31,7 +39,7 @@ namespace Chatter.Client.Models
                 {
                     _status = value;
                     OnPropertyChanged();
-                    OnPropertyChanged(nameof(IsOnline)); // keep bindings in sync
+                    OnPropertyChanged(nameof(IsOnline));
                 }
             }
         }

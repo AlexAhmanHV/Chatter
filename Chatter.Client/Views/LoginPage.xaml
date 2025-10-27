@@ -1,9 +1,21 @@
-<?xml version="1.0" encoding="utf-8" ?>
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+File: LoginPage.xaml
+
+What this does:
+- Purpose: Welcome/Login screen for signing into Chatter with email + password.
+- How: Binds to LoginViewModel (Username, Password, IsBusy, CanLogin, LoginCommand) using compiled bindings (x:DataType).
+       Uses themed resources for gradients, cards, field borders, and primary/secondary buttons. CreateAccountBtn is
+       exposed by x:Name for code-behind to wire a “Create account” navigation.
+- Where used: Entry point after app launch or when a session expires; navigates to Register or the main Chat page.
+-->
+
 <ContentPage
     xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
     xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
     xmlns:vm="clr-namespace:Chatter.Client.ViewModels"
     x:Class="Chatter.Client.Views.LoginPage"
+    x:ClassModifier="public"
     x:DataType="vm:LoginViewModel"
     Title="Welcome"
     BackgroundColor="#0B1220">
@@ -11,17 +23,15 @@
     <!-- ===== Page Resources / Theme Tokens ===== -->
     <ContentPage.Resources>
         <ResourceDictionary>
-            <!-- Palette -->
-            <Color x:Key="PrimaryStart">#6EE7F9</Color>     <!-- cyan -->
-            <Color x:Key="PrimaryEnd">#8B5CF6</Color>       <!-- violet -->
-            <Color x:Key="CardBg">#101827</Color>           <!-- near-black card -->
-            <Color x:Key="TextPrimary">#E5E7EB</Color>      <!-- light text -->
-            <Color x:Key="TextSecondary">#9CA3AF</Color>    <!-- muted text -->
-            <Color x:Key="StrokeIdle">#1F2937</Color>       <!-- idle border -->
-            <Color x:Key="StrokeFocus">#8B5CF6</Color>      <!-- focus border -->
+            <Color x:Key="PrimaryStart">#6EE7F9</Color>
+            <Color x:Key="PrimaryEnd">#8B5CF6</Color>
+            <Color x:Key="CardBg">#101827</Color>
+            <Color x:Key="TextPrimary">#E5E7EB</Color>
+            <Color x:Key="TextSecondary">#9CA3AF</Color>
+            <Color x:Key="StrokeIdle">#1F2937</Color>
+            <Color x:Key="StrokeFocus">#8B5CF6</Color>
             <Color x:Key="FieldBg">#0D1524</Color>
 
-            <!-- Radii / spacing -->
             <x:Double x:Key="RadiusLg">20</x:Double>
             <x:Double x:Key="RadiusMd">14</x:Double>
 
@@ -38,7 +48,7 @@
                 <Setter Property="TextColor" Value="{StaticResource TextSecondary}" />
             </Style>
 
-            <!-- Field container with focus states -->
+            <!-- Field container -->
             <Style TargetType="Border" x:Key="FieldBorder">
                 <Setter Property="Stroke" Value="{StaticResource StrokeIdle}" />
                 <Setter Property="StrokeThickness" Value="1.5" />
@@ -113,8 +123,8 @@
             </Style>
 
             <!-- Accent for Create Account -->
-            <Color x:Key="SecondaryStart">#60A5FA</Color>   <!-- blue -->
-            <Color x:Key="SecondaryEnd">#22D3EE</Color>     <!-- cyan -->
+            <Color x:Key="SecondaryStart">#60A5FA</Color>
+            <Color x:Key="SecondaryEnd">#22D3EE</Color>
 
             <Style TargetType="Button" x:Key="EmphasisSecondaryBtn">
                 <Setter Property="TextColor" Value="White" />
@@ -162,7 +172,6 @@
 
     <!-- ===== Layout ===== -->
     <Grid>
-        <!-- Background gradient -->
         <Grid.Background>
             <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
                 <GradientStop Color="#0B1220" Offset="0.0" />
@@ -261,7 +270,7 @@
                             </Border>
                         </VerticalStackLayout>
 
-                        <!-- Log in (now secondary emphasis style) -->
+                        <!-- Log in -->
                         <Button Text="Log in"
                                 Command="{Binding LoginCommand}"
                                 IsEnabled="{Binding CanLogin}"
@@ -281,7 +290,7 @@
                             <BoxView Grid.Column="2" HeightRequest="1" BackgroundColor="{StaticResource StrokeIdle}" VerticalOptions="Center" />
                         </Grid>
 
-                        <!-- Create account (now primary gradient) -->
+                        <!-- Create account -->
                         <Button x:Name="CreateAccountBtn"
                                 Text="Create account"
                                 Style="{StaticResource PrimaryBtn}" />

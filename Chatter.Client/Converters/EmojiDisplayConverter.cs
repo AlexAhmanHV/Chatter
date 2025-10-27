@@ -18,14 +18,16 @@ namespace Chatter.Client.Converters
 {
     public sealed class EmojiDisplayConverter : IValueConverter
     {
-        public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+        public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
         {
             var text = value as string ?? string.Empty;
             var tokens = ChatTextParser.SafeParse(text);
             return string.Concat(tokens.Select(t => t.Value));
         }
 
-        public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
-            => value as string ?? string.Empty;
+        public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
+        {
+            return value as string ?? string.Empty;
+        }
     }
 }

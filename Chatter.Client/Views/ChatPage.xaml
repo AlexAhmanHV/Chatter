@@ -1,11 +1,24 @@
-<?xml version="1.0" encoding="utf-8" ?>
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+File: ChatPage.xaml
+
+What this does:
+- Purpose: Main chat screen showing the chats list (left), current conversation (middle), and people/status panel (right).
+- How: Binds to ChatViewModel with compiled bindings (x:DataType). Message bubbles use EmojiDisplayConverter.
+       Deleting a chat is wired via a double-tap gesture handled in code-behind (OnDeleteChatTapped) to avoid BindingContext pitfalls.
+       Styles/resources define gradients, cards, pills, and input borders used across the layout.
+- Where used: Primary app page (Shell route “ChatPage”) after connecting/logging in; interacts with ChatViewModel commands and observable collections.
+-->
+
 <ContentPage
     xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
     xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:Chatter.Client.ViewModels"
     xmlns:models="clr-namespace:Chatter.Client.Models"
     xmlns:conv="clr-namespace:Chatter.Client.Converters"
     x:Class="Chatter.Client.Views.ChatPage"
     x:Name="ChatPageRoot"
+    x:DataType="vm:ChatViewModel"
     Title="Chat"
     BackgroundColor="#0B1220"
     NavigationPage.HasNavigationBar="True"
@@ -17,21 +30,17 @@
     <ToolbarItem x:Name="SettingsItem"
                  Text="Settings"
                  Order="Secondary"
-                 Priority="0"
-                 Clicked="OnSettingsClicked">
+                 Priority="0">
       <ToolbarItem.IconImageSource>
         <FontImageSource Glyph="⚙" Size="22" Color="#E5E7EB" />
       </ToolbarItem.IconImageSource>
     </ToolbarItem>
   </ContentPage.ToolbarItems>
 
-  <!-- =================== Resources =================== -->
+  <!-- Resources -->
   <ContentPage.Resources>
     <ResourceDictionary>
-      <!-- Converters -->
       <conv:EmojiDisplayConverter x:Key="EmojiDisplay" />
-
-      <!-- Palette -->
       <Color x:Key="PrimaryStart">#6EE7F9</Color>
       <Color x:Key="PrimaryEnd">#8B5CF6</Color>
       <Color x:Key="CardBg">#101827</Color>
@@ -41,17 +50,14 @@
       <Color x:Key="TextPrimary">#E5E7EB</Color>
       <Color x:Key="TextSecondary">#9CA3AF</Color>
       <Color x:Key="BubbleBg">#0F1B2E</Color>
-
       <x:Double x:Key="RadiusLg">20</x:Double>
       <x:Double x:Key="RadiusMd">14</x:Double>
 
-      <!-- Section header gradient -->
       <LinearGradientBrush x:Key="HeaderBrush" StartPoint="0,0" EndPoint="1,0">
         <GradientStop Color="{StaticResource PrimaryStart}" Offset="0.0" />
         <GradientStop Color="{StaticResource PrimaryEnd}" Offset="1.0" />
       </LinearGradientBrush>
 
-      <!-- Primary gradient button -->
       <Style TargetType="Button" x:Key="PrimaryBtn">
         <Setter Property="TextColor" Value="White" />
         <Setter Property="FontSize" Value="15" />
@@ -73,7 +79,6 @@
         </Setter>
       </Style>
 
-      <!-- Input field container with focus state -->
       <Style TargetType="Border" x:Key="FieldBorder">
         <Setter Property="Stroke" Value="{StaticResource StrokeIdle}" />
         <Setter Property="StrokeThickness" Value="1.5" />
@@ -101,7 +106,6 @@
         </Setter>
       </Style>
 
-      <!-- Card container -->
       <Style TargetType="Border" x:Key="Card">
         <Setter Property="BackgroundColor" Value="{StaticResource CardBg}" />
         <Setter Property="Stroke" Value="{StaticResource StrokeIdle}" />
@@ -119,7 +123,6 @@
         </Setter>
       </Style>
 
-      <!-- Pill for counts/badges -->
       <Style TargetType="Border" x:Key="Pill">
         <Setter Property="Padding" Value="10,4" />
         <Setter Property="Background">
@@ -137,11 +140,10 @@
           </Setter.Value>
         </Setter>
       </Style>
-
     </ResourceDictionary>
   </ContentPage.Resources>
 
-  <!-- =================== Layout =================== -->
+  <!-- Layout -->
   <Grid ColumnSpacing="0" RowSpacing="0" Padding="16">
     <Grid.ColumnDefinitions>
       <ColumnDefinition Width="280" />
@@ -149,7 +151,7 @@
       <ColumnDefinition Width="300" />
     </Grid.ColumnDefinitions>
 
-    <!-- Decorative gradient blobs -->
+    <!-- Decorative gradients -->
     <Ellipse Grid.ColumnSpan="3" WidthRequest="280" HeightRequest="280" Opacity="0.22"
              HorizontalOptions="Start" VerticalOptions="Start" TranslationX="-120" TranslationY="-120">
       <Ellipse.Fill>
@@ -169,10 +171,9 @@
       </Ellipse.Fill>
     </Ellipse>
 
-    <!-- LEFT: Chats list -->
+    <!-- LEFT: Chats -->
     <Border Grid.Column="0" Style="{StaticResource Card}" Margin="0,0,12,0">
       <VerticalStackLayout Spacing="0">
-        <!-- Header -->
         <Border Padding="20,22" StrokeThickness="0" Background="{StaticResource HeaderBrush}">
           <VerticalStackLayout Spacing="6">
             <Label Text="💬 Messages" FontSize="20" FontAttributes="Bold" TextColor="White" />
@@ -180,18 +181,26 @@
           </VerticalStackLayout>
         </Border>
 
-        <!-- Chats List -->
         <ScrollView Padding="12,14">
           <CollectionView x:Name="ChatsCollection"
                           ItemsSource="{Binding Chats}"
                           SelectionMode="Single"
-                          SelectedItem="{Binding SelectedChat}">
+                          SelectedItem="{Binding SelectedChat, Mode=TwoWay}">
             <CollectionView.ItemTemplate>
-              <DataTemplate>
-                <Border BackgroundColor="{StaticResource PanelBg}" Padding="12" Margin="0,0,0,10" StrokeThickness="1" Stroke="{StaticResource StrokeIdle}">
+              <DataTemplate x:DataType="models:ChatItem">
+                <Border BackgroundColor="{StaticResource PanelBg}"
+                        Padding="12" Margin="0,0,0,10"
+                        StrokeThickness="1" Stroke="{StaticResource StrokeIdle}">
+                  <!-- Double-tap to delete: handled in code-behind to avoid any BindingContext paths -->
+                  <Border.GestureRecognizers>
+                    <TapGestureRecognizer NumberOfTapsRequired="2"
+                                          Tapped="OnDeleteChatTapped" />
+                  </Border.GestureRecognizers>
+
                   <Border.StrokeShape>
                     <RoundRectangle CornerRadius="12" />
                   </Border.StrokeShape>
+
                   <Grid ColumnSpacing="10">
                     <Grid.ColumnDefinitions>
                       <ColumnDefinition Width="Auto" />
@@ -199,17 +208,14 @@
                       <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
 
-                    <!-- Delete -->
+                    <!-- Delete icon (visual) -->
                     <Border Grid.Column="0" WidthRequest="32" HeightRequest="32" BackgroundColor="#251622" StrokeThickness="0" HorizontalOptions="Center" VerticalOptions="Center">
                       <Border.StrokeShape>
                         <RoundRectangle CornerRadius="16" />
                       </Border.StrokeShape>
-                      <Label Text="✕" FontSize="16" TextColor="#F87171" HorizontalOptions="Center" VerticalOptions="Center"
+                      <Label Text="✕" FontSize="16" TextColor="#F87171"
+                             HorizontalOptions="Center" VerticalOptions="Center"
                              HorizontalTextAlignment="Center" VerticalTextAlignment="Center">
-                        <Label.GestureRecognizers>
-                          <TapGestureRecognizer Command="{Binding BindingContext.DeleteChatCommand, Source={x:Reference ChatPageRoot}}"
-                                                CommandParameter="{Binding .}" />
-                        </Label.GestureRecognizers>
                         <Label.Triggers>
                           <DataTrigger TargetType="Label" Binding="{Binding Id}" Value="Lobby">
                             <Setter Property="IsVisible" Value="False" />
@@ -248,7 +254,7 @@
       </VerticalStackLayout>
     </Border>
 
-    <!-- MIDDLE: Current conversation -->
+    <!-- MIDDLE: Conversation -->
     <Grid Grid.Column="1" Margin="0" RowSpacing="0">
       <Grid.RowDefinitions>
         <RowDefinition Height="Auto" />
@@ -256,7 +262,6 @@
         <RowDefinition Height="Auto" />
       </Grid.RowDefinitions>
 
-      <!-- Chat header -->
       <Border Grid.Row="0" Style="{StaticResource Card}" Padding="20,16" Margin="0,0,12,12">
         <HorizontalStackLayout Spacing="12">
           <Border WidthRequest="40" HeightRequest="40" StrokeThickness="0" Background="{StaticResource HeaderBrush}">
@@ -280,7 +285,6 @@
         </HorizontalStackLayout>
       </Border>
 
-      <!-- Messages area -->
       <Border Grid.Row="1" Style="{StaticResource Card}" Padding="16,12" Margin="0,0,12,12">
         <ScrollView>
           <CollectionView ItemsSource="{Binding CurrentChatMessages}">
@@ -288,8 +292,7 @@
               <LinearItemsLayout Orientation="Vertical" ItemSpacing="10" />
             </CollectionView.ItemsLayout>
             <CollectionView.ItemTemplate>
-              <DataTemplate>
-                <!-- Single bubble -->
+              <DataTemplate x:DataType="x:String">
                 <Border BackgroundColor="{StaticResource BubbleBg}" Padding="14,10" Stroke="{StaticResource StrokeIdle}" StrokeThickness="1">
                   <Border.StrokeShape>
                     <RoundRectangle CornerRadius="12" />
@@ -298,7 +301,6 @@
                     <Shadow Opacity="0.15" Radius="10" Offset="0,4" />
                   </Border.Shadow>
 
-                  <!-- Apply emoji converter here -->
                   <Label Text="{Binding ., Converter={StaticResource EmojiDisplay}}"
                          LineBreakMode="WordWrap"
                          TextColor="{StaticResource TextPrimary}"
@@ -310,22 +312,18 @@
         </ScrollView>
       </Border>
 
-      <!-- Composer -->
       <Border Grid.Row="2" Style="{StaticResource Card}" Padding="16" Margin="0,0,12,0">
         <Grid ColumnSpacing="10" RowSpacing="4">
-          <!-- Two rows: input/send on row 0, typing indicator on row 1 -->
           <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
           </Grid.RowDefinitions>
-          <!-- NOTE: three columns (input, emoji, send) -->
           <Grid.ColumnDefinitions>
             <ColumnDefinition Width="*" />
             <ColumnDefinition Width="Auto" />
             <ColumnDefinition Width="Auto" />
           </Grid.ColumnDefinitions>
 
-          <!-- Row 0: input -->
           <Border Grid.Row="0" Grid.Column="0" Style="{StaticResource FieldBorder}">
             <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8" VerticalOptions="Center">
               <Label Grid.Column="0" Text="✍️" VerticalOptions="Center" />
@@ -340,7 +338,6 @@
             </Grid>
           </Border>
 
-          <!-- Row 0: emoji picker -->
           <Button Grid.Row="0" Grid.Column="1"
                   Text="😊"
                   Command="{Binding ShowEmojiPickerCommand}"
@@ -350,7 +347,6 @@
                   TextColor="#E5E7EB"
                   CornerRadius="12" />
 
-          <!-- Row 0: send -->
           <Button Grid.Row="0" Grid.Column="2"
                   Text="Send"
                   Command="{Binding SendCommand}"
@@ -358,7 +354,6 @@
                   Style="{StaticResource PrimaryBtn}"
                   WidthRequest="110" />
 
-          <!-- Row 1: Typing indicator -->
           <Label Grid.Row="1" Grid.ColumnSpan="3"
                  Text="{Binding TypingUser, StringFormat='{0} is typing…'}"
                  IsVisible="{Binding IsPeerTyping}"
@@ -370,15 +365,13 @@
       </Border>
     </Grid>
 
-    <!-- RIGHT: People panel -->
+    <!-- RIGHT: People -->
     <Border Grid.Column="2" Style="{StaticResource Card}">
       <VerticalStackLayout Spacing="0">
-        <!-- User header -->
         <Border Padding="20,22" StrokeThickness="0" Background="{StaticResource HeaderBrush}">
           <VerticalStackLayout Spacing="14">
             <Label Text="{Binding User, StringFormat='👤 {0}'}"
                    FontSize="16" FontAttributes="Bold" TextColor="White" />
-            <!-- Status picker -->
             <Border BackgroundColor="White" Padding="10,8" StrokeThickness="0">
               <Border.StrokeShape>
                 <RoundRectangle CornerRadius="10" />
@@ -388,7 +381,7 @@
                 <Picker Grid.Column="1"
                         ItemsSource="{Binding StatusOptions}"
                         SelectedItem="{Binding MyStatus}"
-                        ItemDisplayBinding="{Binding .}"
+                        ItemDisplayBinding="{Binding ., x:DataType=models:PresenceStatus}"
                         TextColor="#374151"
                         FontSize="14"
                         BackgroundColor="Transparent" />
@@ -397,11 +390,9 @@
           </VerticalStackLayout>
         </Border>
 
-        <!-- People -->
         <VerticalStackLayout Padding="16,16" Spacing="12">
           <Label Text="👥 People" FontSize="16" FontAttributes="Bold" TextColor="{StaticResource TextPrimary}" />
 
-          <!-- Stats -->
           <Grid ColumnDefinitions="*,*,*" ColumnSpacing="8">
             <Border Grid.Column="0" BackgroundColor="#082638" Padding="10,12" StrokeThickness="0">
               <Border.StrokeShape><RoundRectangle CornerRadius="10" /></Border.StrokeShape>
@@ -426,11 +417,10 @@
             </Border>
           </Grid>
 
-          <!-- People list -->
           <ScrollView>
             <CollectionView x:Name="PeopleList" ItemsSource="{Binding People}" SelectionMode="Single">
               <CollectionView.ItemTemplate>
-                <DataTemplate>
+                <DataTemplate x:DataType="models:UserPresenceItem">
                   <Border BackgroundColor="{StaticResource PanelBg}" Padding="12,10" Margin="0,0,0,10" StrokeThickness="1" Stroke="{StaticResource StrokeIdle}">
                     <Border.StrokeShape><RoundRectangle CornerRadius="12" /></Border.StrokeShape>
                     <Grid ColumnSpacing="12">
@@ -439,7 +429,6 @@
                         <ColumnDefinition Width="*" />
                       </Grid.ColumnDefinitions>
 
-                      <!-- Status indicator -->
                       <Border Grid.Column="0" WidthRequest="32" HeightRequest="32" StrokeThickness="2" Stroke="{StaticResource CardBg}" VerticalOptions="Center">
                         <Border.StrokeShape><RoundRectangle CornerRadius="16" /></Border.StrokeShape>
                         <Ellipse WidthRequest="28" HeightRequest="28">

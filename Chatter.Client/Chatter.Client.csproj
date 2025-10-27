@@ -1,6 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
+    <LangVersion>preview</LangVersion>
     <!-- Base TFMs that don't require Android SDK -->
     <TargetFrameworks>net9.0-ios;net9.0-maccatalyst</TargetFrameworks>
 
@@ -20,6 +21,9 @@
     <SingleProject>true</SingleProject>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+
+    <!-- Enable XamlC compiled bindings when a Binding explicitly sets Source=... -->
+    <MauiEnableXamlCBindingWithSourceCompilation>true</MauiEnableXamlCBindingWithSourceCompilation>
 
     <!-- App metadata -->
     <ApplicationTitle>Chatter.Client</ApplicationTitle>

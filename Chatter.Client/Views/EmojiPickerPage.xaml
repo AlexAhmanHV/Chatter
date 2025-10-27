@@ -1,10 +1,21 @@
 <?xml version="1.0" encoding="utf-8" ?>
+<!--
+File: EmojiPickerPage.xaml
+
+What this does:
+- Purpose: Modal emoji picker that lets users browse/search supported emoji shortcodes and insert one into the chat.
+- How: Shows a searchable grid (CollectionView with GridItemsLayout) bound to a list of EmojiItem { Shortcode, Emoji }.
+  Each tile displays the emoji and its shortcode; tapping a tile raises OnPick (code-behind) with the tapped EmojiItem.
+-->
+
 <ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:services="clr-namespace:Chatter.Client.Services"
              x:Class="Chatter.Client.Views.EmojiPickerPage"
              Title="Emoji"
              BackgroundColor="#0B1220"
              Padding="16">
+
   <VerticalStackLayout Spacing="12">
 
     <HorizontalStackLayout Spacing="10">
@@ -24,32 +35,32 @@
                TextColor="#E5E7EB"
                PlaceholderColor="#9CA3AF" />
 
-    <!-- Grid list -->
     <CollectionView x:Name="EmojiList"
                     SelectionMode="None">
       <CollectionView.ItemsLayout>
         <GridItemsLayout Orientation="Vertical" Span="6" />
       </CollectionView.ItemsLayout>
+
       <CollectionView.ItemTemplate>
-        <DataTemplate>
+        <!-- Enable compiled bindings for item rows -->
+        <DataTemplate x:DataType="services:EmojiItem">
           <Grid Padding="8">
             <Grid.RowDefinitions>
-              <RowDefinition Height="Auto"/>
-              <RowDefinition Height="Auto"/>
+              <RowDefinition Height="Auto" />
+              <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
 
             <Label Grid.Row="0"
                    Text="{Binding Emoji}"
                    FontSize="26"
-                   HorizontalTextAlignment="Center"/>
+                   HorizontalTextAlignment="Center" />
 
             <Label Grid.Row="1"
                    Text="{Binding Shortcode}"
                    FontSize="11"
                    TextColor="#9CA3AF"
-                   HorizontalTextAlignment="Center"/>
+                   HorizontalTextAlignment="Center" />
 
-            <!-- Tap to pick -->
             <Grid.GestureRecognizers>
               <TapGestureRecognizer Tapped="OnPick"
                                     CommandParameter="{Binding .}" />
