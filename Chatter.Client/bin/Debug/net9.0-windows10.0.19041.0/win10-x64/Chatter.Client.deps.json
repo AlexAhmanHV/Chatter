@@ -9,6 +9,7 @@
     ".NETCoreApp,Version=v9.0/win10-x64": {
       "Chatter.Client/1.0": {
         "dependencies": {
+          "Chatter.Core": "1.0.0",
           "Chatter.Shared": "1.0.0",
           "CommunityToolkit.Mvvm": "8.4.0",
           "Microsoft.AspNetCore.SignalR.Client": "9.0.10",
@@ -783,6 +784,14 @@
           }
         }
       },
+      "Chatter.Core/1.0.0": {
+        "runtime": {
+          "Chatter.Core.dll": {
+            "assemblyVersion": "1.0.0.0",
+            "fileVersion": "1.0.0.0"
+          }
+        }
+      },
       "Chatter.Shared/1.0.0": {
         "runtime": {
           "Chatter.Shared.dll": {
@@ -1161,6 +1170,11 @@
       "sha512": "sha512-VpQV6b8HRnw6bFFIPTOOMtOxba3/viH9K2U2LdOYNjQ2b2HrLHxjodmJr3nPwyNSrtrRPr1RDwOMJ5qqlPnCVg==",
       "path": "websocket.client/5.1.1",
       "hashPath": "websocket.client.5.1.1.nupkg.sha512"
+    },
+    "Chatter.Core/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
     },
     "Chatter.Shared/1.0.0": {
       "type": "project",

@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="Chatter.Client.Views.EmojiHelpPage"
+             Title="Emoji"
+             BackgroundColor="#0B1220">
+  <VerticalStackLayout Padding="20" Spacing="14">
+    <Label Text="Type these shortcodes to get emoji" TextColor="#E5E7EB" FontAttributes="Bold" FontSize="18"/>
+    <CollectionView ItemsSource="{Binding}">
+      <CollectionView.ItemTemplate>
+        <DataTemplate>
+          <Grid ColumnDefinitions="Auto,*" Padding="8,6">
+            <Label Grid.Column="0" Text="{Binding Emoji}" FontSize="20"/>
+            <Label Grid.Column="1" Text="{Binding Shortcode}" TextColor="#9CA3AF"/>
+          </Grid>
+        </DataTemplate>
+      </CollectionView.ItemTemplate>
+    </CollectionView>
+    <Button Text="Close" Clicked="OnClose" />
+  </VerticalStackLayout>
+</ContentPage>

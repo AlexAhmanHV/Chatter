@@ -58,6 +58,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Chatter.Shared\Chatter.Shared.csproj" />
+    <ProjectReference Include="..\Chatter.Core\Chatter.Core.csproj" />
   </ItemGroup>
 
 </Project>

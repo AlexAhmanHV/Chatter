@@ -655,3 +655,5 @@ C:\Users\AlexH\Chatter\Chatter.Client\bin\Debug\net9.0-ios\iossimulator-x64\Supa
 C:\Users\AlexH\Chatter\Chatter.Client\bin\Debug\net9.0-ios\iossimulator-x64\System.IdentityModel.Tokens.Jwt.dll
 C:\Users\AlexH\Chatter\Chatter.Client\bin\Debug\net9.0-ios\iossimulator-x64\System.Reactive.dll
 C:\Users\AlexH\Chatter\Chatter.Client\bin\Debug\net9.0-ios\iossimulator-x64\Websocket.Client.dll
+C:\Users\AlexH\Chatter\Chatter.Client\bin\Debug\net9.0-ios\iossimulator-x64\Chatter.Core.dll
+C:\Users\AlexH\Chatter\Chatter.Client\bin\Debug\net9.0-ios\iossimulator-x64\Chatter.Core.pdb

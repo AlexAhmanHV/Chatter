@@ -6,6 +6,7 @@ using CommunityToolkit.Mvvm.Messaging;
 using Chatter.Client.Messages;
 using Chatter.Client.Models;     // UserPresenceItem, PresenceStatus
 using Chatter.Client.Services;
+using Chatter.Client.Views;      // EmojiHelpPage
 using Microsoft.Maui.ApplicationModel;
 using Microsoft.Maui.Controls;
 using System;
@@ -24,7 +25,7 @@ public partial class ChatViewModel : ObservableObject
 
     [ObservableProperty] private string user = string.Empty;
     [ObservableProperty] private string? outgoingMessage;
-    [ObservableProperty] private string messagePlaceholder = "Type a message…";
+    [ObservableProperty] private string messagePlaceholder = "Type a message… (try :smile:, :party:)";
 
     private CancellationTokenSource? _typingCts;
 
@@ -85,6 +86,12 @@ public partial class ChatViewModel : ObservableObject
             _aliasHistoryByCurrent[current] = list;
         }
         return list;
+    }
+
+    [RelayCommand]
+    private async Task ShowEmojiHelpAsync()
+    {
+        await Application.Current!.MainPage!.Navigation.PushModalAsync(new EmojiHelpPage());
     }
 
     // ===== Presence (self) =====
@@ -185,19 +192,21 @@ public partial class ChatViewModel : ObservableObject
         UpdateMessagePlaceholder();
     }
 
-    // Typing indicator
+    // Typing indicator + CanSend refresh
     partial void OnOutgoingMessageChanged(string? value)
     {
         if (string.IsNullOrWhiteSpace(value))
         {
             _ = NotifyTypingAsync(false);
             _typingCts?.Cancel();
+            OnPropertyChanged(nameof(CanSend));
             return;
         }
         _ = NotifyTypingAsync(true);
         _typingCts?.Cancel();
         _typingCts = new CancellationTokenSource();
         _ = DelayedStopTypingAsync(_typingCts.Token);
+        OnPropertyChanged(nameof(CanSend));
     }
 
     private async Task NotifyTypingAsync(bool isTyping)
@@ -481,7 +490,7 @@ public partial class ChatViewModel : ObservableObject
     {
         if (SelectedChat is null)
         {
-            MessagePlaceholder = "Type a message…";
+            MessagePlaceholder = "Type a message… (try :smile:, :party:)";
             return;
         }
 
@@ -489,14 +498,14 @@ public partial class ChatViewModel : ObservableObject
 
         if (string.Equals(id, "Lobby", StringComparison.OrdinalIgnoreCase))
         {
-            MessagePlaceholder = "Write a message in the lobby...";
+            MessagePlaceholder = "Write a message in the lobby... (try :smile:, :party:)";
             return;
         }
 
         if (id.StartsWith("draft:", StringComparison.OrdinalIgnoreCase))
         {
             var other = FormatNameWithAliases(id.Substring("draft:".Length));
-            MessagePlaceholder = $"Type a message to {other}";
+            MessagePlaceholder = $"Type a message to {other} (try :smile:, :party:)";
             return;
         }
 
@@ -506,11 +515,11 @@ public partial class ChatViewModel : ObservableObject
             var parts = body.Split('|');
             var meCanon = Canon(User);
             var other = parts.FirstOrDefault(p => !Ci.Equals(Canon(p), meCanon));
-            MessagePlaceholder = $"Type a message to {FormatNameWithAliases(other ?? "this chat")}";
+            MessagePlaceholder = $"Type a message to {FormatNameWithAliases(other ?? "this chat")} (try :smile:, :party:)";
             return;
         }
 
-        MessagePlaceholder = $"Type a message to {ComputeChatLabel(id)}";
+        MessagePlaceholder = $"Type a message to {ComputeChatLabel(id)} (try :smile:, :party:)";
     }
 
     public void RefreshVisibleChat()
@@ -912,4 +921,10 @@ public partial class ChatViewModel : ObservableObject
 
         SelectedChat = lobby;
     }
+
+    [RelayCommand]
+private async Task ShowEmojiPickerAsync()
+{
+    await Application.Current!.MainPage!.Navigation.PushModalAsync(new EmojiPickerPage(this));
+}
 }

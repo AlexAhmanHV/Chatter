@@ -1,14 +1,16 @@
 <?xml version="1.0" encoding="utf-8" ?>
-<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
-             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
-             xmlns:models="clr-namespace:Chatter.Client.Models"
-             x:Class="Chatter.Client.Views.ChatPage"
-             x:Name="ChatPageRoot"
-             Title="Chat"
-             BackgroundColor="#0B1220"
-             NavigationPage.HasNavigationBar="True"
-             NavigationPage.BarBackgroundColor="#0B1220"
-             NavigationPage.BarTextColor="#E5E7EB">
+<ContentPage
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:models="clr-namespace:Chatter.Client.Models"
+    xmlns:conv="clr-namespace:Chatter.Client.Converters"
+    x:Class="Chatter.Client.Views.ChatPage"
+    x:Name="ChatPageRoot"
+    Title="Chat"
+    BackgroundColor="#0B1220"
+    NavigationPage.HasNavigationBar="True"
+    NavigationPage.BarBackgroundColor="#0B1220"
+    NavigationPage.BarTextColor="#E5E7EB">
 
   <!-- Toolbar -->
   <ContentPage.ToolbarItems>
@@ -26,6 +28,9 @@
   <!-- =================== Resources =================== -->
   <ContentPage.Resources>
     <ResourceDictionary>
+      <!-- Converters -->
+      <conv:EmojiDisplayConverter x:Key="EmojiDisplay" />
+
       <!-- Palette -->
       <Color x:Key="PrimaryStart">#6EE7F9</Color>
       <Color x:Key="PrimaryEnd">#8B5CF6</Color>
@@ -292,7 +297,12 @@
                   <Border.Shadow>
                     <Shadow Opacity="0.15" Radius="10" Offset="0,4" />
                   </Border.Shadow>
-                  <Label Text="{Binding .}" LineBreakMode="WordWrap" TextColor="{StaticResource TextPrimary}" FontSize="14" />
+
+                  <!-- Apply emoji converter here -->
+                  <Label Text="{Binding ., Converter={StaticResource EmojiDisplay}}"
+                         LineBreakMode="WordWrap"
+                         TextColor="{StaticResource TextPrimary}"
+                         FontSize="14" />
                 </Border>
               </DataTemplate>
             </CollectionView.ItemTemplate>
@@ -308,8 +318,10 @@
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
           </Grid.RowDefinitions>
+          <!-- NOTE: three columns (input, emoji, send) -->
           <Grid.ColumnDefinitions>
             <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
             <ColumnDefinition Width="Auto" />
           </Grid.ColumnDefinitions>
 
@@ -328,8 +340,18 @@
             </Grid>
           </Border>
 
-          <!-- Row 0: send -->
+          <!-- Row 0: emoji picker -->
           <Button Grid.Row="0" Grid.Column="1"
+                  Text="😊"
+                  Command="{Binding ShowEmojiPickerCommand}"
+                  WidthRequest="44"
+                  HeightRequest="48"
+                  BackgroundColor="#1F2937"
+                  TextColor="#E5E7EB"
+                  CornerRadius="12" />
+
+          <!-- Row 0: send -->
+          <Button Grid.Row="0" Grid.Column="2"
                   Text="Send"
                   Command="{Binding SendCommand}"
                   IsEnabled="{Binding CanSend}"
@@ -337,13 +359,13 @@
                   WidthRequest="110" />
 
           <!-- Row 1: Typing indicator -->
-          <Label Grid.Row="1" Grid.ColumnSpan="2"
-       Text="{Binding TypingUser, StringFormat='{0} is typing…'}"
-       IsVisible="{Binding IsPeerTyping}"
-       FontAttributes="Italic"
-       FontSize="12"
-       TextColor="{StaticResource TextSecondary}"
-       Margin="6,6,0,0" />
+          <Label Grid.Row="1" Grid.ColumnSpan="3"
+                 Text="{Binding TypingUser, StringFormat='{0} is typing…'}"
+                 IsVisible="{Binding IsPeerTyping}"
+                 FontAttributes="Italic"
+                 FontSize="12"
+                 TextColor="{StaticResource TextSecondary}"
+                 Margin="6,6,0,0" />
         </Grid>
       </Border>
     </Grid>

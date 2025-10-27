@@ -63,6 +63,18 @@ build_metadata.AdditionalFiles.ManifestResourceName = Chatter.Client.Views.ChatP
 build_metadata.AdditionalFiles.TargetPath = Views\ChatPage.xaml
 build_metadata.AdditionalFiles.RelativePath = Views\ChatPage.xaml
 
+[C:/Users/AlexH/Chatter/Chatter.Client/Views/EmojiHelpPage.xaml]
+build_metadata.AdditionalFiles.GenKind = Xaml
+build_metadata.AdditionalFiles.ManifestResourceName = Chatter.Client.Views.EmojiHelpPage.xaml
+build_metadata.AdditionalFiles.TargetPath = Views\EmojiHelpPage.xaml
+build_metadata.AdditionalFiles.RelativePath = Views\EmojiHelpPage.xaml
+
+[C:/Users/AlexH/Chatter/Chatter.Client/Views/EmojiPickerPage.xaml]
+build_metadata.AdditionalFiles.GenKind = Xaml
+build_metadata.AdditionalFiles.ManifestResourceName = Chatter.Client.Views.EmojiPickerPage.xaml
+build_metadata.AdditionalFiles.TargetPath = Views\EmojiPickerPage.xaml
+build_metadata.AdditionalFiles.RelativePath = Views\EmojiPickerPage.xaml
+
 [C:/Users/AlexH/Chatter/Chatter.Client/Views/LoginPage.xaml]
 build_metadata.AdditionalFiles.GenKind = Xaml
 build_metadata.AdditionalFiles.ManifestResourceName = Chatter.Client.Views.LoginPage.xaml

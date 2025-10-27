@@ -860,6 +860,16 @@
           }
         }
       },
+      "Chatter.Core/1.0.0": {
+        "type": "project",
+        "framework": ".NETCoreApp,Version=v9.0",
+        "compile": {
+          "bin/placeholder/Chatter.Core.dll": {}
+        },
+        "runtime": {
+          "bin/placeholder/Chatter.Core.dll": {}
+        }
+      },
       "Chatter.Shared/1.0.0": {
         "type": "project",
         "framework": ".NETCoreApp,Version=v9.0",
@@ -1728,6 +1738,16 @@
           "lib/net8.0/Websocket.Client.dll": {
             "related": ".xml"
           }
+        }
+      },
+      "Chatter.Core/1.0.0": {
+        "type": "project",
+        "framework": ".NETCoreApp,Version=v9.0",
+        "compile": {
+          "bin/placeholder/Chatter.Core.dll": {}
+        },
+        "runtime": {
+          "bin/placeholder/Chatter.Core.dll": {}
         }
       },
       "Chatter.Shared/1.0.0": {
@@ -2600,6 +2620,16 @@
           }
         }
       },
+      "Chatter.Core/1.0.0": {
+        "type": "project",
+        "framework": ".NETCoreApp,Version=v9.0",
+        "compile": {
+          "bin/placeholder/Chatter.Core.dll": {}
+        },
+        "runtime": {
+          "bin/placeholder/Chatter.Core.dll": {}
+        }
+      },
       "Chatter.Shared/1.0.0": {
         "type": "project",
         "framework": ".NETCoreApp,Version=v9.0",
@@ -3468,6 +3498,16 @@
           "lib/net8.0/Websocket.Client.dll": {
             "related": ".xml"
           }
+        }
+      },
+      "Chatter.Core/1.0.0": {
+        "type": "project",
+        "framework": ".NETCoreApp,Version=v9.0",
+        "compile": {
+          "bin/placeholder/Chatter.Core.dll": {}
+        },
+        "runtime": {
+          "bin/placeholder/Chatter.Core.dll": {}
         }
       },
       "Chatter.Shared/1.0.0": {
@@ -4340,6 +4380,16 @@
           }
         }
       },
+      "Chatter.Core/1.0.0": {
+        "type": "project",
+        "framework": ".NETCoreApp,Version=v9.0",
+        "compile": {
+          "bin/placeholder/Chatter.Core.dll": {}
+        },
+        "runtime": {
+          "bin/placeholder/Chatter.Core.dll": {}
+        }
+      },
       "Chatter.Shared/1.0.0": {
         "type": "project",
         "framework": ".NETCoreApp,Version=v9.0",
@@ -5208,6 +5258,16 @@
           "lib/net8.0/Websocket.Client.dll": {
             "related": ".xml"
           }
+        }
+      },
+      "Chatter.Core/1.0.0": {
+        "type": "project",
+        "framework": ".NETCoreApp,Version=v9.0",
+        "compile": {
+          "bin/placeholder/Chatter.Core.dll": {}
+        },
+        "runtime": {
+          "bin/placeholder/Chatter.Core.dll": {}
         }
       },
       "Chatter.Shared/1.0.0": {
@@ -6080,6 +6140,16 @@
           }
         }
       },
+      "Chatter.Core/1.0.0": {
+        "type": "project",
+        "framework": ".NETCoreApp,Version=v9.0",
+        "compile": {
+          "bin/placeholder/Chatter.Core.dll": {}
+        },
+        "runtime": {
+          "bin/placeholder/Chatter.Core.dll": {}
+        }
+      },
       "Chatter.Shared/1.0.0": {
         "type": "project",
         "framework": ".NETCoreApp,Version=v9.0",
@@ -6948,6 +7018,16 @@
           "lib/net8.0/Websocket.Client.dll": {
             "related": ".xml"
           }
+        }
+      },
+      "Chatter.Core/1.0.0": {
+        "type": "project",
+        "framework": ".NETCoreApp,Version=v9.0",
+        "compile": {
+          "bin/placeholder/Chatter.Core.dll": {}
+        },
+        "runtime": {
+          "bin/placeholder/Chatter.Core.dll": {}
         }
       },
       "Chatter.Shared/1.0.0": {
@@ -8060,6 +8140,16 @@
           }
         }
       },
+      "Chatter.Core/1.0.0": {
+        "type": "project",
+        "framework": ".NETCoreApp,Version=v9.0",
+        "compile": {
+          "bin/placeholder/Chatter.Core.dll": {}
+        },
+        "runtime": {
+          "bin/placeholder/Chatter.Core.dll": {}
+        }
+      },
       "Chatter.Shared/1.0.0": {
         "type": "project",
         "framework": ".NETCoreApp,Version=v9.0",
@@ -9108,6 +9198,16 @@
           }
         }
       },
+      "Chatter.Core/1.0.0": {
+        "type": "project",
+        "framework": ".NETCoreApp,Version=v9.0",
+        "compile": {
+          "bin/placeholder/Chatter.Core.dll": {}
+        },
+        "runtime": {
+          "bin/placeholder/Chatter.Core.dll": {}
+        }
+      },
       "Chatter.Shared/1.0.0": {
         "type": "project",
         "framework": ".NETCoreApp,Version=v9.0",
@@ -10154,6 +10254,16 @@
           "lib/net8.0/Websocket.Client.dll": {
             "related": ".xml"
           }
+        }
+      },
+      "Chatter.Core/1.0.0": {
+        "type": "project",
+        "framework": ".NETCoreApp,Version=v9.0",
+        "compile": {
+          "bin/placeholder/Chatter.Core.dll": {}
+        },
+        "runtime": {
+          "bin/placeholder/Chatter.Core.dll": {}
         }
       },
       "Chatter.Shared/1.0.0": {
@@ -11212,6 +11322,16 @@
           "lib/net8.0/Websocket.Client.dll": {
             "related": ".xml"
           }
+        }
+      },
+      "Chatter.Core/1.0.0": {
+        "type": "project",
+        "framework": ".NETCoreApp,Version=v9.0",
+        "compile": {
+          "bin/placeholder/Chatter.Core.dll": {}
+        },
+        "runtime": {
+          "bin/placeholder/Chatter.Core.dll": {}
         }
       },
       "Chatter.Shared/1.0.0": {
@@ -13854,6 +13974,11 @@
         "websocket.client.nuspec"
       ]
     },
+    "Chatter.Core/1.0.0": {
+      "type": "project",
+      "path": "../Chatter.Core/Chatter.Core.csproj",
+      "msbuildProject": "../Chatter.Core/Chatter.Core.csproj"
+    },
     "Chatter.Shared/1.0.0": {
       "type": "project",
       "path": "../Chatter.Shared/Chatter.Shared.csproj",
@@ -13862,6 +13987,7 @@
   },
   "projectFileDependencyGroups": {
     "net9.0-ios26.0": [
+      "Chatter.Core >= 1.0.0",
       "Chatter.Shared >= 1.0.0",
       "CommunityToolkit.Mvvm >= 8.4.0",
       "Microsoft.AspNetCore.SignalR.Client >= 9.0.10",
@@ -13871,6 +13997,7 @@
       "Supabase >= 1.1.1"
     ],
     "net9.0-maccatalyst26.0": [
+      "Chatter.Core >= 1.0.0",
       "Chatter.Shared >= 1.0.0",
       "CommunityToolkit.Mvvm >= 8.4.0",
       "Microsoft.AspNetCore.SignalR.Client >= 9.0.10",
@@ -13880,6 +14007,7 @@
       "Supabase >= 1.1.1"
     ],
     "net9.0-windows10.0.19041": [
+      "Chatter.Core >= 1.0.0",
       "Chatter.Shared >= 1.0.0",
       "CommunityToolkit.Mvvm >= 8.4.0",
       "Microsoft.AspNetCore.SignalR.Client >= 9.0.10",
@@ -13924,6 +14052,9 @@
         "net9.0-ios26.0": {
           "targetAlias": "net9.0-ios",
           "projectReferences": {
+            "C:\\Users\\AlexH\\Chatter\\Chatter.Core\\Chatter.Core.csproj": {
+              "projectPath": "C:\\Users\\AlexH\\Chatter\\Chatter.Core\\Chatter.Core.csproj"
+            },
             "C:\\Users\\AlexH\\Chatter\\Chatter.Shared\\Chatter.Shared.csproj": {
               "projectPath": "C:\\Users\\AlexH\\Chatter\\Chatter.Shared\\Chatter.Shared.csproj"
             }
@@ -13932,6 +14063,9 @@
         "net9.0-maccatalyst26.0": {
           "targetAlias": "net9.0-maccatalyst",
           "projectReferences": {
+            "C:\\Users\\AlexH\\Chatter\\Chatter.Core\\Chatter.Core.csproj": {
+              "projectPath": "C:\\Users\\AlexH\\Chatter\\Chatter.Core\\Chatter.Core.csproj"
+            },
             "C:\\Users\\AlexH\\Chatter\\Chatter.Shared\\Chatter.Shared.csproj": {
               "projectPath": "C:\\Users\\AlexH\\Chatter\\Chatter.Shared\\Chatter.Shared.csproj"
             }
@@ -13940,6 +14074,9 @@
         "net9.0-windows10.0.19041": {
           "targetAlias": "net9.0-windows10.0.19041.0",
           "projectReferences": {
+            "C:\\Users\\AlexH\\Chatter\\Chatter.Core\\Chatter.Core.csproj": {
+              "projectPath": "C:\\Users\\AlexH\\Chatter\\Chatter.Core\\Chatter.Core.csproj"
+            },
             "C:\\Users\\AlexH\\Chatter\\Chatter.Shared\\Chatter.Shared.csproj": {
               "projectPath": "C:\\Users\\AlexH\\Chatter\\Chatter.Shared\\Chatter.Shared.csproj"
             }
