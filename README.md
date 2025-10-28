@@ -75,7 +75,6 @@ Chatter.sln
    └─ Helpers/                          # ServiceHelper
 ```
 
-> **Note:** If your local folder names differ (e.g., `Chatter.Api` instead of `Chatter.Server`), adapt the paths below accordingly. The default docs assume `Chatter.Server`.
 
 ## Screens & features
 
@@ -126,7 +125,7 @@ The API is configured to listen on:
 * **HTTP:** `http://localhost:5291`
 * **HTTPS:** `https://localhost:7062`
 
-Check `Chatter.Server/Properties/launchSettings.json` (or your backend project folder):
+Check `Chatter.Server/Properties/launchSettings.json`
 
 ```json
 {
