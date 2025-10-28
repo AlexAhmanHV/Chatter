@@ -143,16 +143,6 @@ Check `Chatter.Server/Properties/launchSettings.json`
 }
 ```
 
-**Client base URL**
-
-In `Chatter.Client/ViewModels/ChatViewModel.cs`, set:
-
-```csharp
-private const string BaseUrl = "https://localhost:7062";
-```
-
-> Make sure this matches the HTTPS port you actually run on.
-
 ### Run the backend (ASP.NET Core)
 
 From the `Chatter.Server` directory:
@@ -174,24 +164,32 @@ From the `Chatter.Client` directory:
 **Windows (WinUI):**
 
 ```bash
+dotnet clean
+dotnet build
 dotnet build -t:Run -f net9.0-windows10.0.19041.0
 ```
 
 **Android:**
 
 ```bash
+dotnet clean
+dotnet build
 dotnet build -t:Run -f net9.0-android
 ```
 
 **iOS (simulator on macOS):**
 
 ```bash
+dotnet clean
+dotnet build
 dotnet build -t:Run -f net9.0-ios
 ```
 
 **MacCatalyst:**
 
 ```bash
+dotnet clean
+dotnet build
 dotnet build -t:Run -f net9.0-maccatalyst
 ```
 
@@ -206,12 +204,20 @@ dotnet run --launch-profile Dev
 # Client (MAUI)
 cd ../Chatter.Client
 # Windows
+dotnet clean
+dotnet build
 dotnet build -t:Run -f net9.0-windows10.0.19041.0
 # Android
+dotnet clean
+dotnet build
 dotnet build -t:Run -f net9.0-android
 # iOS
+dotnet clean
+dotnet build
 dotnet build -t:Run -f net9.0-ios
 # macOS (MacCatalyst)
+dotnet clean
+dotnet build
 dotnet build -t:Run -f net9.0-maccatalyst
 ```
 
