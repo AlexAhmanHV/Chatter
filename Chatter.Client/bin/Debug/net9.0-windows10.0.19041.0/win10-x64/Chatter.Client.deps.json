@@ -762,7 +762,14 @@
           }
         }
       },
-      "System.Threading.Channels/9.0.10": {},
+      "System.Threading.Channels/9.0.10": {
+        "runtime": {
+          "lib/net9.0/System.Threading.Channels.dll": {
+            "assemblyVersion": "9.0.0.0",
+            "fileVersion": "9.0.1025.47515"
+          }
+        }
+      },
       "Websocket.Client/5.1.1": {
         "dependencies": {
           "Microsoft.Extensions.Logging.Abstractions": "9.0.10",

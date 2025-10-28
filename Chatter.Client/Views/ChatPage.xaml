@@ -355,6 +355,14 @@ What this does:
                   WidthRequest="110" />
 
           <Label Grid.Row="1" Grid.ColumnSpan="3"
+                  Text="{Binding CharacterCounterText}"
+                  HorizontalOptions="End"
+                  FontSize="12"
+                  Opacity="0.85"
+                  FontAttributes="Italic"
+                  TextColor="{DynamicResource TextSecondary}" />
+
+          <Label Grid.Row="1" Grid.ColumnSpan="3"
                  Text="{Binding TypingUser, StringFormat='{0} is typing…'}"
                  IsVisible="{Binding IsPeerTyping}"
                  FontAttributes="Italic"

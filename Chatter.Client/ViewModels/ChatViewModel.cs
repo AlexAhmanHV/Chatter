@@ -212,9 +212,17 @@ public partial class ChatViewModel : ObservableObject
         UpdateMessagePlaceholder();
     }
 
+
     /* Typing indicator & CanSend updates */
+
+    [ObservableProperty] private int charactersUsed;
+    public string CharacterCounterText => $"Characters used {CharactersUsed}";
+
     partial void OnOutgoingMessageChanged(string? value)
     {
+            CharactersUsed = value?.Length ?? 0;
+            OnPropertyChanged(nameof(CharacterCounterText));
+
         if (string.IsNullOrWhiteSpace(value))
         {
             _ = NotifyTypingAsync(false);

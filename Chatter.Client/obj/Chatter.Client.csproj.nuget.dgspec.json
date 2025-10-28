@@ -1,24 +1,24 @@
 {
   "format": 1,
   "restore": {
-    "C:\\Users\\albin\\Chatter\\Chatter\\Chatter.Client\\Chatter.Client.csproj": {}
+    "C:\\Users\\AlexH\\Desktop\\Chatter\\Chatter\\Chatter.Client\\Chatter.Client.csproj": {}
   },
   "projects": {
-    "C:\\Users\\albin\\Chatter\\Chatter\\Chatter.Client\\Chatter.Client.csproj": {
+    "C:\\Users\\AlexH\\Desktop\\Chatter\\Chatter\\Chatter.Client\\Chatter.Client.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "C:\\Users\\albin\\Chatter\\Chatter\\Chatter.Client\\Chatter.Client.csproj",
+        "projectUniqueName": "C:\\Users\\AlexH\\Desktop\\Chatter\\Chatter\\Chatter.Client\\Chatter.Client.csproj",
         "projectName": "Chatter.Client",
-        "projectPath": "C:\\Users\\albin\\Chatter\\Chatter\\Chatter.Client\\Chatter.Client.csproj",
-        "packagesPath": "C:\\Users\\albin\\.nuget\\packages\\",
-        "outputPath": "C:\\Users\\albin\\Chatter\\Chatter\\Chatter.Client\\obj\\",
+        "projectPath": "C:\\Users\\AlexH\\Desktop\\Chatter\\Chatter\\Chatter.Client\\Chatter.Client.csproj",
+        "packagesPath": "C:\\Users\\AlexH\\.nuget\\packages\\",
+        "outputPath": "C:\\Users\\AlexH\\Desktop\\Chatter\\Chatter\\Chatter.Client\\obj\\",
         "projectStyle": "PackageReference",
         "crossTargeting": true,
         "fallbackFolders": [
           "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"
         ],
         "configFilePaths": [
-          "C:\\Users\\albin\\AppData\\Roaming\\NuGet\\NuGet.Config",
+          "C:\\Users\\AlexH\\AppData\\Roaming\\NuGet\\NuGet.Config",
           "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.FallbackLocation.config",
           "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.Offline.config"
         ],
@@ -36,33 +36,33 @@
           "net9.0-ios26.0": {
             "targetAlias": "net9.0-ios",
             "projectReferences": {
-              "C:\\Users\\albin\\Chatter\\Chatter\\Chatter.Core\\Chatter.Core.csproj": {
-                "projectPath": "C:\\Users\\albin\\Chatter\\Chatter\\Chatter.Core\\Chatter.Core.csproj"
+              "C:\\Users\\AlexH\\Desktop\\Chatter\\Chatter\\Chatter.Core\\Chatter.Core.csproj": {
+                "projectPath": "C:\\Users\\AlexH\\Desktop\\Chatter\\Chatter\\Chatter.Core\\Chatter.Core.csproj"
               },
-              "C:\\Users\\albin\\Chatter\\Chatter\\Chatter.Shared\\Chatter.Shared.csproj": {
-                "projectPath": "C:\\Users\\albin\\Chatter\\Chatter\\Chatter.Shared\\Chatter.Shared.csproj"
+              "C:\\Users\\AlexH\\Desktop\\Chatter\\Chatter\\Chatter.Shared\\Chatter.Shared.csproj": {
+                "projectPath": "C:\\Users\\AlexH\\Desktop\\Chatter\\Chatter\\Chatter.Shared\\Chatter.Shared.csproj"
               }
             }
           },
           "net9.0-maccatalyst26.0": {
             "targetAlias": "net9.0-maccatalyst",
             "projectReferences": {
-              "C:\\Users\\albin\\Chatter\\Chatter\\Chatter.Core\\Chatter.Core.csproj": {
-                "projectPath": "C:\\Users\\albin\\Chatter\\Chatter\\Chatter.Core\\Chatter.Core.csproj"
+              "C:\\Users\\AlexH\\Desktop\\Chatter\\Chatter\\Chatter.Core\\Chatter.Core.csproj": {
+                "projectPath": "C:\\Users\\AlexH\\Desktop\\Chatter\\Chatter\\Chatter.Core\\Chatter.Core.csproj"
               },
-              "C:\\Users\\albin\\Chatter\\Chatter\\Chatter.Shared\\Chatter.Shared.csproj": {
-                "projectPath": "C:\\Users\\albin\\Chatter\\Chatter\\Chatter.Shared\\Chatter.Shared.csproj"
+              "C:\\Users\\AlexH\\Desktop\\Chatter\\Chatter\\Chatter.Shared\\Chatter.Shared.csproj": {
+                "projectPath": "C:\\Users\\AlexH\\Desktop\\Chatter\\Chatter\\Chatter.Shared\\Chatter.Shared.csproj"
               }
             }
           },
           "net9.0-windows10.0.19041": {
             "targetAlias": "net9.0-windows10.0.19041.0",
             "projectReferences": {
-              "C:\\Users\\albin\\Chatter\\Chatter\\Chatter.Core\\Chatter.Core.csproj": {
-                "projectPath": "C:\\Users\\albin\\Chatter\\Chatter\\Chatter.Core\\Chatter.Core.csproj"
+              "C:\\Users\\AlexH\\Desktop\\Chatter\\Chatter\\Chatter.Core\\Chatter.Core.csproj": {
+                "projectPath": "C:\\Users\\AlexH\\Desktop\\Chatter\\Chatter\\Chatter.Core\\Chatter.Core.csproj"
               },
-              "C:\\Users\\albin\\Chatter\\Chatter\\Chatter.Shared\\Chatter.Shared.csproj": {
-                "projectPath": "C:\\Users\\albin\\Chatter\\Chatter\\Chatter.Shared\\Chatter.Shared.csproj"
+              "C:\\Users\\AlexH\\Desktop\\Chatter\\Chatter\\Chatter.Shared\\Chatter.Shared.csproj": {
+                "projectPath": "C:\\Users\\AlexH\\Desktop\\Chatter\\Chatter\\Chatter.Shared\\Chatter.Shared.csproj"
               }
             }
           }
@@ -102,7 +102,7 @@
             "Microsoft.NET.ILLink.Tasks": {
               "suppressParent": "All",
               "target": "Package",
-              "version": "[9.0.10, )",
+              "version": "[9.0.8, )",
               "autoReferenced": true
             },
             "Supabase": {
@@ -121,6 +121,12 @@
           ],
           "assetTargetFallback": true,
           "warn": true,
+          "downloadDependencies": [
+            {
+              "name": "Microsoft.NETCore.App.Ref",
+              "version": "[9.0.10, 9.0.10]"
+            }
+          ],
           "frameworkReferences": {
             "Microsoft.iOS": {
               "privateAssets": "all"
@@ -129,7 +135,7 @@
               "privateAssets": "all"
             }
           },
-          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\9.0.306/PortableRuntimeIdentifierGraph.json"
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\9.0.304/PortableRuntimeIdentifierGraph.json"
         },
         "net9.0-maccatalyst26.0": {
           "targetAlias": "net9.0-maccatalyst",
@@ -153,7 +159,7 @@
             "Microsoft.NET.ILLink.Tasks": {
               "suppressParent": "All",
               "target": "Package",
-              "version": "[9.0.10, )",
+              "version": "[9.0.8, )",
               "autoReferenced": true
             },
             "Supabase": {
@@ -173,6 +179,12 @@
           ],
           "assetTargetFallback": true,
           "warn": true,
+          "downloadDependencies": [
+            {
+              "name": "Microsoft.NETCore.App.Ref",
+              "version": "[9.0.10, 9.0.10]"
+            }
+          ],
           "frameworkReferences": {
             "Microsoft.MacCatalyst": {
               "privateAssets": "all"
@@ -181,7 +193,7 @@
               "privateAssets": "all"
             }
           },
-          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\9.0.306/PortableRuntimeIdentifierGraph.json"
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\9.0.304/PortableRuntimeIdentifierGraph.json"
         },
         "net9.0-windows10.0.19041": {
           "targetAlias": "net9.0-windows10.0.19041.0",
@@ -232,7 +244,7 @@
               "privateAssets": "all"
             }
           },
-          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\9.0.306\\RuntimeIdentifierGraph.json"
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\9.0.304\\RuntimeIdentifierGraph.json"
         }
       },
       "runtimes": {
@@ -247,20 +259,20 @@
         }
       }
     },
-    "C:\\Users\\albin\\Chatter\\Chatter\\Chatter.Core\\Chatter.Core.csproj": {
+    "C:\\Users\\AlexH\\Desktop\\Chatter\\Chatter\\Chatter.Core\\Chatter.Core.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "C:\\Users\\albin\\Chatter\\Chatter\\Chatter.Core\\Chatter.Core.csproj",
+        "projectUniqueName": "C:\\Users\\AlexH\\Desktop\\Chatter\\Chatter\\Chatter.Core\\Chatter.Core.csproj",
         "projectName": "Chatter.Core",
-        "projectPath": "C:\\Users\\albin\\Chatter\\Chatter\\Chatter.Core\\Chatter.Core.csproj",
-        "packagesPath": "C:\\Users\\albin\\.nuget\\packages\\",
-        "outputPath": "C:\\Users\\albin\\Chatter\\Chatter\\Chatter.Core\\obj\\",
+        "projectPath": "C:\\Users\\AlexH\\Desktop\\Chatter\\Chatter\\Chatter.Core\\Chatter.Core.csproj",
+        "packagesPath": "C:\\Users\\AlexH\\.nuget\\packages\\",
+        "outputPath": "C:\\Users\\AlexH\\Desktop\\Chatter\\Chatter\\Chatter.Core\\obj\\",
         "projectStyle": "PackageReference",
         "fallbackFolders": [
           "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"
         ],
         "configFilePaths": [
-          "C:\\Users\\albin\\AppData\\Roaming\\NuGet\\NuGet.Config",
+          "C:\\Users\\AlexH\\AppData\\Roaming\\NuGet\\NuGet.Config",
           "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.FallbackLocation.config",
           "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.Offline.config"
         ],
@@ -309,24 +321,24 @@
               "privateAssets": "all"
             }
           },
-          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\9.0.306/PortableRuntimeIdentifierGraph.json"
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\9.0.304/PortableRuntimeIdentifierGraph.json"
         }
       }
     },
-    "C:\\Users\\albin\\Chatter\\Chatter\\Chatter.Shared\\Chatter.Shared.csproj": {
+    "C:\\Users\\AlexH\\Desktop\\Chatter\\Chatter\\Chatter.Shared\\Chatter.Shared.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "C:\\Users\\albin\\Chatter\\Chatter\\Chatter.Shared\\Chatter.Shared.csproj",
+        "projectUniqueName": "C:\\Users\\AlexH\\Desktop\\Chatter\\Chatter\\Chatter.Shared\\Chatter.Shared.csproj",
         "projectName": "Chatter.Shared",
-        "projectPath": "C:\\Users\\albin\\Chatter\\Chatter\\Chatter.Shared\\Chatter.Shared.csproj",
-        "packagesPath": "C:\\Users\\albin\\.nuget\\packages\\",
-        "outputPath": "C:\\Users\\albin\\Chatter\\Chatter\\Chatter.Shared\\obj\\",
+        "projectPath": "C:\\Users\\AlexH\\Desktop\\Chatter\\Chatter\\Chatter.Shared\\Chatter.Shared.csproj",
+        "packagesPath": "C:\\Users\\AlexH\\.nuget\\packages\\",
+        "outputPath": "C:\\Users\\AlexH\\Desktop\\Chatter\\Chatter\\Chatter.Shared\\obj\\",
         "projectStyle": "PackageReference",
         "fallbackFolders": [
           "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"
         ],
         "configFilePaths": [
-          "C:\\Users\\albin\\AppData\\Roaming\\NuGet\\NuGet.Config",
+          "C:\\Users\\AlexH\\AppData\\Roaming\\NuGet\\NuGet.Config",
           "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.FallbackLocation.config",
           "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.Offline.config"
         ],
@@ -375,7 +387,7 @@
               "privateAssets": "all"
             }
           },
-          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\9.0.306/PortableRuntimeIdentifierGraph.json"
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\9.0.304/PortableRuntimeIdentifierGraph.json"
         }
       }
     }
