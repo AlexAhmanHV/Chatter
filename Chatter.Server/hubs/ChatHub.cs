@@ -165,6 +165,17 @@ public class ChatHub : Hub
             _ => new HashSet<string>(Ci) { connId },
             (_, set) => { set.Add(connId); return set; });
 
+            if (_statusByDisplayName.TryRemove(old, out var explicitStatus))
+            {
+                // Prefer keeping user's explicit status if it existed
+                _statusByDisplayName[newCanon] = explicitStatus;
+            }
+            else
+            {
+                // Ensure the new name has a default status (optional but nice)
+                _statusByDisplayName.TryAdd(newCanon, "online");
+            }
+
         // Replace logical membership references
         foreach (var set in _chatMembers.Values)
         {
@@ -186,7 +197,7 @@ public class ChatHub : Hub
 
         // Notify Lobby of rename (system line + rename event used by clients)
         await Clients.Group(LobbyId).SendAsync("DisplayNameChanged", old, newCanon);
-        await Clients.Group(LobbyId).SendAsync("DisplayNameChanged", old, newDisplayName);
+        
 
         await BroadcastRosterAsync();
 
@@ -232,6 +243,7 @@ public class ChatHub : Hub
     {
         var names = _displayNameToConnections.Keys
             .Concat(_statusByDisplayName.Keys)
+            .Select(Canon)
             .Distinct(Ci);
 
         var snapshot = names.ToDictionary(n => n, n => GetEffectiveStatus(n), Ci);
@@ -243,6 +255,7 @@ public class ChatHub : Hub
     {
         var names = _displayNameToConnections.Keys
             .Concat(_statusByDisplayName.Keys)
+            .Select(Canon)
             .Distinct(Ci);
 
         var snapshot = names.ToDictionary(n => n, n => GetEffectiveStatus(n), Ci);
