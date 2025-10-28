@@ -22,3 +22,15 @@ C:\Users\AlexH\Chatter\Chatter.Shared\obj\Debug\net9.0\Chatter.Shared.dll
 C:\Users\AlexH\Chatter\Chatter.Shared\obj\Debug\net9.0\refint\Chatter.Shared.dll
 C:\Users\AlexH\Chatter\Chatter.Shared\obj\Debug\net9.0\Chatter.Shared.pdb
 C:\Users\AlexH\Chatter\Chatter.Shared\obj\Debug\net9.0\ref\Chatter.Shared.dll
+C:\Users\albin\Chatter\Chatter\Chatter.Shared\bin\Debug\net9.0\Chatter.Shared.deps.json
+C:\Users\albin\Chatter\Chatter\Chatter.Shared\bin\Debug\net9.0\Chatter.Shared.dll
+C:\Users\albin\Chatter\Chatter\Chatter.Shared\bin\Debug\net9.0\Chatter.Shared.pdb
+C:\Users\albin\Chatter\Chatter\Chatter.Shared\obj\Debug\net9.0\Chatter.Shared.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\albin\Chatter\Chatter\Chatter.Shared\obj\Debug\net9.0\Chatter.Shared.AssemblyInfoInputs.cache
+C:\Users\albin\Chatter\Chatter\Chatter.Shared\obj\Debug\net9.0\Chatter.Shared.AssemblyInfo.cs
+C:\Users\albin\Chatter\Chatter\Chatter.Shared\obj\Debug\net9.0\Chatter.Shared.csproj.CoreCompileInputs.cache
+C:\Users\albin\Chatter\Chatter\Chatter.Shared\obj\Debug\net9.0\Chatter.Shared.sourcelink.json
+C:\Users\albin\Chatter\Chatter\Chatter.Shared\obj\Debug\net9.0\Chatter.Shared.dll
+C:\Users\albin\Chatter\Chatter\Chatter.Shared\obj\Debug\net9.0\refint\Chatter.Shared.dll
+C:\Users\albin\Chatter\Chatter\Chatter.Shared\obj\Debug\net9.0\Chatter.Shared.pdb
+C:\Users\albin\Chatter\Chatter\Chatter.Shared\obj\Debug\net9.0\ref\Chatter.Shared.dll

@@ -9,7 +9,7 @@ What this does:
 - How: The page binds to RegisterViewModel via x:DataType for compile-time binding checks. Field containers use a reusable FieldBorder style
   with focus visuals; the primary CTA uses a gradient PrimaryBtn style. The “Log in” link is wired to NavigateToLoginCommand on the VM
   (make sure your RegisterViewModel exposes it), and the Register button binds to RegisterCommand.
-- Notes: If you don’t implement ConfirmPassword or NavigateToLoginCommand on the VM, remove those bindings or wire them in code-behind.
+
 -->
 
 <ContentPage
@@ -227,7 +227,7 @@ What this does:
                                 <Grid ColumnDefinitions="24,*" ColumnSpacing="10" VerticalOptions="Center">
                                     <Label Grid.Column="0" Text="🔒" FontSize="16" VerticalOptions="Center" />
                                     <Entry Grid.Column="1"
-                                           Placeholder="At least 8 characters"
+                                           Placeholder="At least 6 characters"
                                            Text="{Binding Password}"
                                            IsPassword="True"
                                            ReturnType="Next"
@@ -236,7 +236,7 @@ What this does:
                                            BackgroundColor="Transparent" />
                                 </Grid>
                             </Border>
-                            <Label Text="Must be at least 8 characters"
+                            <Label Text="Must be at least 6 characters"
                                    FontSize="12"
                                    TextColor="{StaticResource TextSecondary}"
                                    Margin="4,0,0,0" />

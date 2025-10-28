@@ -82,7 +82,7 @@ public partial class RegisterViewModel : ObservableObject
 
             if (session is not null)
             {
-                await ShowAlertAsync("Welcome!", "Account created and you are signed in.", "OK");
+                await ShowAlertAsync("Welcome!", "Account created.", "OK");
                 RegistrationSucceeded?.Invoke();
             }
             else
@@ -94,10 +94,33 @@ public partial class RegisterViewModel : ObservableObject
                 RegistrationSucceeded?.Invoke();
             }
         }
+
         catch (Exception ex)
         {
-            await ShowAlertAsync("Registration failed", ex.Message, "OK");
+            string userMessage;
+
+            // Basic Supabase error mapping
+            if (ex.Message.Contains("weak_password", StringComparison.OrdinalIgnoreCase))
+            {
+                userMessage = "Enter 6 or more characters for your password.";
+            }
+            else if (ex.Message.Contains("email_address_invalid", StringComparison.OrdinalIgnoreCase))
+            {
+                userMessage = "Enter a valid email address.";
+            }
+            else if (ex.Message.Contains("email_exists", StringComparison.OrdinalIgnoreCase))
+            {
+                userMessage = "An account already exists with this email. Please sign in.";
+            }
+            else
+            {
+                // Fallback so we avoid JSON-felet helt
+                userMessage = "Registration failed. Please try again.";
+            }
+
+            await ShowAlertAsync("Registration failed", userMessage, "OK");
         }
+
         finally
         {
             IsBusy = false;

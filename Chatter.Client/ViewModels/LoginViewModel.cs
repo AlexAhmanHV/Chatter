@@ -103,8 +103,28 @@ public partial class LoginViewModel : ObservableObject
         }
         catch (Exception ex)
         {
-            await ShowAlertAsync("Login failed", ex.Message, "OK");
+            string userMessage;
+
+            if (ex.Message.Contains("invalid_credentials", StringComparison.OrdinalIgnoreCase))
+            {
+                userMessage = "Invalid email or password.";
+            }
+            else if (ex.Message.Contains("email_not_confirmed", StringComparison.OrdinalIgnoreCase))
+            {
+                userMessage = "Please verify your email before signing in.";
+            }
+            else if (ex is System.Net.Http.HttpRequestException)
+            {
+                userMessage = "Network error. Please check your connection and try again.";
+            }
+            else
+            {
+                userMessage = "Login failed. Please try again.";
+            }
+
+            await ShowAlertAsync("Login failed", userMessage, "OK");
         }
+
         finally
         {
             IsBusy = false;
