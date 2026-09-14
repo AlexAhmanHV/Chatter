@@ -85,7 +85,7 @@ public static class ChatTextParser
     // Regex for :shortcode:
     private static readonly TimeSpan RxTimeout = TimeSpan.FromMilliseconds(200);
     private static readonly Regex EmojiRx =
-        new(@":([a-z0-9_\-]+):",
+        new(@":([a-z0-9_+\-]+):",
             RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant,
             RxTimeout);
 
