@@ -35,7 +35,8 @@
 
 Chatter is a small but complete chat application that showcases a modern .NET stack:
 
-* **Lobby + DMs + group chats**: Join the lobby, start direct messages, or create a named group with several members at once.
+* **Lobby + DMs + group chats**: Join the lobby, start direct messages, or create a named group with several members at once. The group creator can add/remove members and rename the group from the "⋮" menu on the chat header.
+* **Block & mute**: Block a user to stop DMs both ways; mute any chat to keep receiving messages without the unread badge/notification bothering you.
 * **Presence & typing**: Online/away/busy status and “Alice is typing…” indicators.
 * **Emoji shortcodes**: `:smile:` → 😄 via a converter and parser.
 * **Name aliases/renames**: Seamless display‑name updates.
@@ -108,8 +109,9 @@ Chatter.sln
 
 A few deliberate scope cuts, worth knowing about if you extend this:
 
-* **Group membership is fixed at creation** — there's no "add/remove member" flow after a group is created.
+* **Only the group creator is an admin** — no delegated admins, no ownership transfer. If the creator leaves the group, nobody can add/remove members or rename it anymore.
 * **Read receipts are DM-only** in the UI — the server tracks them for any chat, but only a DM's last message shows a "Seen" marker.
+* **Blocking only affects DMs** — it stops `CreateDm`/`SendToChat` between the two users, but doesn't remove either from a shared group or from seeing each other in the Lobby.
 * **Display names aren't unique** (a pre-existing, documented tradeoff) — `CreateGroupChat`/`CreateDm` resolve a name to whichever user currently holds it in the server's directory. If two people share a name, starting a chat "by name" can resolve to the wrong one; this doesn't affect access to a chat you already have, since that's always checked by user id, not name.
 
 ## Project structure
