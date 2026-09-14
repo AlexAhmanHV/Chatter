@@ -23,8 +23,8 @@ public static class MauiProgram
 #endif
 
         builder.Services.AddSingleton(new SupabaseAuthService(
-            url: "https://bvzbuxxskzodjvqflgbv.supabase.co",
-            anonKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ2emJ1eHhza3pvZGp2cWZsZ2J2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjA2MDc1OTcsImV4cCI6MjA3NjE4MzU5N30.nL2p01tukPkUVRD2AXQo1s1aHg_JZIaBS-BvwzEmp3g"
+            url: SupabaseConfig.Url,
+            anonKey: SupabaseConfig.AnonKey
         ));
         builder.Services.AddSingleton<ChatService>();     // one HubConnection for the app
         builder.Services.AddTransient<ChatViewModel>();   // fresh VM per page

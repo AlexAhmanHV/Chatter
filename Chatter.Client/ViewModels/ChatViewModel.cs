@@ -33,7 +33,6 @@ public partial class ChatViewModel : ObservableObject
     /* Core services & constants */
     private readonly ChatService _chat;
     private readonly Dictionary<string, string?> _lastLineByChat = new(StringComparer.OrdinalIgnoreCase);
-    private const string BaseUrl = "http://localhost:5291";
 
     /* Root page helper to avoid obsolete Application.MainPage */
     private static Page? GetRootPage() => Application.Current?.Windows?.FirstOrDefault()?.Page;
@@ -648,7 +647,7 @@ public partial class ChatViewModel : ObservableObject
     {
         try
         {
-            await _chat.StartAsync(BaseUrl);
+            await _chat.StartAsync(ServerConfig.BaseUrl);
             Messages.Add("📶 Connected to server.");
 
             if (!string.IsNullOrWhiteSpace(User))
