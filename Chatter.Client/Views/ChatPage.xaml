@@ -235,13 +235,16 @@ What this does:
 
                     <!-- Chat info -->
                     <VerticalStackLayout Grid.Column="1" Spacing="2" VerticalOptions="Center">
-                      <Label Text="{Binding Label}" FontSize="14" FontAttributes="Bold" TextColor="{StaticResource TextPrimary}" LineBreakMode="TailTruncation">
-                        <Label.Triggers>
-                          <DataTrigger TargetType="Label" Binding="{Binding Id}" Value="Lobby">
-                            <Setter Property="TextColor" Value="{StaticResource PrimaryStart}" />
-                          </DataTrigger>
-                        </Label.Triggers>
-                      </Label>
+                      <HorizontalStackLayout Spacing="4">
+                        <Label Text="{Binding Label}" FontSize="14" FontAttributes="Bold" TextColor="{StaticResource TextPrimary}" LineBreakMode="TailTruncation">
+                          <Label.Triggers>
+                            <DataTrigger TargetType="Label" Binding="{Binding Id}" Value="Lobby">
+                              <Setter Property="TextColor" Value="{StaticResource PrimaryStart}" />
+                            </DataTrigger>
+                          </Label.Triggers>
+                        </Label>
+                        <Label Text="🔇" FontSize="11" IsVisible="{Binding IsMuted}" VerticalOptions="Center" />
+                      </HorizontalStackLayout>
                       <Label Text="Tap to open" FontSize="11" TextColor="{StaticResource TextSecondary}" />
                     </VerticalStackLayout>
 
@@ -272,17 +275,20 @@ What this does:
       </Grid.RowDefinitions>
 
       <Border Grid.Row="0" Style="{StaticResource Card}" Padding="20,16" Margin="0,0,12,12">
-        <HorizontalStackLayout Spacing="12">
-          <Border WidthRequest="40" HeightRequest="40" StrokeThickness="0" Background="{StaticResource HeaderBrush}">
+        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
+          <Border Grid.Column="0" WidthRequest="40" HeightRequest="40" StrokeThickness="0" Background="{StaticResource HeaderBrush}">
             <Border.StrokeShape>
               <RoundRectangle CornerRadius="20" />
             </Border.StrokeShape>
             <Label Text="💬" FontSize="18" HorizontalOptions="Center" VerticalOptions="Center"
                    HorizontalTextAlignment="Center" VerticalTextAlignment="Center" />
           </Border>
-          <VerticalStackLayout Spacing="2" VerticalOptions="Center">
-            <Label Text="{Binding SelectedChat.Label, FallbackValue='Select a chat'}"
-                   FontSize="16" FontAttributes="Bold" TextColor="{StaticResource TextPrimary}" />
+          <VerticalStackLayout Grid.Column="1" Spacing="2" VerticalOptions="Center">
+            <HorizontalStackLayout Spacing="6">
+              <Label Text="{Binding SelectedChat.Label, FallbackValue='Select a chat'}"
+                     FontSize="16" FontAttributes="Bold" TextColor="{StaticResource TextPrimary}" />
+              <Label Text="🔇" FontSize="13" IsVisible="{Binding SelectedChat.IsMuted, FallbackValue=False}" VerticalOptions="Center" />
+            </HorizontalStackLayout>
             <HorizontalStackLayout Spacing="8">
               <Label Text="Messages" FontSize="12" TextColor="{StaticResource TextSecondary}" />
               <Border Style="{StaticResource Pill}" Padding="8,2" VerticalOptions="Center">
@@ -291,7 +297,12 @@ What this does:
               </Border>
             </HorizontalStackLayout>
           </VerticalStackLayout>
-        </HorizontalStackLayout>
+          <!-- ManageChatCommand no-ops for Lobby/drafts/no selection, so this can always be visible. -->
+          <Button Grid.Column="2" Text="⋮"
+                  Command="{Binding ManageChatCommand}"
+                  WidthRequest="40" HeightRequest="40" FontSize="18" Padding="0"
+                  BackgroundColor="#1F2937" TextColor="{StaticResource TextPrimary}" CornerRadius="20" />
+        </Grid>
       </Border>
 
       <Border Grid.Row="1" Style="{StaticResource Card}" Padding="16,12" Margin="0,0,12,12">

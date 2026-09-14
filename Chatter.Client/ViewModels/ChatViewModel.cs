@@ -92,6 +92,7 @@ public partial class ChatViewModel : ObservableObject
     public IAsyncRelayCommand<ReactionItem> ToggleReactionCommand { get; }
     public IAsyncRelayCommand CreateGroupChatCommand { get; }
     public IAsyncRelayCommand LoadMoreHistoryCommand { get; }
+    public IAsyncRelayCommand ManageChatCommand { get; }
 
     private static readonly string[] QuickReactionEmojis = { "👍", "❤️", "😂", "🎉", "😮", "😢" };
 
@@ -350,7 +351,8 @@ public partial class ChatViewModel : ObservableObject
                 foreach (var summary in list)
                 {
                     if (_hiddenChats.Contains(summary.Id)) continue;
-                    EnsureChatItemWithLabel(summary.Id, summary.Label, summary.UnreadCount);
+                    var chatItem = EnsureChatItemWithLabel(summary.Id, summary.Label, summary.UnreadCount);
+                    chatItem.IsMuted = summary.IsMuted; // always synced, unlike Unread which is live-driven once created
 
                     // The server resolves DM labels to the *other* participant's current
                     // display name, so this is how the client learns about DM partners now
@@ -509,6 +511,22 @@ public partial class ChatViewModel : ObservableObject
                     latestMine.SeenByOther = true;
             });
 
+        _chat.RemovedFromChat += chatId =>
+            MainThread.BeginInvokeOnMainThread(() =>
+            {
+                _chatMessages.Remove(chatId);
+                _hiddenChatLabels.Remove(chatId);
+                var existing = Chats.FirstOrDefault(c => Ci.Equals(c.Id, chatId));
+                if (existing is null) return;
+
+                Chats.Remove(existing);
+                if (SelectedChat?.Id == chatId)
+                    SelectedChat = Chats.FirstOrDefault(c => Ci.Equals(c.Id, "Lobby")) ?? Chats.FirstOrDefault();
+            });
+
+        _chat.ChatRenamed += (chatId, newLabel) =>
+            MainThread.BeginInvokeOnMainThread(() => EnsureChatItemWithLabel(chatId, newLabel));
+
         // De-duped rename handler with hard return + presence harmonization
         WeakReferenceMessenger.Default.Register<DisplayNameChangedMessage>(this, async (_, msg) =>
         {
@@ -559,6 +577,7 @@ public partial class ChatViewModel : ObservableObject
         ToggleReactionCommand = new AsyncRelayCommand<ReactionItem>(ToggleReactionAsync);
         CreateGroupChatCommand = new AsyncRelayCommand(CreateGroupChatAsync);
         LoadMoreHistoryCommand = new AsyncRelayCommand(LoadMoreHistoryAsync);
+        ManageChatCommand = new AsyncRelayCommand(ManageChatAsync);
     }
 
     private ChatMessageItem? FindMessage(string chatId, long messageId) =>
@@ -655,6 +674,72 @@ public partial class ChatViewModel : ObservableObject
         catch (Exception ex)
         {
             await Ui.DisplayAlert("Couldn't create group", ex.Message, "OK");
+        }
+    }
+
+    // Single entry point for mute/block/group-admin actions, offered from the chat header.
+    // Group-admin options are always offered on a group chat rather than only to the admin -
+    // if the caller isn't the creator, the server rejects it and we just show the error; the
+    // client has no separate notion of "am I the admin" to hide them proactively.
+    private async Task ManageChatAsync()
+    {
+        var chat = SelectedChat;
+        var page = GetRootPage();
+        if (chat is null || page is null) return;
+        if (Ci.Equals(chat.Id, "Lobby") || IsDraftId(chat.Id)) return;
+
+        var isGroup = chat.IsGroup;
+        var isDm = chat.Id.StartsWith("dm:", StringComparison.OrdinalIgnoreCase);
+
+        var options = new List<string> { chat.IsMuted ? "Unmute" : "Mute" };
+        if (isGroup) options.AddRange(new[] { "View members", "Add member", "Remove member", "Rename group" });
+        if (isDm) options.AddRange(new[] { "Block user", "Unblock user" });
+
+        var choice = await page.DisplayActionSheet($"Manage \"{chat.Label}\"", "Cancel", null, options.ToArray());
+        if (string.IsNullOrEmpty(choice) || choice == "Cancel") return;
+
+        try
+        {
+            switch (choice)
+            {
+                case "Mute":
+                    await _chat.SetChatMutedAsync(chat.Id, true);
+                    chat.IsMuted = true;
+                    break;
+                case "Unmute":
+                    await _chat.SetChatMutedAsync(chat.Id, false);
+                    chat.IsMuted = false;
+                    break;
+                case "View members":
+                    var members = await _chat.GetGroupMembersAsync(chat.Id);
+                    await Ui.DisplayAlert("Members", string.Join("\n", members), "OK");
+                    break;
+                case "Add member":
+                    var toAdd = await page.DisplayPromptAsync("Add member", "Display name:");
+                    if (!string.IsNullOrWhiteSpace(toAdd))
+                        await _chat.AddGroupMemberAsync(chat.Id, toAdd.Trim());
+                    break;
+                case "Remove member":
+                    var toRemove = await page.DisplayPromptAsync("Remove member", "Display name:");
+                    if (!string.IsNullOrWhiteSpace(toRemove))
+                        await _chat.RemoveGroupMemberAsync(chat.Id, toRemove.Trim());
+                    break;
+                case "Rename group":
+                    var newName = await page.DisplayPromptAsync("Rename group", "New name:", initialValue: chat.Label);
+                    if (!string.IsNullOrWhiteSpace(newName))
+                        await _chat.RenameGroupChatAsync(chat.Id, newName.Trim());
+                    break;
+                case "Block user":
+                    await _chat.BlockUserAsync(chat.Label);
+                    break;
+                case "Unblock user":
+                    await _chat.UnblockUserAsync(chat.Label);
+                    break;
+            }
+        }
+        catch (Exception ex)
+        {
+            await Ui.DisplayAlert("Couldn't complete that action", ex.Message, "OK");
         }
     }
 

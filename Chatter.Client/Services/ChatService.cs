@@ -57,6 +57,10 @@ public class ChatService
     public event Action<string, long, string, int, bool, string>? ReactionChanged; // chatId, messageId, emoji, count, added, byDisplayName
     public event Action<string, string, long>? ReadReceipt;                  // chatId, fromDisplayName, lastReadMessageId
 
+    // Group admin (add/remove member, rename)
+    public event Action<string>? RemovedFromChat;               // chatId - you were kicked or the group no longer includes you
+    public event Action<string, string>? ChatRenamed;           // chatId, newLabel
+
     /* Constructor
        Stores the auth dependency used to supply an access token when establishing the hub connection.
     */
@@ -129,6 +133,14 @@ public class ChatService
 
         _conn.On<string>("LobbySystemMessage", text =>
             ChatMessageReceived?.Invoke(LobbyId, 0, "system", text, DateTime.UtcNow));
+
+        // Same idea as LobbySystemMessage, but for any chat (used for group membership
+        // add/remove notices) - carries its own chatId instead of assuming Lobby.
+        _conn.On<string, string>("ChatSystemMessage", (chatId, text) =>
+            ChatMessageReceived?.Invoke(chatId, 0, "system", text, DateTime.UtcNow));
+
+        _conn.On<string>("RemovedFromChat", chatId => RemovedFromChat?.Invoke(chatId));
+        _conn.On<string, string>("ChatRenamed", (chatId, newLabel) => ChatRenamed?.Invoke(chatId, newLabel));
 
         // ----- Handlers: Rosters & chat lists -----
         _conn.On<List<string>>("OnlineUsers", list =>
@@ -277,6 +289,40 @@ public class ChatService
 
     public Task MarkReadAsync(string chatId, long lastReadMessageId) =>
         _conn?.SendAsync("MarkRead", chatId, lastReadMessageId) ?? Task.CompletedTask;
+
+    public Task SetChatMutedAsync(string chatId, bool muted) =>
+        _conn?.SendAsync("SetChatMuted", chatId, muted) ?? Task.CompletedTask;
+
+    /* Blocking */
+    public Task BlockUserAsync(string displayName) =>
+        _conn?.SendAsync("BlockUser", displayName) ?? Task.CompletedTask;
+
+    public Task UnblockUserAsync(string displayName) =>
+        _conn?.SendAsync("UnblockUser", displayName) ?? Task.CompletedTask;
+
+    public async Task<IReadOnlyList<string>> GetBlockedUsersAsync()
+    {
+        if (_conn is null) return Array.Empty<string>();
+        var list = await _conn.InvokeAsync<List<string>>("GetBlockedUsers");
+        return (list ?? new()).AsReadOnly();
+    }
+
+    /* Group admin */
+    public async Task<IReadOnlyList<string>> GetGroupMembersAsync(string chatId)
+    {
+        if (_conn is null) return Array.Empty<string>();
+        var list = await _conn.InvokeAsync<List<string>>("GetGroupMembers", chatId);
+        return (list ?? new()).AsReadOnly();
+    }
+
+    public Task AddGroupMemberAsync(string chatId, string displayName) =>
+        _conn?.SendAsync("AddGroupMember", chatId, displayName) ?? Task.CompletedTask;
+
+    public Task RemoveGroupMemberAsync(string chatId, string displayName) =>
+        _conn?.SendAsync("RemoveGroupMember", chatId, displayName) ?? Task.CompletedTask;
+
+    public Task RenameGroupChatAsync(string chatId, string newName) =>
+        _conn?.SendAsync("RenameGroupChat", chatId, newName) ?? Task.CompletedTask;
 
     public Task JoinChatAsync(string chatId) =>
         _conn?.SendAsync("JoinChat", chatId) ?? Task.CompletedTask;
