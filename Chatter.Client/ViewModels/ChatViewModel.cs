@@ -560,7 +560,41 @@ public partial class ChatViewModel : ObservableObject
         if (value is not null && !value.Id.StartsWith("draft:", StringComparison.OrdinalIgnoreCase))
         {
             _ = _chat.JoinChatAsync(value.Id);
+            _ = LoadHistoryIfNeededAsync(value.Id);
         }
+    }
+
+    // Chats only hold whatever arrived live during this app session, so the first time a
+    // chat is opened we backfill from the server's persisted history (see ChatHub.GetChatHistory).
+    private readonly HashSet<string> _historyLoaded = new(StringComparer.OrdinalIgnoreCase);
+
+    private async Task LoadHistoryIfNeededAsync(string chatId)
+    {
+        if (!_historyLoaded.Add(chatId)) return;
+
+        try
+        {
+            var history = await _chat.GetChatHistoryAsync(chatId);
+            if (history.Count == 0) return;
+
+            MainThread.BeginInvokeOnMainThread(() =>
+            {
+                if (!_chatMessages.TryGetValue(chatId, out var list))
+                    _chatMessages[chatId] = list = new ObservableCollection<string>();
+
+                var historyLines = history.Select(m => $"{m.Sender}: {m.Body}");
+                var insertAt = 0;
+                foreach (var line in historyLines)
+                    list.Insert(insertAt++, line);
+
+                if (list.Count > 0)
+                    _lastLineByChat[chatId] = list[^1];
+
+                if (SelectedChat?.Id == chatId)
+                    RefreshVisibleChat();
+            });
+        }
+        catch { }
     }
 
     private void UpdateMessagePlaceholder()

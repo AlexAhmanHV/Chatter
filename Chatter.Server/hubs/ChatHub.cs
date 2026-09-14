@@ -18,6 +18,8 @@ using System.Security.Claims;
 using System.Text.Json;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.EntityFrameworkCore;
+using Chatter.Server.Data;
 using Chatter.Shared.Models;
 
 namespace Chatter.Server.Hubs;
@@ -25,6 +27,10 @@ namespace Chatter.Server.Hubs;
 [Authorize]
 public class ChatHub : Hub
 {
+    private readonly IDbContextFactory<ChatDbContext> _dbFactory;
+
+    public ChatHub(IDbContextFactory<ChatDbContext> dbFactory) => _dbFactory = dbFactory;
+
     private const string LobbyId = "Lobby";
     private static readonly StringComparer Ci = StringComparer.OrdinalIgnoreCase;
     private const int MaxDisplayNameLength = 40;
@@ -81,7 +87,11 @@ public class ChatHub : Hub
             (_, set) => { lock (set) set.Add(Context.ConnectionId); return set; });
 
         if (!_displayNameByUserId.ContainsKey(userId))
-            ApplyDisplayName(userId, DeriveDefaultDisplayName());
+        {
+            var defaultName = DeriveDefaultDisplayName();
+            ApplyDisplayName(userId, defaultName);
+            await PersistDisplayNameAsync(userId, defaultName);
+        }
 
         _statusByUserId.TryAdd(userId, "online");
 
@@ -132,6 +142,7 @@ public class ChatHub : Hub
             RecordRename(userId, old);
 
         ApplyDisplayName(userId, newName);
+        await PersistDisplayNameAsync(userId, newName);
         EnsureLobbyMembership(userId);
         await Groups.AddToGroupAsync(Context.ConnectionId, LobbyId);
 
@@ -156,6 +167,7 @@ public class ChatHub : Hub
 
         RecordRename(userId, old);
         ApplyDisplayName(userId, newName);
+        await PersistDisplayNameAsync(userId, newName);
 
         await Clients.Group(LobbyId).SendAsync("DisplayNameChanged", old, newName);
 
@@ -285,6 +297,8 @@ public class ChatHub : Hub
 
         var name = DisplayNameOf(me);
 
+        await PersistMessageAsync(chatId, me, name, message);
+
         // Deliver to everyone currently joined to this chat's SignalR group.
         await Clients.Group(chatId).SendAsync("ReceiveChatMessage", chatId, name, message);
 
@@ -302,6 +316,24 @@ public class ChatHub : Hub
             foreach (var cid in notInGroup)
                 await Clients.Client(cid).SendAsync("DmNotify", chatId, name, message);
         }
+    }
+
+    // Backfills a chat's message history for a client that just opened it (e.g. after
+    // reconnecting, or opening the app fresh and everything else is in-memory-only).
+    public async Task<List<ChatMessageDto>> GetChatHistory(string chatId, int take = 50)
+    {
+        var me = RequireUserId();
+        RequireMembership(chatId, me);
+
+        await using var db = await _dbFactory.CreateDbContextAsync();
+        var rows = await db.Messages
+            .Where(m => m.ChatId == chatId)
+            .OrderByDescending(m => m.SentAtUtc)
+            .Take(Math.Clamp(take, 1, 200))
+            .ToListAsync();
+
+        rows.Reverse();
+        return rows.Select(m => new ChatMessageDto(m.SenderDisplayName, m.Body, m.SentAtUtc)).ToList();
     }
 
     // -------------------------------------------------------
@@ -380,6 +412,68 @@ public class ChatHub : Hub
         }
 
         return chatId;
+    }
+
+    // -------------------------------------------------------
+    // Persistence
+    // -------------------------------------------------------
+
+    // Called once at app startup (see Program.cs) to warm the in-memory display-name
+    // cache from what was saved in previous runs, before any client connects.
+    public static void PreloadDisplayNames(IEnumerable<UserProfileEntity> profiles)
+    {
+        foreach (var p in profiles)
+            ApplyDisplayName(p.UserId, p.DisplayName);
+    }
+
+    private async Task PersistDisplayNameAsync(string userId, string displayName)
+    {
+        try
+        {
+            await using var db = await _dbFactory.CreateDbContextAsync();
+            var existing = await db.UserProfiles.FindAsync(userId);
+            if (existing is null)
+            {
+                db.UserProfiles.Add(new UserProfileEntity
+                {
+                    UserId = userId,
+                    DisplayName = displayName,
+                    UpdatedAtUtc = DateTime.UtcNow
+                });
+            }
+            else
+            {
+                existing.DisplayName = displayName;
+                existing.UpdatedAtUtc = DateTime.UtcNow;
+            }
+            await db.SaveChangesAsync();
+        }
+        catch
+        {
+            // Best-effort: in-memory state (already applied by the caller) still
+            // works for the rest of this run even if the write fails.
+        }
+    }
+
+    private async Task PersistMessageAsync(string chatId, string senderUserId, string senderDisplayName, string body)
+    {
+        try
+        {
+            await using var db = await _dbFactory.CreateDbContextAsync();
+            db.Messages.Add(new ChatMessageEntity
+            {
+                ChatId = chatId,
+                SenderUserId = senderUserId,
+                SenderDisplayName = senderDisplayName,
+                Body = body,
+                SentAtUtc = DateTime.UtcNow
+            });
+            await db.SaveChangesAsync();
+        }
+        catch
+        {
+            // Best-effort: the message still gets delivered live even if it fails to persist.
+        }
     }
 
     // -------------------------------------------------------

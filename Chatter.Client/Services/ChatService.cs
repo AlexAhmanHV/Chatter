@@ -243,6 +243,13 @@ public class ChatService
         return (list ?? new()).AsReadOnly();
     }
 
+    public async Task<IReadOnlyList<ChatMessageDto>> GetChatHistoryAsync(string chatId, int take = 50)
+    {
+        if (_conn is null) return Array.Empty<ChatMessageDto>();
+        var list = await _conn.InvokeAsync<List<ChatMessageDto>>("GetChatHistory", chatId, take);
+        return (list ?? new()).AsReadOnly();
+    }
+
     public Task JoinChatAsync(string chatId) =>
         _conn?.SendAsync("JoinChat", chatId) ?? Task.CompletedTask;
 

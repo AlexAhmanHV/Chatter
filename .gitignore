@@ -21,3 +21,6 @@ Thumbs.db
 **/Platforms/Windows/*/bin/
 # Secrets (if you ever add)
 appsettings.Development.json
+# Local runtime data
+Chatter.Server/chatter.db
+Chatter.Server/chatter.db-*

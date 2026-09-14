@@ -1,9 +1,11 @@
 using System.Text;
 using Chatter.Server; // so Program.cs can see ChatHub
 using Chatter.Server.Auth;
+using Chatter.Server.Data;
 using Chatter.Server.Hubs;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Protocols;
 using Microsoft.IdentityModel.Tokens;
 
@@ -12,6 +14,11 @@ var builder = WebApplication.CreateBuilder(args);
 // Services
 builder.Services.AddOpenApi();
 builder.Services.AddSignalR();
+
+// Chat history + display names now live in SQLite instead of only in memory, so a
+// server restart no longer wipes every conversation.
+var connectionString = builder.Configuration.GetConnectionString("Chatter") ?? "Data Source=chatter.db";
+builder.Services.AddDbContextFactory<ChatDbContext>(opt => opt.UseSqlite(connectionString));
 
 // ----- Authentication: verify the Supabase-issued JWT on every hub connection -----
 var supabaseUrl = builder.Configuration["Supabase:Url"]
@@ -91,6 +98,18 @@ builder.Services.AddCors(opt =>
 });
 
 var app = builder.Build();
+
+// Create the SQLite file/schema if it doesn't exist yet, and warm up ChatHub's
+// in-memory display-name cache from what was persisted last run.
+using (var scope = app.Services.CreateScope())
+{
+    var dbFactory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<ChatDbContext>>();
+    await using var db = await dbFactory.CreateDbContextAsync();
+    await db.Database.EnsureCreatedAsync();
+
+    var profiles = await db.UserProfiles.ToListAsync();
+    ChatHub.PreloadDisplayNames(profiles);
+}
 
 // Pipeline
 if (app.Environment.IsDevelopment())
