@@ -8,4 +8,10 @@ namespace Chatter.Server.Data;
 public class ApplicationUser : IdentityUser
 {
     public string DisplayName { get; set; } = string.Empty;
+
+    // Profile picture, stored as a blob (see ChatHub.UpdateAvatar for size/content-type limits).
+    // Served publicly and unauthenticated at GET /avatars/{userId} - see Program.cs and the
+    // README's known-simplifications list for why that's an acceptable tradeoff here.
+    public byte[]? AvatarData { get; set; }
+    public string? AvatarContentType { get; set; }
 }

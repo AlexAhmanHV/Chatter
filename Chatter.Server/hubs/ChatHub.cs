@@ -35,6 +35,14 @@ public class ChatHub : Hub
     private static readonly StringComparer Ci = StringComparer.OrdinalIgnoreCase;
     private const int MaxDisplayNameLength = 40;
     private const int MaxMessageLength = 2000;
+    private const int MaxAttachmentBytes = 5 * 1024 * 1024; // 5 MB
+    private const int MaxAvatarBytes = 512 * 1024; // 512 KB
+
+    // Images only, deliberately - this is "share a photo in chat", not general file transfer.
+    private static readonly HashSet<string> AllowedImageContentTypes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "image/png", "image/jpeg", "image/gif", "image/webp"
+    };
 
     // ===== Connection & identity indices (all keyed by the stable Identity user ID) =====
     // connectionId -> userId
@@ -208,6 +216,58 @@ public class ChatHub : Hub
     }
 
     public Task<Dictionary<string, string>> GetNameAliases() => Task.FromResult(GetNameAliasesSnapshot());
+
+    // Saves a profile picture. Served back publicly and unauthenticated at GET /avatars/{userId}
+    // (see Program.cs) - simplest way for a plain <Image Source="{url}"/> to work in the MAUI
+    // client without wiring an Authorization header through image loading. See the README's
+    // known-simplifications list for the tradeoff.
+    public async Task UpdateAvatar(byte[] data, string contentType)
+    {
+        var me = RequireUserId();
+
+        if (data is null || data.Length == 0)
+            throw new HubException("Avatar image is empty.");
+        if (data.Length > MaxAvatarBytes)
+            throw new HubException($"Avatar too large (max {MaxAvatarBytes / 1024} KB).");
+        if (string.IsNullOrWhiteSpace(contentType) || !AllowedImageContentTypes.Contains(contentType))
+            throw new HubException("Only PNG, JPEG, GIF, or WebP images are supported.");
+
+        try
+        {
+            await using var db = await _dbFactory.CreateDbContextAsync();
+            var user = await db.Users.FindAsync(me);
+            if (user is null) throw new HubException("Account not found.");
+
+            user.AvatarData = data;
+            user.AvatarContentType = contentType;
+            await db.SaveChangesAsync();
+        }
+        catch (HubException) { throw; }
+        catch (Exception ex)
+        {
+            throw new HubException("Failed to save the avatar. Please try again.", ex);
+        }
+
+        // "version" lets clients cache-bust the URL (same path, new image) instead of caching
+        // the old picture forever - see the client's AvatarChanged handler.
+        await Clients.All.SendAsync("AvatarChanged", DisplayNameOf(me), DateTime.UtcNow.Ticks);
+    }
+
+    // Resolves avatar URLs for a batch of display names at once (the client already knows names,
+    // never raw user ids, so this is the one place that translates - the URL embeds the id, the
+    // caller never sees it directly).
+    public Task<Dictionary<string, string>> GetAvatarUrls(List<string> displayNames)
+    {
+        var result = new Dictionary<string, string>(Ci);
+        foreach (var raw in displayNames ?? new List<string>())
+        {
+            var name = (raw ?? string.Empty).Trim();
+            if (name.Length == 0) continue;
+            if (_userIdByDisplayName.TryGetValue(name, out var userId))
+                result[name] = $"/avatars/{userId}";
+        }
+        return Task.FromResult(result);
+    }
 
     // -------------------------------------------------------
     // Presence
@@ -520,23 +580,111 @@ public class ChatHub : Hub
 
         var messageId = await PersistMessageAsync(chatId, me, name, message, sentAt);
 
-        // Deliver to everyone currently joined to this chat's SignalR group.
-        await Clients.Group(chatId).SendAsync("ReceiveChatMessage", chatId, messageId, name, message, sentAt);
+        await BroadcastMessageAsync(chatId, messageId, name, message, sentAt,
+            attachmentFileName: null, attachmentContentType: null, attachmentSizeBytes: null);
+    }
 
-        // If it's a DM, also notify participants who haven't joined the group yet (e.g. another tab/device).
-        if (_dmParticipants.TryGetValue(chatId, out var pair))
+    // Shared by SendToChat and SendAttachment: deliver to everyone currently joined to this
+    // chat's SignalR group, then (for a DM) also notify participants who haven't joined the
+    // group yet - e.g. a second tab/device that hasn't opened this specific conversation.
+    private async Task BroadcastMessageAsync(
+        string chatId, long messageId, string senderDisplayName, string body, DateTime sentAt,
+        string? attachmentFileName, string? attachmentContentType, int? attachmentSizeBytes)
+    {
+        await Clients.Group(chatId).SendAsync("ReceiveChatMessage",
+            chatId, messageId, senderDisplayName, body, sentAt,
+            attachmentFileName, attachmentContentType, attachmentSizeBytes);
+
+        if (!_dmParticipants.TryGetValue(chatId, out var pair)) return;
+
+        var groupMembers = _chatMembersByConn.TryGetValue(chatId, out var members)
+            ? members.Keys
+            : Enumerable.Empty<string>();
+
+        var allConnIds = ResolveLiveConnectionsFor(new[] { pair.User1, pair.User2 });
+        var senderConnId = Context.ConnectionId;
+        var notInGroup = allConnIds.Where(cid => cid != senderConnId && !groupMembers.Contains(cid));
+
+        foreach (var cid in notInGroup)
         {
-            var groupMembers = _chatMembersByConn.TryGetValue(chatId, out var members)
-                ? members.Keys
-                : Enumerable.Empty<string>();
-
-            var allConnIds = ResolveLiveConnectionsFor(new[] { pair.User1, pair.User2 });
-            var senderConnId = Context.ConnectionId;
-            var notInGroup = allConnIds.Where(cid => cid != senderConnId && !groupMembers.Contains(cid));
-
-            foreach (var cid in notInGroup)
-                await Clients.Client(cid).SendAsync("DmNotify", chatId, messageId, name, message, sentAt);
+            await Clients.Client(cid).SendAsync("DmNotify",
+                chatId, messageId, senderDisplayName, body, sentAt,
+                attachmentFileName, attachmentContentType, attachmentSizeBytes);
         }
+    }
+
+    // Shares an image in a chat, optionally with a text caption. Images only (see
+    // AllowedImageContentTypes) and capped at MaxAttachmentBytes - this is "share a photo",
+    // not general file transfer.
+    public async Task<long> SendAttachment(string chatId, string fileName, string contentType, byte[] data, string? caption)
+    {
+        var me = RequireUserId();
+        RequireMembership(chatId, me);
+        EnforceRateLimit("sendToChat", maxPerWindow: 10, window: TimeSpan.FromSeconds(10));
+
+        if (_dmParticipants.TryGetValue(chatId, out var dmPair) && IsBlockedEitherWay(dmPair.User1, dmPair.User2))
+            throw new HubException("You can't send messages in this chat.");
+
+        if (data is null || data.Length == 0)
+            throw new HubException("Attachment is empty.");
+        if (data.Length > MaxAttachmentBytes)
+            throw new HubException($"Attachment too large (max {MaxAttachmentBytes / 1024 / 1024} MB).");
+        if (string.IsNullOrWhiteSpace(contentType) || !AllowedImageContentTypes.Contains(contentType))
+            throw new HubException("Only PNG, JPEG, GIF, or WebP images are supported.");
+
+        fileName = string.IsNullOrWhiteSpace(fileName) ? "image" : fileName.Trim();
+        if (fileName.Length > 200) fileName = fileName[..200];
+
+        var body = (caption ?? string.Empty).Trim();
+        if (body.Length > MaxMessageLength) body = body[..MaxMessageLength];
+
+        var name = DisplayNameOf(me);
+        var sentAt = DateTime.UtcNow;
+
+        long messageId;
+        try
+        {
+            await using var db = await _dbFactory.CreateDbContextAsync();
+            var entity = new ChatMessageEntity
+            {
+                ChatId = chatId,
+                SenderUserId = me,
+                SenderDisplayName = name,
+                Body = body,
+                SentAtUtc = sentAt,
+                AttachmentFileName = fileName,
+                AttachmentContentType = contentType,
+                AttachmentData = data,
+                AttachmentSizeBytes = data.Length,
+            };
+            db.Messages.Add(entity);
+            await db.SaveChangesAsync();
+            messageId = entity.Id;
+        }
+        catch (Exception ex)
+        {
+            throw new HubException("Failed to save the attachment. Please try again.", ex);
+        }
+
+        await BroadcastMessageAsync(chatId, messageId, name, body, sentAt, fileName, contentType, data.Length);
+        return messageId;
+    }
+
+    // Fetches an attachment's bytes on demand - GetChatHistory/live broadcasts only ever carry
+    // metadata (filename/content type/size), so opening a chat with a long image history doesn't
+    // mean downloading every image up front.
+    public async Task<AttachmentDataDto> GetAttachmentData(long messageId)
+    {
+        var me = RequireUserId();
+
+        await using var db = await _dbFactory.CreateDbContextAsync();
+        var msg = await db.Messages.FindAsync(messageId) ?? throw new HubException("Message not found.");
+        RequireMembership(msg.ChatId, me);
+
+        if (msg.AttachmentData is null || msg.AttachmentContentType is null)
+            throw new HubException("This message has no attachment.");
+
+        return new AttachmentDataDto(msg.AttachmentContentType, msg.AttachmentData);
     }
 
     public async Task EditMessage(long messageId, string newBody)
@@ -771,7 +919,10 @@ public class ChatHub : Hub
             m.SentAtUtc,
             m.EditedAtUtc,
             m.IsDeleted,
-            reactionsByMessage.TryGetValue(m.Id, out var reactions) ? reactions : Array.Empty<ReactionDto>()
+            reactionsByMessage.TryGetValue(m.Id, out var reactions) ? reactions : Array.Empty<ReactionDto>(),
+            m.AttachmentFileName,
+            m.AttachmentContentType,
+            m.AttachmentSizeBytes
         )).ToList();
     }
 

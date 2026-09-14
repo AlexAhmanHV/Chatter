@@ -84,6 +84,14 @@ public class ChatMessageEntity
     public DateTime SentAtUtc { get; set; }
     public DateTime? EditedAtUtc { get; set; }
     public bool IsDeleted { get; set; }
+
+    // An optional image attachment, stored as a blob in the same database as everything else
+    // (no external storage - see ChatHub.SendAttachment for the size/content-type limits this
+    // is validated against before it's ever saved). Null on a plain text message.
+    public string? AttachmentFileName { get; set; }
+    public string? AttachmentContentType { get; set; }
+    public byte[]? AttachmentData { get; set; }
+    public int? AttachmentSizeBytes { get; set; }
 }
 
 public class MessageReactionEntity

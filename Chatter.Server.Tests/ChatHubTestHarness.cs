@@ -61,6 +61,12 @@ public static class ChatHubTestHarness
     public static ChatHub Create(string dbName, string? userId, string? connectionId = null)
     {
         connectionId ??= Guid.NewGuid().ToString("N");
+
+        // ChatHub keys most of its own state off the JWT's "sub" claim alone, but a few methods
+        // (UpdateAvatar, PersistDisplayNameAsync) look up a real ApplicationUser row via
+        // db.Users - seed one so those aren't testing against an account that doesn't exist.
+        if (userId is not null) EnsureUserRowExists(dbName, userId);
+
         var proxy = new Mock<IClientProxy>();
         proxy.Setup(p => p.SendCoreAsync(It.IsAny<string>(), It.IsAny<object?[]>(), It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
@@ -92,5 +98,20 @@ public static class ChatHubTestHarness
         };
 
         return hub;
+    }
+
+    private static void EnsureUserRowExists(string dbName, string userId)
+    {
+        using var db = CreateDb(dbName);
+        if (db.Users.Any(u => u.Id == userId)) return;
+
+        db.Users.Add(new ApplicationUser
+        {
+            Id = userId,
+            UserName = $"{userId}@test.local",
+            Email = $"{userId}@test.local",
+            DisplayName = string.Empty,
+        });
+        db.SaveChanges();
     }
 }

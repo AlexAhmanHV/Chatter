@@ -182,6 +182,21 @@ app.MapPost("/auth/login", async (LoginRequest req, UserManager<ApplicationUser>
 // SignalR hub endpoint (requires a valid JWT from /auth/login or /auth/register - see ChatHub's [Authorize])
 app.MapHub<ChatHub>("/hub/Chat");
 
+// Public, unauthenticated by design: the simplest way for a plain <Image Source="url"/> in the
+// MAUI client to work without wiring an Authorization header through image loading. A profile
+// picture isn't sensitive chat content, so this is a deliberate tradeoff, not an oversight - see
+// the README's known-simplifications list. Chat message attachments are NOT served this way;
+// those stay behind ChatHub.GetAttachmentData's membership check.
+app.MapGet("/avatars/{userId}", async (string userId, IDbContextFactory<ChatDbContext> dbFactory) =>
+{
+    await using var db = await dbFactory.CreateDbContextAsync();
+    var user = await db.Users.FindAsync(userId);
+    if (user?.AvatarData is null || user.AvatarContentType is null)
+        return Results.NotFound();
+
+    return Results.File(user.AvatarData, user.AvatarContentType);
+});
+
 // Your sample endpoint unchanged
 var summaries = new[]
 {
