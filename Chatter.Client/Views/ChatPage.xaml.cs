@@ -89,6 +89,13 @@ public partial class ChatPage : ContentPage
             vm.ToggleReactionCommand.Execute(reaction);
     }
 
+    private void OnAttachmentTapped(object? sender, EventArgs e)
+    {
+        if (BindingContext is not ChatViewModel vm) return;
+        if (sender is Element { BindingContext: ChatMessageItem item })
+            vm.ViewAttachmentCommand.Execute(item);
+    }
+
 
     // Sending: press Enter in the message box to invoke SendCommand (when CanSend)
     private void OnMessageCompleted(object? sender, EventArgs e)

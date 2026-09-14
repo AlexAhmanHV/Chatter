@@ -12,6 +12,7 @@ What this does:
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -24,6 +25,8 @@ using Chatter.Client.Services;
 using Chatter.Client.Views;
 using Microsoft.Maui.ApplicationModel;
 using Microsoft.Maui.Controls;
+using Microsoft.Maui.Media;
+using Microsoft.Maui.Storage;
 using Chatter.Client.Helpers;
 using Chatter.Shared.Models;
 
@@ -93,6 +96,8 @@ public partial class ChatViewModel : ObservableObject
     public IAsyncRelayCommand CreateGroupChatCommand { get; }
     public IAsyncRelayCommand LoadMoreHistoryCommand { get; }
     public IAsyncRelayCommand ManageChatCommand { get; }
+    public IAsyncRelayCommand<ChatMessageItem> ViewAttachmentCommand { get; }
+    public IAsyncRelayCommand PickAndSendAttachmentCommand { get; }
 
     private static readonly string[] QuickReactionEmojis = { "👍", "❤️", "😂", "🎉", "😮", "😢" };
 
@@ -391,7 +396,7 @@ public partial class ChatViewModel : ObservableObject
                 _ = _chat.JoinChatAsync(chatId);
             });
 
-        _chat.DmNotify += (chatId, messageId, fromUser, msg, sentAtUtc) =>
+        _chat.DmNotify += (chatId, messageId, fromUser, msg, sentAtUtc, attFileName, attContentType, attSize) =>
             MainThread.BeginInvokeOnMainThread(() =>
             {
                 _knownUsers.Add(Canon(fromUser));
@@ -402,7 +407,8 @@ public partial class ChatViewModel : ObservableObject
 
                 if (messageId > 0 && list.Any(x => x.Id == messageId)) return;
 
-                var msgItem = new ChatMessageItem(messageId, fromUser, msg, sentAtUtc, isMine: false, isSystem: false);
+                var msgItem = new ChatMessageItem(messageId, fromUser, msg, sentAtUtc, isMine: false, isSystem: false,
+                    attFileName, attContentType, attSize);
                 list.Add(msgItem);
 
                 bool isViewingThis = IsActive && SelectedChat?.Id == chatId;
@@ -417,7 +423,7 @@ public partial class ChatViewModel : ObservableObject
                 _ = _chat.JoinChatAsync(chatId);
             });
 
-        _chat.ChatMessageReceived += (chatId, messageId, u, m, sentAtUtc) =>
+        _chat.ChatMessageReceived += (chatId, messageId, u, m, sentAtUtc, attFileName, attContentType, attSize) =>
             MainThread.BeginInvokeOnMainThread(() =>
             {
                 if (_hiddenChats.Remove(chatId))
@@ -441,7 +447,8 @@ public partial class ChatViewModel : ObservableObject
                     _lastSystemLineByChat[chatId] = m;
                 }
 
-                var item = new ChatMessageItem(messageId, u, m, sentAtUtc, isMine: Ci.Equals(u, User), isSystem: isSystem);
+                var item = new ChatMessageItem(messageId, u, m, sentAtUtc, isMine: Ci.Equals(u, User), isSystem: isSystem,
+                    attFileName, attContentType, attSize);
                 list.Add(item);
 
                 bool isViewingThis = IsActive && SelectedChat?.Id == chatId;
@@ -527,6 +534,9 @@ public partial class ChatViewModel : ObservableObject
         _chat.ChatRenamed += (chatId, newLabel) =>
             MainThread.BeginInvokeOnMainThread(() => EnsureChatItemWithLabel(chatId, newLabel));
 
+        _chat.AvatarChanged += (displayName, version) =>
+            MainThread.BeginInvokeOnMainThread(() => _ = RefreshAvatarAsync(displayName, version));
+
         // De-duped rename handler with hard return + presence harmonization
         WeakReferenceMessenger.Default.Register<DisplayNameChangedMessage>(this, async (_, msg) =>
         {
@@ -578,6 +588,8 @@ public partial class ChatViewModel : ObservableObject
         CreateGroupChatCommand = new AsyncRelayCommand(CreateGroupChatAsync);
         LoadMoreHistoryCommand = new AsyncRelayCommand(LoadMoreHistoryAsync);
         ManageChatCommand = new AsyncRelayCommand(ManageChatAsync);
+        ViewAttachmentCommand = new AsyncRelayCommand<ChatMessageItem>(ViewAttachmentAsync);
+        PickAndSendAttachmentCommand = new AsyncRelayCommand(PickAndSendAttachmentAsync);
     }
 
     private ChatMessageItem? FindMessage(string chatId, long messageId) =>
@@ -640,6 +652,107 @@ public partial class ChatViewModel : ObservableObject
     {
         if (reaction is null || reaction.MessageId <= 0) return;
         try { await _chat.ToggleReactionAsync(reaction.MessageId, reaction.Emoji); }
+        catch { }
+    }
+
+    /* Attachments (images only) - fetched lazily on tap, not pre-loaded with the rest of history */
+    private async Task ViewAttachmentAsync(ChatMessageItem? item)
+    {
+        if (item is null || !item.HasAttachment || item.Id <= 0) return;
+        if (item.AttachmentImage is not null || item.IsAttachmentLoading) return;
+
+        item.IsAttachmentLoading = true;
+        try
+        {
+            var data = await _chat.GetAttachmentDataAsync(item.Id);
+            if (data is null) return;
+
+            var bytes = data.Data;
+            item.AttachmentImage = ImageSource.FromStream(() => new MemoryStream(bytes));
+        }
+        catch (Exception ex)
+        {
+            await Ui.DisplayAlert("Couldn't load image", ex.Message, "OK");
+        }
+        finally
+        {
+            item.IsAttachmentLoading = false;
+        }
+    }
+
+    private async Task PickAndSendAttachmentAsync()
+    {
+        if (SelectedChat is null)
+        {
+            await Ui.DisplayAlert("Pick a chat", "Select a chat before sending an image.", "OK");
+            return;
+        }
+        if (IsDraftId(SelectedChat.Id))
+        {
+            await Ui.DisplayAlert("Send a message first", "Send a text message to start this conversation before sharing an image.", "OK");
+            return;
+        }
+
+        FileResult? photo;
+        try
+        {
+            photo = await MediaPicker.Default.PickPhotoAsync();
+        }
+        catch (Exception ex)
+        {
+            await Ui.DisplayAlert("Couldn't open picker", ex.Message, "OK");
+            return;
+        }
+        if (photo is null) return; // user cancelled
+
+        byte[] bytes;
+        try
+        {
+            await using var stream = await photo.OpenReadAsync();
+            using var ms = new MemoryStream();
+            await stream.CopyToAsync(ms);
+            bytes = ms.ToArray();
+        }
+        catch (Exception ex)
+        {
+            await Ui.DisplayAlert("Couldn't read image", ex.Message, "OK");
+            return;
+        }
+
+        try
+        {
+            await _chat.SendAttachmentAsync(SelectedChat.Id, photo.FileName, GuessImageContentType(photo.FileName), bytes, caption: null);
+        }
+        catch (Exception ex)
+        {
+            await Ui.DisplayAlert("Couldn't send image", ex.Message, "OK");
+        }
+    }
+
+    private static string GuessImageContentType(string fileName) =>
+        Path.GetExtension(fileName).ToLowerInvariant() switch
+        {
+            ".png" => "image/png",
+            ".jpg" or ".jpeg" => "image/jpeg",
+            ".gif" => "image/gif",
+            ".webp" => "image/webp",
+            _ => "image/jpeg",
+        };
+
+    // Re-resolves one person's avatar URL after an AvatarChanged notification, appending
+    // `version` as a cache-busting query string so the client actually refetches the new image
+    // instead of reusing whatever it had cached for the old URL.
+    private async Task RefreshAvatarAsync(string displayName, long version)
+    {
+        try
+        {
+            var urls = await _chat.GetAvatarUrlsAsync(new List<string> { displayName });
+            if (!urls.TryGetValue(displayName, out var relativeUrl)) return;
+
+            var person = People.FirstOrDefault(p => Ci.Equals(p.Name, Canon(displayName)));
+            if (person is not null)
+                person.AvatarUrl = $"{ServerConfig.BaseUrl}{relativeUrl}?v={version}";
+        }
         catch { }
     }
 
@@ -847,7 +960,8 @@ public partial class ChatViewModel : ObservableObject
     private ChatMessageItem ToItem(ChatMessageDto dto)
     {
         var item = new ChatMessageItem(dto.Id, dto.Sender, dto.Body, dto.SentAtUtc,
-            isMine: Ci.Equals(dto.Sender, User), isSystem: false)
+            isMine: Ci.Equals(dto.Sender, User), isSystem: false,
+            dto.AttachmentFileName, dto.AttachmentContentType, dto.AttachmentSizeBytes)
         {
             EditedAtUtc = dto.EditedAtUtc,
             IsDeleted = dto.IsDeleted,
@@ -1182,6 +1296,36 @@ public partial class ChatViewModel : ObservableObject
 
         OnlineUsers.Clear();
         foreach (var n in onlineSet) OnlineUsers.Add(n);
+
+        ResolveAvatarsIfNeeded(names);
+    }
+
+    // Fetches avatar URLs once per display name (cached in _avatarResolved) rather than
+    // re-fetching every time RecomputePeople runs, which happens frequently.
+    private readonly HashSet<string> _avatarResolved = new(StringComparer.OrdinalIgnoreCase);
+
+    private void ResolveAvatarsIfNeeded(IEnumerable<string> names)
+    {
+        var toResolve = names.Where(n => _avatarResolved.Add(n)).ToList();
+        if (toResolve.Count > 0) _ = ResolveAvatarsAsync(toResolve);
+    }
+
+    private async Task ResolveAvatarsAsync(List<string> names)
+    {
+        try
+        {
+            var urls = await _chat.GetAvatarUrlsAsync(names);
+            MainThread.BeginInvokeOnMainThread(() =>
+            {
+                foreach (var kv in urls)
+                {
+                    var person = People.FirstOrDefault(p => Ci.Equals(p.Name, Canon(kv.Key)));
+                    if (person is not null)
+                        person.AvatarUrl = $"{ServerConfig.BaseUrl}{kv.Value}";
+                }
+            });
+        }
+        catch { }
     }
 
     /* Delete chat */

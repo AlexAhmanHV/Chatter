@@ -40,11 +40,13 @@ public class ChatService
     public event Action<IReadOnlyList<ChatSummary>>? ChatsForMeUpdated;
     public event Action<IReadOnlyList<string>>? ChatsUpdated;
 
-    // (chatId, messageId, senderDisplayName, body, sentAtUtc). messageId is 0 for synthetic
-    // lines that aren't a real persisted message (rename/system notices) - see ChatService.cs.
-    public event Action<string, long, string, string, DateTime>? ChatMessageReceived;
+    // (chatId, messageId, senderDisplayName, body, sentAtUtc, attachmentFileName,
+    // attachmentContentType, attachmentSizeBytes). messageId is 0 for synthetic lines that
+    // aren't a real persisted message (rename/system notices); attachment fields are null for a
+    // plain text message.
+    public event Action<string, long, string, string, DateTime, string?, string?, int?>? ChatMessageReceived;
     public event Action<string, string>? AddedChat;
-    public event Action<string, long, string, string, DateTime>? DmNotify;
+    public event Action<string, long, string, string, DateTime, string?, string?, int?>? DmNotify;
 
     // Server feature: aliases + presence snapshots/deltas
     public event Action<Dictionary<string, string>>? NameAliasesReceived;
@@ -60,6 +62,9 @@ public class ChatService
     // Group admin (add/remove member, rename)
     public event Action<string>? RemovedFromChat;               // chatId - you were kicked or the group no longer includes you
     public event Action<string, string>? ChatRenamed;           // chatId, newLabel
+
+    // Someone's profile picture changed - re-resolve their avatar URL (see GetAvatarUrlsAsync).
+    public event Action<string, long>? AvatarChanged;           // displayName, version (cache-bust)
 
     /* Constructor
        Stores the auth dependency used to supply an access token when establishing the hub connection.
@@ -124,23 +129,25 @@ public class ChatService
             ChatsForMeUpdated?.Invoke((list ?? new()).AsReadOnly()));
 
         // ----- Handlers: Name change notifications -----
-        // messageId 0: these are synthesized locally, not a real persisted ChatMessageDto row.
+        // messageId 0 and null attachment fields: these are synthesized locally, not a real
+        // persisted ChatMessageDto row.
         _conn.On<string, string>("DisplayNameChanged", (oldName, newName) =>
             ChatMessageReceived?.Invoke(LobbyId, 0, "system",
-                $"{oldName} changed their name to “{newName}”.", DateTime.UtcNow));
+                $"{oldName} changed their name to “{newName}”.", DateTime.UtcNow, null, null, null));
         _conn.On<string, string>("DisplayNameChanged", (oldName, newName) =>
             OtherDisplayNameChanged?.Invoke(oldName, newName));
 
         _conn.On<string>("LobbySystemMessage", text =>
-            ChatMessageReceived?.Invoke(LobbyId, 0, "system", text, DateTime.UtcNow));
+            ChatMessageReceived?.Invoke(LobbyId, 0, "system", text, DateTime.UtcNow, null, null, null));
 
         // Same idea as LobbySystemMessage, but for any chat (used for group membership
         // add/remove notices) - carries its own chatId instead of assuming Lobby.
         _conn.On<string, string>("ChatSystemMessage", (chatId, text) =>
-            ChatMessageReceived?.Invoke(chatId, 0, "system", text, DateTime.UtcNow));
+            ChatMessageReceived?.Invoke(chatId, 0, "system", text, DateTime.UtcNow, null, null, null));
 
         _conn.On<string>("RemovedFromChat", chatId => RemovedFromChat?.Invoke(chatId));
         _conn.On<string, string>("ChatRenamed", (chatId, newLabel) => ChatRenamed?.Invoke(chatId, newLabel));
+        _conn.On<string, long>("AvatarChanged", (displayName, version) => AvatarChanged?.Invoke(displayName, version));
 
         // ----- Handlers: Rosters & chat lists -----
         _conn.On<List<string>>("OnlineUsers", list =>
@@ -150,8 +157,9 @@ public class ChatService
             ChatsUpdated?.Invoke((list ?? new()).AsReadOnly()));
 
         // ----- Handlers: Per-chat messages -----
-        _conn.On<string, long, string, string, DateTime>("ReceiveChatMessage", (chatId, messageId, user, msg, sentAt) =>
-            ChatMessageReceived?.Invoke(chatId, messageId, user, msg, sentAt));
+        _conn.On<string, long, string, string, DateTime, string?, string?, int?>("ReceiveChatMessage",
+            (chatId, messageId, user, msg, sentAt, attFileName, attContentType, attSize) =>
+                ChatMessageReceived?.Invoke(chatId, messageId, user, msg, sentAt, attFileName, attContentType, attSize));
 
         _conn.On<string, long, string, DateTime>("MessageEdited", (chatId, messageId, newBody, editedAt) =>
             MessageEdited?.Invoke(chatId, messageId, newBody, editedAt));
@@ -170,8 +178,9 @@ public class ChatService
         _conn.On<string, string>("AddedChat", (chatId, label) =>
             AddedChat?.Invoke(chatId, label));
 
-        _conn.On<string, long, string, string, DateTime>("DmNotify", (chatId, messageId, fromUser, msg, sentAt) =>
-            DmNotify?.Invoke(chatId, messageId, fromUser, msg, sentAt));
+        _conn.On<string, long, string, string, DateTime, string?, string?, int?>("DmNotify",
+            (chatId, messageId, fromUser, msg, sentAt, attFileName, attContentType, attSize) =>
+                DmNotify?.Invoke(chatId, messageId, fromUser, msg, sentAt, attFileName, attContentType, attSize));
 
         // Reconnect flow: re-assert identity and refresh all lists/snapshots
         _conn.Reconnected += async _ =>
@@ -342,6 +351,29 @@ public class ChatService
 
     public Task SendToChatAsync(string chatId, string message) =>
         _conn?.SendAsync("SendToChat", chatId, message) ?? Task.CompletedTask;
+
+    /* Attachments (images only) */
+    public Task<long> SendAttachmentAsync(string chatId, string fileName, string contentType, byte[] data, string? caption) =>
+        _conn is null
+            ? Task.FromResult(0L)
+            : _conn.InvokeAsync<long>("SendAttachment", chatId, fileName, contentType, data, caption);
+
+    public async Task<AttachmentDataDto?> GetAttachmentDataAsync(long messageId)
+    {
+        if (_conn is null) return null;
+        return await _conn.InvokeAsync<AttachmentDataDto>("GetAttachmentData", messageId);
+    }
+
+    /* Avatars */
+    public Task UpdateAvatarAsync(byte[] data, string contentType) =>
+        _conn?.SendAsync("UpdateAvatar", data, contentType) ?? Task.CompletedTask;
+
+    public async Task<Dictionary<string, string>> GetAvatarUrlsAsync(List<string> displayNames)
+    {
+        if (_conn is null) return new();
+        var dict = await _conn.InvokeAsync<Dictionary<string, string>>("GetAvatarUrls", displayNames);
+        return dict ?? new();
+    }
 
     /* Stop & dispose
        Gracefully stops the connection and releases resources.

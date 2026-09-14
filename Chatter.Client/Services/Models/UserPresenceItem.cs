@@ -50,6 +50,27 @@ namespace Chatter.Client.Models
             _status == PresenceStatus.Away ||
             _status == PresenceStatus.Busy;
 
+        private string? _avatarUrl;
+
+        // Absolute URL to GET /avatars/{userId} (see ChatHub.GetAvatarUrls), resolved by display
+        // name since the client never learns raw user ids. Null until resolved; 404s render as
+        // no image, which is a fine fallback appearance behind the existing status-dot circle.
+        public string? AvatarUrl
+        {
+            get => _avatarUrl;
+            set
+            {
+                if (_avatarUrl != value)
+                {
+                    _avatarUrl = value;
+                    OnPropertyChanged();
+                    OnPropertyChanged(nameof(HasAvatar));
+                }
+            }
+        }
+
+        public bool HasAvatar => !string.IsNullOrEmpty(_avatarUrl);
+
         public UserPresenceItem(string name, PresenceStatus status = PresenceStatus.Offline)
         {
             _name = name;

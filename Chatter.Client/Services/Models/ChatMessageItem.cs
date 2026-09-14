@@ -14,12 +14,14 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
 using CommunityToolkit.Mvvm.ComponentModel;
+using Microsoft.Maui.Controls;
 
 namespace Chatter.Client.Models;
 
 public partial class ChatMessageItem : ObservableObject
 {
-    public ChatMessageItem(long id, string sender, string body, DateTime sentAtUtc, bool isMine, bool isSystem)
+    public ChatMessageItem(long id, string sender, string body, DateTime sentAtUtc, bool isMine, bool isSystem,
+        string? attachmentFileName = null, string? attachmentContentType = null, int? attachmentSizeBytes = null)
     {
         Id = id;
         Sender = sender;
@@ -27,6 +29,9 @@ public partial class ChatMessageItem : ObservableObject
         SentAtUtc = sentAtUtc;
         IsMine = isMine;
         IsSystem = isSystem;
+        AttachmentFileName = attachmentFileName;
+        AttachmentContentType = attachmentContentType;
+        AttachmentSizeBytes = attachmentSizeBytes;
     }
 
     public long Id { get; }
@@ -45,6 +50,28 @@ public partial class ChatMessageItem : ObservableObject
     [ObservableProperty] public partial bool SeenByOther { get; set; }
 
     public bool IsEdited => EditedAtUtc.HasValue;
+
+    // Metadata only - the bytes are fetched on demand (see ChatViewModel.ViewAttachmentAsync)
+    // and cached here as ImageSource once loaded, so scrolling a long image history doesn't
+    // mean downloading every image up front.
+    public string? AttachmentFileName { get; }
+    public string? AttachmentContentType { get; }
+    public int? AttachmentSizeBytes { get; }
+    public bool HasAttachment => !string.IsNullOrEmpty(AttachmentContentType);
+
+    [ObservableProperty] public partial ImageSource? AttachmentImage { get; set; }
+    [ObservableProperty] public partial bool IsAttachmentLoading { get; set; }
+
+    // Drives which of the two attachment visuals (tap-to-view placeholder vs. loaded image) is
+    // shown; re-evaluated whenever AttachmentImage changes (see the generated partial hook below).
+    public bool ShowAttachmentPlaceholder => HasAttachment && AttachmentImage is null;
+    public bool ShowAttachmentImage => AttachmentImage is not null;
+
+    partial void OnAttachmentImageChanged(ImageSource? value)
+    {
+        OnPropertyChanged(nameof(ShowAttachmentPlaceholder));
+        OnPropertyChanged(nameof(ShowAttachmentImage));
+    }
 
     public ObservableCollection<ReactionItem> Reactions { get; } = new();
 }

@@ -184,6 +184,25 @@ What this does:
                      VerticalOptions="Center" />
             </HorizontalStackLayout>
 
+            <!-- Avatar -->
+            <VerticalStackLayout Spacing="10" HorizontalOptions="Center">
+              <Border WidthRequest="88" HeightRequest="88" StrokeThickness="2" Stroke="{StaticResource StrokeIdle}"
+                      BackgroundColor="{StaticResource PanelBg}" HorizontalOptions="Center">
+                <Border.StrokeShape>
+                  <RoundRectangle CornerRadius="44" />
+                </Border.StrokeShape>
+                <Image Source="{Binding AvatarPreview}" Aspect="AspectFill" WidthRequest="84" HeightRequest="84" />
+              </Border>
+              <Button Text="Change avatar"
+                      Command="{Binding PickAvatarCommand}"
+                      BackgroundColor="#1F2937"
+                      TextColor="{StaticResource TextPrimary}"
+                      FontSize="13"
+                      CornerRadius="10"
+                      HeightRequest="38"
+                      Padding="16,0" />
+            </VerticalStackLayout>
+
             <!-- Display name field -->
             <VerticalStackLayout Spacing="8">
               <Label Text="Display name" Style="{StaticResource Subtle}" FontAttributes="Bold" />

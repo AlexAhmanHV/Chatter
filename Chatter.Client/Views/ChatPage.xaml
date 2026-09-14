@@ -50,6 +50,7 @@ What this does:
     <ResourceDictionary>
       <conv:EmojiDisplayConverter x:Key="EmojiDisplay" />
       <conv:InvertedBoolConverter x:Key="InvertBool" />
+      <conv:AttachmentStatusTextConverter x:Key="AttachmentStatusText" />
       <Color x:Key="PrimaryStart">#6EE7F9</Color>
       <Color x:Key="PrimaryEnd">#8B5CF6</Color>
       <Color x:Key="CardBg">#101827</Color>
@@ -380,6 +381,30 @@ What this does:
                                FontSize="13"
                                TextColor="{StaticResource TextSecondary}" />
 
+                        <Border IsVisible="{Binding ShowAttachmentPlaceholder}"
+                                Padding="10,8" StrokeThickness="1"
+                                Stroke="{StaticResource StrokeIdle}" BackgroundColor="{StaticResource PanelBg}">
+                          <Border.StrokeShape>
+                            <RoundRectangle CornerRadius="10" />
+                          </Border.StrokeShape>
+                          <Border.GestureRecognizers>
+                            <TapGestureRecognizer Tapped="OnAttachmentTapped" />
+                          </Border.GestureRecognizers>
+                          <HorizontalStackLayout Spacing="8">
+                            <Label Text="📎" FontSize="16" VerticalOptions="Center" />
+                            <VerticalStackLayout Spacing="2">
+                              <Label Text="{Binding AttachmentFileName}" FontSize="12"
+                                     TextColor="{StaticResource TextPrimary}" LineBreakMode="TailTruncation" />
+                              <Label Text="{Binding IsAttachmentLoading, Converter={StaticResource AttachmentStatusText}}"
+                                     FontSize="11" TextColor="{StaticResource TextSecondary}" />
+                            </VerticalStackLayout>
+                          </HorizontalStackLayout>
+                        </Border>
+
+                        <Image Source="{Binding AttachmentImage}"
+                               IsVisible="{Binding ShowAttachmentImage}"
+                               Aspect="AspectFit" MaximumHeightRequest="220" HorizontalOptions="Start" />
+
                         <HorizontalStackLayout Spacing="8">
                           <FlexLayout Wrap="Wrap" BindableLayout.ItemsSource="{Binding Reactions}">
                             <BindableLayout.ItemTemplate>
@@ -435,6 +460,7 @@ What this does:
             <ColumnDefinition Width="*" />
             <ColumnDefinition Width="Auto" />
             <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="Auto" />
           </Grid.ColumnDefinitions>
 
           <Border Grid.Row="0" Grid.Column="0" Style="{StaticResource FieldBorder}">
@@ -452,6 +478,15 @@ What this does:
           </Border>
 
           <Button Grid.Row="0" Grid.Column="1"
+                  Text="📎"
+                  Command="{Binding PickAndSendAttachmentCommand}"
+                  WidthRequest="44"
+                  HeightRequest="48"
+                  BackgroundColor="#1F2937"
+                  TextColor="#E5E7EB"
+                  CornerRadius="12" />
+
+          <Button Grid.Row="0" Grid.Column="2"
                   Text="😊"
                   Command="{Binding ShowEmojiPickerCommand}"
                   WidthRequest="44"
@@ -460,14 +495,14 @@ What this does:
                   TextColor="#E5E7EB"
                   CornerRadius="12" />
 
-          <Button Grid.Row="0" Grid.Column="2"
+          <Button Grid.Row="0" Grid.Column="3"
                   Text="Send"
                   Command="{Binding SendCommand}"
                   IsEnabled="{Binding CanSend}"
                   Style="{StaticResource PrimaryBtn}"
                   WidthRequest="110" />
 
-          <Label Grid.Row="1" Grid.ColumnSpan="3"
+          <Label Grid.Row="1" Grid.ColumnSpan="4"
                   Text="{Binding CharacterCounterText}"
                   HorizontalOptions="End"
                   FontSize="12"
@@ -475,7 +510,7 @@ What this does:
                   FontAttributes="Italic"
                   TextColor="{DynamicResource TextSecondary}" />
 
-          <Label Grid.Row="1" Grid.ColumnSpan="3"
+          <Label Grid.Row="1" Grid.ColumnSpan="4"
                  Text="{Binding TypingUser, StringFormat='{0} is typing…'}"
                  IsVisible="{Binding IsPeerTyping}"
                  FontAttributes="Italic"
@@ -550,25 +585,32 @@ What this does:
                         <ColumnDefinition Width="*" />
                       </Grid.ColumnDefinitions>
 
-                      <Border Grid.Column="0" WidthRequest="32" HeightRequest="32" StrokeThickness="2" Stroke="{StaticResource CardBg}" VerticalOptions="Center">
-                        <Border.StrokeShape><RoundRectangle CornerRadius="16" /></Border.StrokeShape>
-                        <Ellipse WidthRequest="28" HeightRequest="28">
-                          <Ellipse.Triggers>
-                            <DataTrigger TargetType="Ellipse" Binding="{Binding Status}" Value="{x:Static models:PresenceStatus.Busy}">
-                              <Setter Property="Fill" Value="#DC2626" />
-                            </DataTrigger>
-                            <DataTrigger TargetType="Ellipse" Binding="{Binding Status}" Value="{x:Static models:PresenceStatus.Away}">
-                              <Setter Property="Fill" Value="#F59E0B" />
-                            </DataTrigger>
-                            <DataTrigger TargetType="Ellipse" Binding="{Binding Status}" Value="{x:Static models:PresenceStatus.Online}">
-                              <Setter Property="Fill" Value="#10B981" />
-                            </DataTrigger>
-                            <DataTrigger TargetType="Ellipse" Binding="{Binding Status}" Value="{x:Static models:PresenceStatus.Offline}">
-                              <Setter Property="Fill" Value="#6B7280" />
-                            </DataTrigger>
-                          </Ellipse.Triggers>
-                        </Ellipse>
-                      </Border>
+                      <Grid Grid.Column="0" WidthRequest="32" HeightRequest="32" VerticalOptions="Center">
+                        <Border StrokeThickness="0" IsVisible="{Binding HasAvatar}">
+                          <Border.StrokeShape><RoundRectangle CornerRadius="16" /></Border.StrokeShape>
+                          <Image Source="{Binding AvatarUrl}" Aspect="AspectFill" WidthRequest="32" HeightRequest="32" />
+                        </Border>
+
+                        <Border StrokeThickness="2" Stroke="{StaticResource CardBg}">
+                          <Border.StrokeShape><RoundRectangle CornerRadius="16" /></Border.StrokeShape>
+                          <Ellipse WidthRequest="28" HeightRequest="28">
+                            <Ellipse.Triggers>
+                              <DataTrigger TargetType="Ellipse" Binding="{Binding Status}" Value="{x:Static models:PresenceStatus.Busy}">
+                                <Setter Property="Fill" Value="#DC2626" />
+                              </DataTrigger>
+                              <DataTrigger TargetType="Ellipse" Binding="{Binding Status}" Value="{x:Static models:PresenceStatus.Away}">
+                                <Setter Property="Fill" Value="#F59E0B" />
+                              </DataTrigger>
+                              <DataTrigger TargetType="Ellipse" Binding="{Binding Status}" Value="{x:Static models:PresenceStatus.Online}">
+                                <Setter Property="Fill" Value="#10B981" />
+                              </DataTrigger>
+                              <DataTrigger TargetType="Ellipse" Binding="{Binding Status}" Value="{x:Static models:PresenceStatus.Offline}">
+                                <Setter Property="Fill" Value="#6B7280" />
+                              </DataTrigger>
+                            </Ellipse.Triggers>
+                          </Ellipse>
+                        </Border>
+                      </Grid>
 
                       <VerticalStackLayout Grid.Column="1" Spacing="2" VerticalOptions="Center">
                         <Label Text="{Binding Name}" FontSize="14" FontAttributes="Bold" TextColor="{StaticResource TextPrimary}" />
