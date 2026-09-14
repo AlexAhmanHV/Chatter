@@ -44,9 +44,10 @@ public class ChatHubAttachmentTests
 
         var history = await aliceHub.GetChatHistory(chatId);
         var msg = Assert.Single(history);
-        Assert.Equal("photo.png", msg.AttachmentFileName);
-        Assert.Equal("image/png", msg.AttachmentContentType);
-        Assert.Equal(bytes.Length, msg.AttachmentSizeBytes);
+        Assert.NotNull(msg.Attachment);
+        Assert.Equal("photo.png", msg.Attachment!.FileName);
+        Assert.Equal("image/png", msg.Attachment.ContentType);
+        Assert.Equal(bytes.Length, msg.Attachment.SizeBytes);
         Assert.Equal("look at this", msg.Body);
 
         await bobHub.JoinChat(chatId);

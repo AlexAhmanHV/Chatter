@@ -44,6 +44,13 @@ public class ChatHub : Hub
         "image/png", "image/jpeg", "image/gif", "image/webp"
     };
 
+    // A voice note capped at ~2 minutes of compressed audio, not a general audio-file uploader.
+    private const int MaxVoiceMessageBytes = 2 * 1024 * 1024; // 2 MB
+    private static readonly HashSet<string> AllowedAudioContentTypes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "audio/mp4", "audio/aac", "audio/wav", "audio/webm", "audio/ogg"
+    };
+
     // ===== Connection & identity indices (all keyed by the stable Identity user ID) =====
     // connectionId -> userId
     private static readonly ConcurrentDictionary<string, string> _connToUserId = new();
@@ -76,10 +83,16 @@ public class ChatHub : Hub
     // else; this only holds the label, since (unlike a DM) it can't be derived from the id.
     private static readonly ConcurrentDictionary<string, string> _groupChatNames = new();
 
-    // group chatId -> the userId that created it. The only admin concept this app has: whoever
-    // created the group can add/remove members and rename it. No delegated admins, no ownership
-    // transfer - see RequireGroupAdmin.
+    // group chatId -> the userId that originally created it. Kept only as metadata/history
+    // ("created by") - it no longer implies admin rights on its own, see _groupChatAdmins.
     private static readonly ConcurrentDictionary<string, string> _groupChatCreator = new();
+
+    // group chatId -> set of userIds who are admins of that group. The creator starts as the
+    // sole admin; PromoteGroupAdmin/DemoteGroupAdmin (admin-only) can add or remove others. If
+    // the last admin leaves or is removed while other members remain, the earliest-joined
+    // remaining member is auto-promoted so the group is never left without one - see
+    // SucceedAdminIfNoneRemain.
+    private static readonly ConcurrentDictionary<string, HashSet<string>> _groupChatAdmins = new();
 
     // ===== Blocking & muting =====
     // blocker userId -> set of userIds they've blocked. Enforced both ways (see
@@ -158,7 +171,10 @@ public class ChatHub : Hub
 
             var stillConnected = _userIdToConns.TryGetValue(userId, out var remaining) && remaining.Count > 0;
             if (!stillConnected)
+            {
                 await Clients.All.SendAsync("StatusChanged", DisplayNameOf(userId), "offline");
+                await PersistLastSeenAsync(userId);
+            }
 
             await BroadcastStatusesAsync();
         }
@@ -267,6 +283,37 @@ public class ChatHub : Hub
                 result[name] = $"/avatars/{userId}";
         }
         return Task.FromResult(result);
+    }
+
+    // Batch-resolves "last seen" timestamps for offline users (by display name, same reasoning
+    // as GetAvatarUrls: the client never learns raw user ids). A name missing from the result is
+    // either currently online, or has never disconnected while this server has tracked it.
+    public async Task<Dictionary<string, DateTime>> GetLastSeen(List<string> displayNames)
+    {
+        var ids = new Dictionary<string, string>(Ci);
+        foreach (var raw in displayNames ?? new List<string>())
+        {
+            var name = (raw ?? string.Empty).Trim();
+            if (name.Length > 0 && _userIdByDisplayName.TryGetValue(name, out var userId))
+                ids[name] = userId;
+        }
+
+        var result = new Dictionary<string, DateTime>(Ci);
+        if (ids.Count == 0) return result;
+
+        await using var db = await _dbFactory.CreateDbContextAsync();
+        var userIds = ids.Values.Distinct().ToList();
+        var rows = await db.Users
+            .Where(u => userIds.Contains(u.Id) && u.LastSeenUtc != null)
+            .Select(u => new { u.Id, u.LastSeenUtc })
+            .ToListAsync();
+        var lastSeenByUserId = rows.ToDictionary(r => r.Id, r => r.LastSeenUtc!.Value);
+
+        foreach (var (name, userId) in ids)
+            if (lastSeenByUserId.TryGetValue(userId, out var lastSeen))
+                result[name] = lastSeen;
+
+        return result;
     }
 
     // -------------------------------------------------------
@@ -396,6 +443,7 @@ public class ChatHub : Hub
         _chatMembers[chatId] = new HashSet<string>(memberIds);
         _groupChatNames[chatId] = name;
         _groupChatCreator[chatId] = me;
+        _groupChatAdmins[chatId] = new HashSet<string> { me };
 
         await PersistGroupChatAsync(chatId, name, me, memberIds);
 
@@ -481,9 +529,10 @@ public class ChatHub : Hub
             throw new HubException($"Could not find a user named '{displayName}'.");
 
         if (Ci.Equals(targetId, me))
-            throw new HubException("Use \"leave\" to remove yourself; the group's creator can't be removed this way.");
+            throw new HubException("Use \"leave\" to remove yourself.");
 
         if (_chatMembers.TryGetValue(chatId, out var set)) lock (set) set.Remove(targetId);
+        if (_groupChatAdmins.TryGetValue(chatId, out var admins)) lock (admins) admins.Remove(targetId);
 
         try
         {
@@ -511,6 +560,11 @@ public class ChatHub : Hub
             await Clients.Clients(targetConns).SendAsync("RemovedFromChat", chatId);
 
         await Clients.Group(chatId).SendAsync("ChatSystemMessage", chatId, $"{DisplayNameOf(targetId)} was removed from the group.");
+
+        var successor = await SucceedAdminIfNoneRemainAsync(chatId);
+        if (successor is not null)
+            await Clients.Group(chatId).SendAsync("ChatSystemMessage", chatId, $"{DisplayNameOf(successor)} is now an admin of this group.");
+
         await Clients.All.SendAsync("ChatsUpdated", new[] { chatId });
     }
 
@@ -550,15 +604,38 @@ public class ChatHub : Hub
         await Groups.AddToGroupAsync(Context.ConnectionId, chatId);
     }
 
-    public Task LeaveChat(string chatId)
+    public async Task LeaveChat(string chatId)
     {
         var me = RequireUserId();
-        _ = Groups.RemoveFromGroupAsync(Context.ConnectionId, chatId);
+        await Groups.RemoveFromGroupAsync(Context.ConnectionId, chatId);
 
         if (_chatMembers.TryGetValue(chatId, out var set)) lock (set) set.Remove(me);
+        if (_groupChatAdmins.TryGetValue(chatId, out var admins)) lock (admins) admins.Remove(me);
         if (_chatMembersByConn.TryGetValue(chatId, out var conns)) conns.TryRemove(Context.ConnectionId, out _);
 
-        return Task.CompletedTask;
+        // Only group membership is persisted here - Lobby/DMs aren't rows in ChatMembers to begin
+        // with (see ChatMemberEntity), so there's nothing to remove for those.
+        if (chatId.StartsWith("group:", StringComparison.OrdinalIgnoreCase))
+        {
+            try
+            {
+                await using var db = await _dbFactory.CreateDbContextAsync();
+                var row = await db.ChatMembers.FindAsync(chatId, me);
+                if (row is not null)
+                {
+                    db.ChatMembers.Remove(row);
+                    await db.SaveChangesAsync();
+                }
+            }
+            catch { }
+
+            var successor = await SucceedAdminIfNoneRemainAsync(chatId);
+            if (successor is not null)
+                await Clients.Group(chatId).SendAsync("ChatSystemMessage", chatId, $"{DisplayNameOf(successor)} is now an admin of this group.");
+
+            await Clients.Group(chatId).SendAsync("ChatSystemMessage", chatId, $"{DisplayNameOf(me)} left the group.");
+            await Clients.All.SendAsync("ChatsUpdated", new[] { chatId });
+        }
     }
 
     public async Task SendToChat(string chatId, string message)
@@ -580,20 +657,18 @@ public class ChatHub : Hub
 
         var messageId = await PersistMessageAsync(chatId, me, name, message, sentAt);
 
-        await BroadcastMessageAsync(chatId, messageId, name, message, sentAt,
-            attachmentFileName: null, attachmentContentType: null, attachmentSizeBytes: null);
+        await BroadcastMessageAsync(chatId, messageId, name, message, sentAt, attachment: null, isForwarded: false);
     }
 
-    // Shared by SendToChat and SendAttachment: deliver to everyone currently joined to this
-    // chat's SignalR group, then (for a DM) also notify participants who haven't joined the
-    // group yet - e.g. a second tab/device that hasn't opened this specific conversation.
+    // Shared by SendToChat/SendAttachment/SendVoiceMessage/ForwardMessage: deliver to everyone
+    // currently joined to this chat's SignalR group, then (for a DM) also notify participants who
+    // haven't joined the group yet - e.g. a second tab/device that hasn't opened this conversation.
     private async Task BroadcastMessageAsync(
         string chatId, long messageId, string senderDisplayName, string body, DateTime sentAt,
-        string? attachmentFileName, string? attachmentContentType, int? attachmentSizeBytes)
+        AttachmentMetaDto? attachment, bool isForwarded)
     {
         await Clients.Group(chatId).SendAsync("ReceiveChatMessage",
-            chatId, messageId, senderDisplayName, body, sentAt,
-            attachmentFileName, attachmentContentType, attachmentSizeBytes);
+            chatId, messageId, senderDisplayName, body, sentAt, attachment, isForwarded);
 
         if (!_dmParticipants.TryGetValue(chatId, out var pair)) return;
 
@@ -608,9 +683,25 @@ public class ChatHub : Hub
         foreach (var cid in notInGroup)
         {
             await Clients.Client(cid).SendAsync("DmNotify",
-                chatId, messageId, senderDisplayName, body, sentAt,
-                attachmentFileName, attachmentContentType, attachmentSizeBytes);
+                chatId, messageId, senderDisplayName, body, sentAt, attachment, isForwarded);
         }
+    }
+
+    // Common validation for anything that posts a binary attachment into a chat (image, voice
+    // note, or a forwarded copy of one): membership, DM blocking, size cap, allowed content types.
+    private void ValidateAttachmentPost(string chatId, string me, int dataLength, int maxBytes, string contentType, HashSet<string> allowedTypes, string kindLabel)
+    {
+        RequireMembership(chatId, me);
+
+        if (_dmParticipants.TryGetValue(chatId, out var dmPair) && IsBlockedEitherWay(dmPair.User1, dmPair.User2))
+            throw new HubException("You can't send messages in this chat.");
+
+        if (dataLength == 0)
+            throw new HubException($"{kindLabel} is empty.");
+        if (dataLength > maxBytes)
+            throw new HubException($"{kindLabel} too large (max {maxBytes / 1024 / 1024.0:0.#} MB).");
+        if (string.IsNullOrWhiteSpace(contentType) || !allowedTypes.Contains(contentType))
+            throw new HubException($"Unsupported {kindLabel.ToLowerInvariant()} type.");
     }
 
     // Shares an image in a chat, optionally with a text caption. Images only (see
@@ -619,18 +710,8 @@ public class ChatHub : Hub
     public async Task<long> SendAttachment(string chatId, string fileName, string contentType, byte[] data, string? caption)
     {
         var me = RequireUserId();
-        RequireMembership(chatId, me);
         EnforceRateLimit("sendToChat", maxPerWindow: 10, window: TimeSpan.FromSeconds(10));
-
-        if (_dmParticipants.TryGetValue(chatId, out var dmPair) && IsBlockedEitherWay(dmPair.User1, dmPair.User2))
-            throw new HubException("You can't send messages in this chat.");
-
-        if (data is null || data.Length == 0)
-            throw new HubException("Attachment is empty.");
-        if (data.Length > MaxAttachmentBytes)
-            throw new HubException($"Attachment too large (max {MaxAttachmentBytes / 1024 / 1024} MB).");
-        if (string.IsNullOrWhiteSpace(contentType) || !AllowedImageContentTypes.Contains(contentType))
-            throw new HubException("Only PNG, JPEG, GIF, or WebP images are supported.");
+        ValidateAttachmentPost(chatId, me, data?.Length ?? 0, MaxAttachmentBytes, contentType, AllowedImageContentTypes, "Attachment");
 
         fileName = string.IsNullOrWhiteSpace(fileName) ? "image" : fileName.Trim();
         if (fileName.Length > 200) fileName = fileName[..200];
@@ -655,7 +736,7 @@ public class ChatHub : Hub
                 AttachmentFileName = fileName,
                 AttachmentContentType = contentType,
                 AttachmentData = data,
-                AttachmentSizeBytes = data.Length,
+                AttachmentSizeBytes = data!.Length,
             };
             db.Messages.Add(entity);
             await db.SaveChangesAsync();
@@ -666,13 +747,59 @@ public class ChatHub : Hub
             throw new HubException("Failed to save the attachment. Please try again.", ex);
         }
 
-        await BroadcastMessageAsync(chatId, messageId, name, body, sentAt, fileName, contentType, data.Length);
+        var meta = new AttachmentMetaDto(fileName, contentType, data.Length, DurationSeconds: null);
+        await BroadcastMessageAsync(chatId, messageId, name, body, sentAt, meta, isForwarded: false);
+        return messageId;
+    }
+
+    // Shares a voice note - same storage/lazy-fetch model as an image attachment (see
+    // SendAttachment/GetAttachmentData), just with an audio content-type allowlist, a smaller
+    // size cap suited to ~2 minutes of compressed audio, and a client-reported duration purely
+    // for display (not re-validated server-side - a wrong value only affects the shown label).
+    public async Task<long> SendVoiceMessage(string chatId, string contentType, byte[] data, int durationSeconds)
+    {
+        var me = RequireUserId();
+        EnforceRateLimit("sendToChat", maxPerWindow: 10, window: TimeSpan.FromSeconds(10));
+        ValidateAttachmentPost(chatId, me, data?.Length ?? 0, MaxVoiceMessageBytes, contentType, AllowedAudioContentTypes, "Voice message");
+
+        durationSeconds = Math.Max(0, durationSeconds);
+        var name = DisplayNameOf(me);
+        var sentAt = DateTime.UtcNow;
+
+        long messageId;
+        try
+        {
+            await using var db = await _dbFactory.CreateDbContextAsync();
+            var entity = new ChatMessageEntity
+            {
+                ChatId = chatId,
+                SenderUserId = me,
+                SenderDisplayName = name,
+                Body = string.Empty,
+                SentAtUtc = sentAt,
+                AttachmentFileName = "Voice message",
+                AttachmentContentType = contentType,
+                AttachmentData = data,
+                AttachmentSizeBytes = data!.Length,
+                AttachmentDurationSeconds = durationSeconds,
+            };
+            db.Messages.Add(entity);
+            await db.SaveChangesAsync();
+            messageId = entity.Id;
+        }
+        catch (Exception ex)
+        {
+            throw new HubException("Failed to save the voice message. Please try again.", ex);
+        }
+
+        var meta = new AttachmentMetaDto("Voice message", contentType, data.Length, durationSeconds);
+        await BroadcastMessageAsync(chatId, messageId, name, string.Empty, sentAt, meta, isForwarded: false);
         return messageId;
     }
 
     // Fetches an attachment's bytes on demand - GetChatHistory/live broadcasts only ever carry
-    // metadata (filename/content type/size), so opening a chat with a long image history doesn't
-    // mean downloading every image up front.
+    // metadata (filename/content type/size/duration), so opening a chat with a long history of
+    // images/voice notes doesn't mean downloading every one of them up front.
     public async Task<AttachmentDataDto> GetAttachmentData(long messageId)
     {
         var me = RequireUserId();
@@ -685,6 +812,61 @@ public class ChatHub : Hub
             throw new HubException("This message has no attachment.");
 
         return new AttachmentDataDto(msg.AttachmentContentType, msg.AttachmentData);
+    }
+
+    // Copies a message (text and/or attachment) into a different chat the caller is a member of.
+    // A forward is its own new message - editing/deleting the original never touches the copy -
+    // sent as the forwarder, not the original sender, and flagged IsForwarded so the client can
+    // label it "Forwarded" without guessing.
+    public async Task<long> ForwardMessage(long messageId, string targetChatId)
+    {
+        var me = RequireUserId();
+        RequireMembership(targetChatId, me);
+        EnforceRateLimit("sendToChat", maxPerWindow: 10, window: TimeSpan.FromSeconds(10));
+
+        if (_dmParticipants.TryGetValue(targetChatId, out var dmPair) && IsBlockedEitherWay(dmPair.User1, dmPair.User2))
+            throw new HubException("You can't send messages in this chat.");
+
+        await using var db = await _dbFactory.CreateDbContextAsync();
+        var source = await db.Messages.FindAsync(messageId) ?? throw new HubException("Message not found.");
+        RequireMembership(source.ChatId, me);
+        if (source.IsDeleted) throw new HubException("Can't forward a deleted message.");
+
+        var name = DisplayNameOf(me);
+        var sentAt = DateTime.UtcNow;
+
+        long newMessageId;
+        try
+        {
+            var copy = new ChatMessageEntity
+            {
+                ChatId = targetChatId,
+                SenderUserId = me,
+                SenderDisplayName = name,
+                Body = source.Body,
+                SentAtUtc = sentAt,
+                AttachmentFileName = source.AttachmentFileName,
+                AttachmentContentType = source.AttachmentContentType,
+                AttachmentData = source.AttachmentData,
+                AttachmentSizeBytes = source.AttachmentSizeBytes,
+                AttachmentDurationSeconds = source.AttachmentDurationSeconds,
+                IsForwarded = true,
+            };
+            db.Messages.Add(copy);
+            await db.SaveChangesAsync();
+            newMessageId = copy.Id;
+        }
+        catch (Exception ex)
+        {
+            throw new HubException("Failed to forward the message. Please try again.", ex);
+        }
+
+        var meta = source.AttachmentContentType is null ? null
+            : new AttachmentMetaDto(source.AttachmentFileName ?? "attachment", source.AttachmentContentType,
+                source.AttachmentSizeBytes ?? 0, source.AttachmentDurationSeconds);
+
+        await BroadcastMessageAsync(targetChatId, newMessageId, name, source.Body, sentAt, meta, isForwarded: true);
+        return newMessageId;
     }
 
     public async Task EditMessage(long messageId, string newBody)
@@ -920,9 +1102,10 @@ public class ChatHub : Hub
             m.EditedAtUtc,
             m.IsDeleted,
             reactionsByMessage.TryGetValue(m.Id, out var reactions) ? reactions : Array.Empty<ReactionDto>(),
-            m.AttachmentFileName,
-            m.AttachmentContentType,
-            m.AttachmentSizeBytes
+            m.AttachmentContentType is null ? null
+                : new AttachmentMetaDto(m.AttachmentFileName ?? "attachment", m.AttachmentContentType,
+                    m.AttachmentSizeBytes ?? 0, m.AttachmentDurationSeconds),
+            m.IsForwarded
         )).ToList();
     }
 
@@ -1047,7 +1230,10 @@ public class ChatHub : Hub
         }
 
         foreach (var group in members.GroupBy(m => m.ChatId))
+        {
             _chatMembers[group.Key] = new HashSet<string>(group.Select(m => m.UserId));
+            _groupChatAdmins[group.Key] = new HashSet<string>(group.Where(m => m.IsAdmin).Select(m => m.UserId));
+        }
     }
 
     public static void PreloadBlocks(IEnumerable<BlockedUserEntity> blocks)
@@ -1075,13 +1261,31 @@ public class ChatHub : Hub
                 CreatedAtUtc = DateTime.UtcNow
             });
             foreach (var uid in memberIds)
-                db.ChatMembers.Add(new ChatMemberEntity { ChatId = chatId, UserId = uid });
+                db.ChatMembers.Add(new ChatMemberEntity { ChatId = chatId, UserId = uid, IsAdmin = Ci.Equals(uid, createdByUserId) });
             await db.SaveChangesAsync();
         }
         catch
         {
             // Best-effort, same as the other persistence helpers: the in-memory group still
             // works for this run even if it doesn't survive a restart.
+        }
+    }
+
+    private async Task PersistLastSeenAsync(string userId)
+    {
+        try
+        {
+            await using var db = await _dbFactory.CreateDbContextAsync();
+            var user = await db.Users.FindAsync(userId);
+            if (user is not null)
+            {
+                user.LastSeenUtc = DateTime.UtcNow;
+                await db.SaveChangesAsync();
+            }
+        }
+        catch
+        {
+            // Best-effort, same as the other persistence helpers.
         }
     }
 
@@ -1165,14 +1369,118 @@ public class ChatHub : Hub
             throw new HubException("You are not a member of this chat.");
     }
 
-    // Also re-checks current membership, not just "were they the original creator": if the
-    // creator left the group, they lose admin rights along with everything else membership grants.
+    // Also re-checks current membership, not just admin status: leaving a group drops admin
+    // rights along with everything else membership grants (see LeaveChat/RemoveGroupMember,
+    // which both call SucceedAdminIfNoneRemain to keep a group from being left without one).
     private void RequireGroupAdmin(string chatId, string userId)
     {
-        if (!_groupChatCreator.TryGetValue(chatId, out var creator) || !Ci.Equals(creator, userId))
-            throw new HubException("Only the group's creator can do that.");
+        if (!_groupChatAdmins.TryGetValue(chatId, out var admins) || !admins.Contains(userId))
+            throw new HubException("Only a group admin can do that.");
 
         RequireMembership(chatId, userId);
+    }
+
+    private bool IsGroupAdmin(string chatId, string userId) =>
+        _groupChatAdmins.TryGetValue(chatId, out var admins) && admins.Contains(userId);
+
+    // If a group's admin set is empty but it still has members, promotes the earliest-joined
+    // remaining member (by insertion order isn't tracked, so this just picks a deterministic one)
+    // so the group is never left without anyone able to manage it. Called after removing/losing
+    // an admin. Persists the promotion and returns the promoted userId, or null if there was
+    // already an admin (or no members left at all).
+    private async Task<string?> SucceedAdminIfNoneRemainAsync(string chatId)
+    {
+        if (_groupChatAdmins.TryGetValue(chatId, out var admins) && admins.Count > 0) return null;
+        if (!_chatMembers.TryGetValue(chatId, out var members) || members.Count == 0) return null;
+
+        var successor = members.OrderBy(u => u, StringComparer.Ordinal).First();
+        var set = _groupChatAdmins.GetOrAdd(chatId, _ => new HashSet<string>());
+        lock (set) set.Add(successor);
+
+        try
+        {
+            await using var db = await _dbFactory.CreateDbContextAsync();
+            var row = await db.ChatMembers.FindAsync(chatId, successor);
+            if (row is not null)
+            {
+                row.IsAdmin = true;
+                await db.SaveChangesAsync();
+            }
+        }
+        catch { }
+
+        return successor;
+    }
+
+    public async Task PromoteGroupAdmin(string chatId, string displayName)
+    {
+        var me = RequireUserId();
+        RequireGroupAdmin(chatId, me);
+
+        if (!_userIdByDisplayName.TryGetValue((displayName ?? string.Empty).Trim(), out var targetId))
+            throw new HubException($"Could not find a user named '{displayName}'.");
+        if (!_chatMembers.TryGetValue(chatId, out var members) || !members.Contains(targetId))
+            throw new HubException("That user isn't a member of this group.");
+
+        var set = _groupChatAdmins.GetOrAdd(chatId, _ => new HashSet<string>());
+        bool added;
+        lock (set) added = set.Add(targetId);
+        if (!added) return; // already an admin
+
+        try
+        {
+            await using var db = await _dbFactory.CreateDbContextAsync();
+            var row = await db.ChatMembers.FindAsync(chatId, targetId);
+            if (row is not null)
+            {
+                row.IsAdmin = true;
+                await db.SaveChangesAsync();
+            }
+        }
+        catch { }
+
+        await Clients.Group(chatId).SendAsync("ChatSystemMessage", chatId, $"{DisplayNameOf(targetId)} is now an admin of this group.");
+    }
+
+    public async Task DemoteGroupAdmin(string chatId, string displayName)
+    {
+        var me = RequireUserId();
+        RequireGroupAdmin(chatId, me);
+
+        if (!_userIdByDisplayName.TryGetValue((displayName ?? string.Empty).Trim(), out var targetId))
+            throw new HubException($"Could not find a user named '{displayName}'.");
+
+        if (_groupChatAdmins.TryGetValue(chatId, out var set) && set.Count <= 1 && set.Contains(targetId))
+            throw new HubException("Can't remove the last admin - promote someone else first.");
+
+        bool removed = false;
+        if (set is not null) lock (set) removed = set.Remove(targetId);
+        if (!removed) return; // wasn't an admin
+
+        try
+        {
+            await using var db = await _dbFactory.CreateDbContextAsync();
+            var row = await db.ChatMembers.FindAsync(chatId, targetId);
+            if (row is not null)
+            {
+                row.IsAdmin = false;
+                await db.SaveChangesAsync();
+            }
+        }
+        catch { }
+
+        await Clients.Group(chatId).SendAsync("ChatSystemMessage", chatId, $"{DisplayNameOf(targetId)} is no longer an admin of this group.");
+    }
+
+    public Task<List<string>> GetGroupAdmins(string chatId)
+    {
+        var me = RequireUserId();
+        RequireMembership(chatId, me);
+
+        var names = _groupChatAdmins.TryGetValue(chatId, out var admins)
+            ? admins.Select(DisplayNameOf).OrderBy(n => n, Ci).ToList()
+            : new List<string>();
+        return Task.FromResult(names);
     }
 
     private static string MakeDmId(string a, string b)

@@ -92,6 +92,14 @@ public class ChatMessageEntity
     public string? AttachmentContentType { get; set; }
     public byte[]? AttachmentData { get; set; }
     public int? AttachmentSizeBytes { get; set; }
+
+    // Set only for a voice message (see ChatHub.SendVoiceMessage); null for an image attachment
+    // or a plain text message.
+    public int? AttachmentDurationSeconds { get; set; }
+
+    // Set when this message was created via ChatHub.ForwardMessage rather than typed/sent
+    // directly - lets the client label it "Forwarded" without guessing from content.
+    public bool IsForwarded { get; set; }
 }
 
 public class MessageReactionEntity
@@ -117,6 +125,12 @@ public class ChatMemberEntity
 {
     public required string ChatId { get; set; }
     public required string UserId { get; set; }
+
+    // Group admins can add/remove members and rename the group (see ChatHub.RequireGroupAdmin).
+    // The creator starts as the sole admin; PromoteGroupAdmin/DemoteGroupAdmin can add or remove
+    // others, and the last remaining admin is auto-succeeded on leave so a group is never
+    // orphaned. Meaningless for Lobby/DM rows, which don't use this table's admin concept.
+    public bool IsAdmin { get; set; }
 }
 
 public class ReadReceiptEntity

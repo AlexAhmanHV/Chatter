@@ -14,4 +14,8 @@ public class ApplicationUser : IdentityUser
     // README's known-simplifications list for why that's an acceptable tradeoff here.
     public byte[]? AvatarData { get; set; }
     public string? AvatarContentType { get; set; }
+
+    // Updated when the user's last connection drops (see ChatHub.OnDisconnectedAsync); null means
+    // "never seen offline this app has tracked" (e.g. never connected, or still online everywhere).
+    public DateTime? LastSeenUtc { get; set; }
 }
