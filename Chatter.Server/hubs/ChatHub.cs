@@ -68,6 +68,20 @@ public class ChatHub : Hub
     // else; this only holds the label, since (unlike a DM) it can't be derived from the id.
     private static readonly ConcurrentDictionary<string, string> _groupChatNames = new();
 
+    // group chatId -> the userId that created it. The only admin concept this app has: whoever
+    // created the group can add/remove members and rename it. No delegated admins, no ownership
+    // transfer - see RequireGroupAdmin.
+    private static readonly ConcurrentDictionary<string, string> _groupChatCreator = new();
+
+    // ===== Blocking & muting =====
+    // blocker userId -> set of userIds they've blocked. Enforced both ways (see
+    // IsBlockedEitherWay) when starting or posting to a DM.
+    private static readonly ConcurrentDictionary<string, HashSet<string>> _blockedByUser = new();
+
+    // (userId, chatId) muted by that user - messages still arrive, this only suppresses their
+    // own unread badge/notification. The other party is never told.
+    private static readonly ConcurrentDictionary<(string UserId, string ChatId), byte> _mutedChats = new();
+
     // ===== Presence =====
     // userId -> explicit status ("online" | "away" | "busy" | "offline"). No connections -> effective offline.
     private static readonly ConcurrentDictionary<string, string> _statusByUserId = new();
@@ -251,6 +265,9 @@ public class ChatHub : Hub
         if (Ci.Equals(otherId, me))
             throw new HubException("You cannot start a DM with yourself.");
 
+        if (IsBlockedEitherWay(me, otherId))
+            throw new HubException("You can't start a chat with this user.");
+
         var chatId = MakeDmId(me, otherId);
 
         var set = _chatMembers.GetOrAdd(chatId, _ => new HashSet<string>());
@@ -318,6 +335,7 @@ public class ChatHub : Hub
 
         _chatMembers[chatId] = new HashSet<string>(memberIds);
         _groupChatNames[chatId] = name;
+        _groupChatCreator[chatId] = me;
 
         await PersistGroupChatAsync(chatId, name, me, memberIds);
 
@@ -339,6 +357,127 @@ public class ChatHub : Hub
         await Clients.All.SendAsync("ChatsUpdated", new[] { chatId });
 
         return chatId;
+    }
+
+    public Task<List<string>> GetGroupMembers(string chatId)
+    {
+        var me = RequireUserId();
+        RequireMembership(chatId, me);
+
+        var names = _chatMembers.TryGetValue(chatId, out var members)
+            ? members.Select(DisplayNameOf).OrderBy(n => n, Ci).ToList()
+            : new List<string>();
+        return Task.FromResult(names);
+    }
+
+    // Whoever created a group is its only admin - no delegated admins, no ownership transfer.
+    // If the creator leaves the group (LeaveChat), they lose admin rights too: RequireGroupAdmin
+    // also checks current membership, not just "were they the original creator".
+    public async Task AddGroupMember(string chatId, string displayName)
+    {
+        var me = RequireUserId();
+        RequireGroupAdmin(chatId, me);
+
+        if (!_userIdByDisplayName.TryGetValue((displayName ?? string.Empty).Trim(), out var targetId))
+            throw new HubException($"Could not find a user named '{displayName}'.");
+
+        var set = _chatMembers.GetOrAdd(chatId, _ => new HashSet<string>());
+        bool added;
+        lock (set) added = set.Add(targetId);
+        if (!added) return; // already a member
+
+        try
+        {
+            await using var db = await _dbFactory.CreateDbContextAsync();
+            if (!await db.ChatMembers.AnyAsync(m => m.ChatId == chatId && m.UserId == targetId))
+            {
+                db.ChatMembers.Add(new ChatMemberEntity { ChatId = chatId, UserId = targetId });
+                await db.SaveChangesAsync();
+            }
+        }
+        catch { }
+
+        var label = _groupChatNames.TryGetValue(chatId, out var n) ? n : chatId;
+        var connMap = _chatMembersByConn.GetOrAdd(chatId, _ => new ConcurrentDictionary<string, byte>());
+        var targetConns = ConnectionsFor(targetId).ToList();
+        foreach (var cid in targetConns)
+        {
+            await Groups.AddToGroupAsync(cid, chatId);
+            connMap[cid] = 1;
+        }
+        if (targetConns.Count > 0)
+            await Clients.Clients(targetConns).SendAsync("AddedChat", chatId, label);
+
+        await Clients.Group(chatId).SendAsync("ChatSystemMessage", chatId, $"{DisplayNameOf(targetId)} was added to the group.");
+        await Clients.All.SendAsync("ChatsUpdated", new[] { chatId });
+    }
+
+    public async Task RemoveGroupMember(string chatId, string displayName)
+    {
+        var me = RequireUserId();
+        RequireGroupAdmin(chatId, me);
+
+        if (!_userIdByDisplayName.TryGetValue((displayName ?? string.Empty).Trim(), out var targetId))
+            throw new HubException($"Could not find a user named '{displayName}'.");
+
+        if (Ci.Equals(targetId, me))
+            throw new HubException("Use \"leave\" to remove yourself; the group's creator can't be removed this way.");
+
+        if (_chatMembers.TryGetValue(chatId, out var set)) lock (set) set.Remove(targetId);
+
+        try
+        {
+            await using var db = await _dbFactory.CreateDbContextAsync();
+            var row = await db.ChatMembers.FindAsync(chatId, targetId);
+            if (row is not null)
+            {
+                db.ChatMembers.Remove(row);
+                await db.SaveChangesAsync();
+            }
+        }
+        catch { }
+
+        var targetConns = ConnectionsFor(targetId).ToList();
+        if (_chatMembersByConn.TryGetValue(chatId, out var connMap))
+        {
+            foreach (var cid in targetConns)
+            {
+                await Groups.RemoveFromGroupAsync(cid, chatId);
+                connMap.TryRemove(cid, out _);
+            }
+        }
+
+        if (targetConns.Count > 0)
+            await Clients.Clients(targetConns).SendAsync("RemovedFromChat", chatId);
+
+        await Clients.Group(chatId).SendAsync("ChatSystemMessage", chatId, $"{DisplayNameOf(targetId)} was removed from the group.");
+        await Clients.All.SendAsync("ChatsUpdated", new[] { chatId });
+    }
+
+    public async Task RenameGroupChat(string chatId, string newName)
+    {
+        var me = RequireUserId();
+        RequireGroupAdmin(chatId, me);
+
+        newName = (newName ?? string.Empty).Trim();
+        if (newName.Length == 0) throw new HubException("Group name can't be empty.");
+        if (newName.Length > MaxDisplayNameLength) newName = newName[..MaxDisplayNameLength];
+
+        _groupChatNames[chatId] = newName;
+
+        try
+        {
+            await using var db = await _dbFactory.CreateDbContextAsync();
+            var chat = await db.Chats.FindAsync(chatId);
+            if (chat is not null)
+            {
+                chat.Name = newName;
+                await db.SaveChangesAsync();
+            }
+        }
+        catch { }
+
+        await Clients.Group(chatId).SendAsync("ChatRenamed", chatId, newName);
     }
 
     public async Task JoinChat(string chatId)
@@ -367,6 +506,10 @@ public class ChatHub : Hub
         var me = RequireUserId();
         RequireMembership(chatId, me);
         EnforceRateLimit("sendToChat", maxPerWindow: 10, window: TimeSpan.FromSeconds(10));
+
+        // A block that happens after a DM already exists still stops new messages both ways.
+        if (_dmParticipants.TryGetValue(chatId, out var dmPair) && IsBlockedEitherWay(dmPair.User1, dmPair.User2))
+            throw new HubException("You can't send messages in this chat.");
 
         message = (message ?? string.Empty).Trim();
         if (message.Length == 0) return;
@@ -498,6 +641,98 @@ public class ChatHub : Hub
         await Clients.OthersInGroup(chatId).SendAsync("ReadReceipt", chatId, DisplayNameOf(me), lastReadMessageId);
     }
 
+    // -------------------------------------------------------
+    // Blocking & muting
+    // -------------------------------------------------------
+    public async Task BlockUser(string displayName)
+    {
+        var me = RequireUserId();
+
+        if (!_userIdByDisplayName.TryGetValue((displayName ?? string.Empty).Trim(), out var targetId))
+            throw new HubException($"Could not find a user named '{displayName}'.");
+        if (Ci.Equals(targetId, me))
+            throw new HubException("You can't block yourself.");
+
+        _blockedByUser.AddOrUpdate(me,
+            _ => new HashSet<string> { targetId },
+            (_, set) => { lock (set) set.Add(targetId); return set; });
+
+        try
+        {
+            await using var db = await _dbFactory.CreateDbContextAsync();
+            if (!await db.Blocks.AnyAsync(b => b.BlockerUserId == me && b.BlockedUserId == targetId))
+            {
+                db.Blocks.Add(new BlockedUserEntity { BlockerUserId = me, BlockedUserId = targetId, CreatedAtUtc = DateTime.UtcNow });
+                await db.SaveChangesAsync();
+            }
+        }
+        catch { }
+    }
+
+    public async Task UnblockUser(string displayName)
+    {
+        var me = RequireUserId();
+
+        if (!_userIdByDisplayName.TryGetValue((displayName ?? string.Empty).Trim(), out var targetId))
+            throw new HubException($"Could not find a user named '{displayName}'.");
+
+        if (_blockedByUser.TryGetValue(me, out var set)) lock (set) set.Remove(targetId);
+
+        try
+        {
+            await using var db = await _dbFactory.CreateDbContextAsync();
+            var row = await db.Blocks.FindAsync(me, targetId);
+            if (row is not null)
+            {
+                db.Blocks.Remove(row);
+                await db.SaveChangesAsync();
+            }
+        }
+        catch { }
+    }
+
+    public Task<List<string>> GetBlockedUsers()
+    {
+        var me = RequireUserId();
+        var names = _blockedByUser.TryGetValue(me, out var set)
+            ? set.Select(DisplayNameOf).OrderBy(n => n, Ci).ToList()
+            : new List<string>();
+        return Task.FromResult(names);
+    }
+
+    private static bool IsBlockedEitherWay(string a, string b) =>
+        (_blockedByUser.TryGetValue(a, out var setA) && setA.Contains(b)) ||
+        (_blockedByUser.TryGetValue(b, out var setB) && setB.Contains(a));
+
+    // Muting never touches delivery - the message still arrives and gets persisted normally,
+    // this only tells the *caller's own* client to stop bumping the unread badge for this chat.
+    public async Task SetChatMuted(string chatId, bool muted)
+    {
+        var me = RequireUserId();
+        RequireMembership(chatId, me);
+
+        var key = (me, chatId);
+        if (muted) _mutedChats[key] = 1;
+        else _mutedChats.TryRemove(key, out _);
+
+        try
+        {
+            await using var db = await _dbFactory.CreateDbContextAsync();
+            var existing = await db.MutedChats.FindAsync(me, chatId);
+            if (muted && existing is null)
+            {
+                db.MutedChats.Add(new MutedChatEntity { UserId = me, ChatId = chatId, MutedAtUtc = DateTime.UtcNow });
+                await db.SaveChangesAsync();
+            }
+            else if (!muted && existing is not null)
+            {
+                db.MutedChats.Remove(existing);
+                await db.SaveChangesAsync();
+            }
+        }
+        catch { }
+    }
+
     // Backfills a chat's message history for a client that just opened it (e.g. after
     // reconnecting, or opening the app fresh and everything else is in-memory-only).
     // Pass beforeMessageId (the oldest message id currently loaded) to page further back.
@@ -602,12 +837,16 @@ public class ChatHub : Hub
             .Where(r => r.UserId == userId && ids.Contains(r.ChatId))
             .ToDictionaryAsync(r => r.ChatId, r => r.LastReadMessageId);
 
+        var mutedIds = new HashSet<string>(
+            await db.MutedChats.Where(m => m.UserId == userId && ids.Contains(m.ChatId)).Select(m => m.ChatId).ToListAsync(),
+            Ci);
+
         var list = new List<ChatSummary>();
         foreach (var id in ids)
         {
             var lastRead = lastReadByChat.TryGetValue(id, out var lr) ? lr : 0L;
             var unread = await db.Messages.CountAsync(m => m.ChatId == id && m.Id > lastRead && m.SenderUserId != userId);
-            list.Add(new ChatSummary(id, ComputeChatLabelForUser(id, userId), unread));
+            list.Add(new ChatSummary(id, ComputeChatLabelForUser(id, userId), unread, mutedIds.Contains(id)));
         }
 
         var lobby = list.FirstOrDefault(c => Ci.Equals(c.Id, LobbyId));
@@ -651,10 +890,25 @@ public class ChatHub : Hub
     public static void PreloadGroupChats(IEnumerable<ChatEntity> chats, IEnumerable<ChatMemberEntity> members)
     {
         foreach (var c in chats)
+        {
             _groupChatNames[c.ChatId] = c.Name;
+            _groupChatCreator[c.ChatId] = c.CreatedByUserId;
+        }
 
         foreach (var group in members.GroupBy(m => m.ChatId))
             _chatMembers[group.Key] = new HashSet<string>(group.Select(m => m.UserId));
+    }
+
+    public static void PreloadBlocks(IEnumerable<BlockedUserEntity> blocks)
+    {
+        foreach (var group in blocks.GroupBy(b => b.BlockerUserId))
+            _blockedByUser[group.Key] = new HashSet<string>(group.Select(b => b.BlockedUserId));
+    }
+
+    public static void PreloadMutedChats(IEnumerable<MutedChatEntity> muted)
+    {
+        foreach (var m in muted)
+            _mutedChats[(m.UserId, m.ChatId)] = 1;
     }
 
     private async Task PersistGroupChatAsync(string chatId, string name, string createdByUserId, IEnumerable<string> memberIds)
@@ -768,6 +1022,16 @@ public class ChatHub : Hub
 
         if (!_chatMembers.TryGetValue(chatId, out var members) || !members.Contains(userId))
             throw new HubException("You are not a member of this chat.");
+    }
+
+    // Also re-checks current membership, not just "were they the original creator": if the
+    // creator left the group, they lose admin rights along with everything else membership grants.
+    private void RequireGroupAdmin(string chatId, string userId)
+    {
+        if (!_groupChatCreator.TryGetValue(chatId, out var creator) || !Ci.Equals(creator, userId))
+            throw new HubException("Only the group's creator can do that.");
+
+        RequireMembership(chatId, userId);
     }
 
     private static string MakeDmId(string a, string b)

@@ -19,6 +19,8 @@ public class ChatDbContext : DbContext
     public DbSet<ChatEntity> Chats => Set<ChatEntity>();
     public DbSet<ChatMemberEntity> ChatMembers => Set<ChatMemberEntity>();
     public DbSet<ReadReceiptEntity> ReadReceipts => Set<ReadReceiptEntity>();
+    public DbSet<BlockedUserEntity> Blocks => Set<BlockedUserEntity>();
+    public DbSet<MutedChatEntity> MutedChats => Set<MutedChatEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -52,6 +54,16 @@ public class ChatDbContext : DbContext
         modelBuilder.Entity<ReadReceiptEntity>(e =>
         {
             e.HasKey(r => new { r.ChatId, r.UserId });
+        });
+
+        modelBuilder.Entity<BlockedUserEntity>(e =>
+        {
+            e.HasKey(b => new { b.BlockerUserId, b.BlockedUserId });
+        });
+
+        modelBuilder.Entity<MutedChatEntity>(e =>
+        {
+            e.HasKey(m => new { m.UserId, m.ChatId });
         });
     }
 }
@@ -106,4 +118,22 @@ public class ReadReceiptEntity
     public required string UserId { get; set; }
     public long LastReadMessageId { get; set; }
     public DateTime LastReadAtUtc { get; set; }
+}
+
+// A -> B: A has blocked B. Blocking is one-directional to record but enforced both ways (see
+// ChatHub.IsBlockedEitherWay) - if either party has blocked the other, they can't DM each other.
+public class BlockedUserEntity
+{
+    public required string BlockerUserId { get; set; }
+    public required string BlockedUserId { get; set; }
+    public DateTime CreatedAtUtc { get; set; }
+}
+
+// Per-user, per-chat mute: messages still arrive normally, this only suppresses the unread
+// badge/notification locally - the other party is never told and delivery is unaffected.
+public class MutedChatEntity
+{
+    public required string UserId { get; set; }
+    public required string ChatId { get; set; }
+    public DateTime MutedAtUtc { get; set; }
 }

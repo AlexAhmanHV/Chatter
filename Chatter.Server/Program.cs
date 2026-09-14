@@ -113,6 +113,12 @@ using (var scope = app.Services.CreateScope())
     var groupChats = await db.Chats.ToListAsync();
     var groupMembers = await db.ChatMembers.ToListAsync();
     ChatHub.PreloadGroupChats(groupChats, groupMembers);
+
+    var blocks = await db.Blocks.ToListAsync();
+    ChatHub.PreloadBlocks(blocks);
+
+    var mutedChats = await db.MutedChats.ToListAsync();
+    ChatHub.PreloadMutedChats(mutedChats);
 }
 
 // Pipeline
