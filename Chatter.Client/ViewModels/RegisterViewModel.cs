@@ -3,11 +3,11 @@ File: RegisterViewModel.cs
 
 What this does:
 - Purpose: Handles the user registration flow (email, password, confirm, optional display name) and navigation to Login.
-- How: Validates inputs, calls SupabaseAuthService.SignUpAsync, shows user-friendly alerts, and raises events for the view to react.
+- How: Validates inputs, calls ApiAuthService.SignUpAsync (this app's own /auth/register endpoint), shows
+  user-friendly alerts, and raises events for the view to react.
 */
 
 using System;
-using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -20,7 +20,7 @@ namespace Chatter.Client.ViewModels;
 
 public partial class RegisterViewModel : ObservableObject
 {
-    private readonly SupabaseAuthService _auth;
+    private readonly ApiAuthService _auth;
 
     [ObservableProperty] public partial string? Email { get; set; }
     [ObservableProperty] public partial string? Password { get; set; }
@@ -36,7 +36,7 @@ public partial class RegisterViewModel : ObservableObject
 
     public event Action? NavigateToLoginRequested;
 
-    public RegisterViewModel(SupabaseAuthService auth)
+    public RegisterViewModel(ApiAuthService auth)
     {
         _auth = auth;
         RegisterCommand = new AsyncRelayCommand(RegisterAsync);
@@ -74,53 +74,20 @@ public partial class RegisterViewModel : ObservableObject
 
             var email = Email!;
             var password = Password!;
-            var metadata = string.IsNullOrWhiteSpace(DisplayName)
-                ? null
-                : new Dictionary<string, object> { ["display_name"] = DisplayName! };
 
-            var session = await _auth.SignUpAsync(email: email, password: password, metadata: metadata);
+            await _auth.SignUpAsync(email: email, password: password, displayName: DisplayName);
 
-            if (session is not null)
-            {
-                await ShowAlertAsync("Welcome!", "Account created.", "OK");
-                RegistrationSucceeded?.Invoke();
-            }
-            else
-            {
-                await ShowAlertAsync(
-                    "Check your email",
-                    "We sent you a verification link. Please confirm your address, then sign in.",
-                    "OK");
-                RegistrationSucceeded?.Invoke();
-            }
+            await ShowAlertAsync("Welcome!", "Account created.", "OK");
+            RegistrationSucceeded?.Invoke();
         }
-
+        catch (System.Net.Http.HttpRequestException)
+        {
+            await ShowAlertAsync("Registration failed", "Network error. Please check your connection and try again.", "OK");
+        }
         catch (Exception ex)
         {
-            string userMessage;
-
-            // Basic Supabase error mapping
-            if (ex.Message.Contains("weak_password", StringComparison.OrdinalIgnoreCase))
-            {
-                userMessage = "Enter 6 or more characters for your password.";
-            }
-            else if (ex.Message.Contains("email_address_invalid", StringComparison.OrdinalIgnoreCase))
-            {
-                userMessage = "Enter a valid email address.";
-            }
-            else if (ex.Message.Contains("email_exists", StringComparison.OrdinalIgnoreCase))
-            {
-                userMessage = "An account already exists with this email. Please sign in.";
-            }
-            else
-            {
-                // Fallback so we avoid JSON-felet helt
-                userMessage = "Registration failed. Please try again.";
-            }
-
-            await ShowAlertAsync("Registration failed", userMessage, "OK");
+            await ShowAlertAsync("Registration failed", ex.Message, "OK");
         }
-
         finally
         {
             IsBusy = false;

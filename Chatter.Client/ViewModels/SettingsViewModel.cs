@@ -3,7 +3,8 @@ File: SettingsViewModel.cs
 
 What this does:
 - Purpose: Lets the user update their display name in Settings and returns to the previous page.
-- How: Validates input, calls SupabaseAuthService.UpdateDisplayNameAsync, shows alerts, and broadcasts a DisplayNameChangedMessage.
+- How: Broadcasts a DisplayNameChangedMessage; ChatViewModel is what actually persists the new name
+  server-side (via ChatHub.ChangeDisplayName) and updates the local ApiAuthService cache.
 */
 
 using System;
@@ -24,12 +25,12 @@ public partial class SettingsViewModel : ObservableObject
     [ObservableProperty] public partial string DisplayName { get; set; } = string.Empty;
     [ObservableProperty] public partial bool IsBusy { get; set; }
 
-    private readonly SupabaseAuthService _auth;
+    private readonly ApiAuthService _auth;
 
     /// Saves the updated display name.
     public IAsyncRelayCommand SaveCommand { get; }
 
-    public SettingsViewModel(SupabaseAuthService auth)
+    public SettingsViewModel(ApiAuthService auth)
     {
         _auth = auth;
         SaveCommand = new AsyncRelayCommand(SaveAsync);
@@ -66,14 +67,9 @@ public partial class SettingsViewModel : ObservableObject
             }
 
             var name = DisplayName.Trim();
-            var updated = await _auth.UpdateDisplayNameAsync(name);
-            if (string.IsNullOrWhiteSpace(updated))
-            {
-                await ShowAlertAsync("Update failed", "Could not update your name.", "OK");
-                return;
-            }
+            _auth.UpdateLocalDisplayName(name);
 
-            WeakReferenceMessenger.Default.Send(new DisplayNameChangedMessage(updated));
+            WeakReferenceMessenger.Default.Send(new DisplayNameChangedMessage(name));
             await ShowAlertAsync("Saved", "Display name updated.", "OK");
             await NavigateBackAsync();
         }

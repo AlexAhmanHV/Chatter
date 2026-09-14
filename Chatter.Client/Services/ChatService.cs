@@ -23,7 +23,7 @@ public class ChatService
        Holds the auth provider, SignalR connection handle, and quick helpers like IsConnected.
        The BaseUrl is supplied by the caller (ViewModel) to StartAsync.
     */
-    private readonly SupabaseAuthService _auth;
+    private readonly ApiAuthService _auth;
     private HubConnection? _conn;
     private const string LobbyId = "Lobby";
 
@@ -64,7 +64,7 @@ public class ChatService
     /* Constructor
        Stores the auth dependency used to supply an access token when establishing the hub connection.
     */
-    public ChatService(SupabaseAuthService auth) => _auth = auth;
+    public ChatService(ApiAuthService auth) => _auth = auth;
 
     /* Presence APIs
        Set a presence value and fetch a snapshot of all statuses (if the server exposes these endpoints).

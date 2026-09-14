@@ -3,9 +3,10 @@ File: LoginViewModel.cs
 
 What this does:
 - Purpose: ViewModel for the login screen. Captures username/password, manages busy state, validates inputs,
-  calls SupabaseAuthService to sign in, and raises a success event so the page can navigate.
+  calls ApiAuthService to sign in against this app's own /auth/login endpoint, and raises a success event
+  so the page can navigate.
 - How: Exposes bindable properties (Username, Password, IsBusy), a computed CanLogin, and an AsyncRelayCommand (LoginCommand).
-  On success, derives a friendly display name (falls back to email prefix) and emits LoginSucceeded(displayName).
+  On success, emits LoginSucceeded(displayName) using the display name the server returns.
 */
 
 using System;
@@ -26,7 +27,7 @@ public partial class LoginViewModel : ObservableObject
     [ObservableProperty] public partial string? Password { get; set; }
     [ObservableProperty] public partial bool IsBusy { get; set; }
 
-    private readonly SupabaseAuthService _auth;
+    private readonly ApiAuthService _auth;
 
     // Computed: enables the login button only when inputs are present and not busy.
     public bool CanLogin =>
@@ -40,7 +41,7 @@ public partial class LoginViewModel : ObservableObject
 
     public IAsyncRelayCommand LoginCommand { get; }
 
-    public LoginViewModel(SupabaseAuthService auth)
+    public LoginViewModel(ApiAuthService auth)
     {
         _auth = auth;
 
@@ -83,48 +84,20 @@ public partial class LoginViewModel : ObservableObject
 
         try
         {
-            // Local copies satisfy nullability after validation
             var email = Username!;
-            var pwd   = Password!;
+            var pwd = Password!;
 
-            var session = await _auth.SignInAsync(email, pwd);
-            if (session is null)
-            {
-                await ShowAlertAsync("Login failed", "Invalid credentials.", "OK");
-                return;
-            }
-
-            // Prefer stored display name; otherwise derive from email prefix
-            var display = _auth.CurrentDisplayName;
-            if (string.IsNullOrWhiteSpace(display))
-                display = email.Contains('@') ? email.Split('@')[0] : email;
-
+            var display = await _auth.SignInAsync(email, pwd);
             LoginSucceeded?.Invoke(display);
+        }
+        catch (System.Net.Http.HttpRequestException)
+        {
+            await ShowAlertAsync("Login failed", "Network error. Please check your connection and try again.", "OK");
         }
         catch (Exception ex)
         {
-            string userMessage;
-
-            if (ex.Message.Contains("invalid_credentials", StringComparison.OrdinalIgnoreCase))
-            {
-                userMessage = "Invalid email or password.";
-            }
-            else if (ex.Message.Contains("email_not_confirmed", StringComparison.OrdinalIgnoreCase))
-            {
-                userMessage = "Please verify your email before signing in.";
-            }
-            else if (ex is System.Net.Http.HttpRequestException)
-            {
-                userMessage = "Network error. Please check your connection and try again.";
-            }
-            else
-            {
-                userMessage = "Login failed. Please try again.";
-            }
-
-            await ShowAlertAsync("Login failed", userMessage, "OK");
+            await ShowAlertAsync("Login failed", ex.Message, "OK");
         }
-
         finally
         {
             IsBusy = false;

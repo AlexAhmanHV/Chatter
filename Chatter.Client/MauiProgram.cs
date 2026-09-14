@@ -22,10 +22,7 @@ public static class MauiProgram
         builder.Logging.AddDebug();
 #endif
 
-        builder.Services.AddSingleton(new SupabaseAuthService(
-            url: SupabaseConfig.Url,
-            anonKey: SupabaseConfig.AnonKey
-        ));
+        builder.Services.AddSingleton<ApiAuthService>();
         builder.Services.AddSingleton<ChatService>();     // one HubConnection for the app
         builder.Services.AddTransient<ChatViewModel>();   // fresh VM per page
         builder.Services.AddTransient<ChatPage>();        // page that uses the VM
