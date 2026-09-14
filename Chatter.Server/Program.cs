@@ -109,6 +109,10 @@ using (var scope = app.Services.CreateScope())
 
     var profiles = await db.UserProfiles.ToListAsync();
     ChatHub.PreloadDisplayNames(profiles);
+
+    var groupChats = await db.Chats.ToListAsync();
+    var groupMembers = await db.ChatMembers.ToListAsync();
+    ChatHub.PreloadGroupChats(groupChats, groupMembers);
 }
 
 // Pipeline

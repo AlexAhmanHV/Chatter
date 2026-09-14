@@ -12,6 +12,10 @@ public class ChatDbContext : DbContext
 
     public DbSet<ChatMessageEntity> Messages => Set<ChatMessageEntity>();
     public DbSet<UserProfileEntity> UserProfiles => Set<UserProfileEntity>();
+    public DbSet<MessageReactionEntity> Reactions => Set<MessageReactionEntity>();
+    public DbSet<ChatEntity> Chats => Set<ChatEntity>();
+    public DbSet<ChatMemberEntity> ChatMembers => Set<ChatMemberEntity>();
+    public DbSet<ReadReceiptEntity> ReadReceipts => Set<ReadReceiptEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -25,6 +29,27 @@ public class ChatDbContext : DbContext
         {
             e.HasKey(u => u.UserId);
         });
+
+        modelBuilder.Entity<MessageReactionEntity>(e =>
+        {
+            e.HasKey(r => r.Id);
+            e.HasIndex(r => new { r.MessageId, r.UserId, r.Emoji }).IsUnique();
+        });
+
+        modelBuilder.Entity<ChatEntity>(e =>
+        {
+            e.HasKey(c => c.ChatId);
+        });
+
+        modelBuilder.Entity<ChatMemberEntity>(e =>
+        {
+            e.HasKey(m => new { m.ChatId, m.UserId });
+        });
+
+        modelBuilder.Entity<ReadReceiptEntity>(e =>
+        {
+            e.HasKey(r => new { r.ChatId, r.UserId });
+        });
     }
 }
 
@@ -36,6 +61,8 @@ public class ChatMessageEntity
     public required string SenderDisplayName { get; set; }
     public required string Body { get; set; }
     public DateTime SentAtUtc { get; set; }
+    public DateTime? EditedAtUtc { get; set; }
+    public bool IsDeleted { get; set; }
 }
 
 public class UserProfileEntity
@@ -43,4 +70,37 @@ public class UserProfileEntity
     public required string UserId { get; set; }
     public required string DisplayName { get; set; }
     public DateTime UpdatedAtUtc { get; set; }
+}
+
+public class MessageReactionEntity
+{
+    public long Id { get; set; }
+    public long MessageId { get; set; }
+    public required string UserId { get; set; }
+    public required string Emoji { get; set; }
+}
+
+// Metadata for a named group chat. Lobby and DMs don't need a row here: Lobby is implicit and
+// DMs derive their two participants directly from the chat id (see ChatHub.MakeDmId).
+public class ChatEntity
+{
+    public required string ChatId { get; set; }
+    public required string Name { get; set; }
+    public required string CreatedByUserId { get; set; }
+    public DateTime CreatedAtUtc { get; set; }
+}
+
+// Persisted membership for group chats (again, not needed for Lobby/DMs).
+public class ChatMemberEntity
+{
+    public required string ChatId { get; set; }
+    public required string UserId { get; set; }
+}
+
+public class ReadReceiptEntity
+{
+    public required string ChatId { get; set; }
+    public required string UserId { get; set; }
+    public long LastReadMessageId { get; set; }
+    public DateTime LastReadAtUtc { get; set; }
 }

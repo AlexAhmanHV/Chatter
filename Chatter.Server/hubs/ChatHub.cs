@@ -64,6 +64,10 @@ public class ChatHub : Hub
     // dm chatId -> (userId1, userId2)
     private static readonly ConcurrentDictionary<string, (string User1, string User2)> _dmParticipants = new();
 
+    // group chatId -> group name. Membership for groups lives in _chatMembers like everything
+    // else; this only holds the label, since (unlike a DM) it can't be derived from the id.
+    private static readonly ConcurrentDictionary<string, string> _groupChatNames = new();
+
     // ===== Presence =====
     // userId -> explicit status ("online" | "away" | "busy" | "offline"). No connections -> effective offline.
     private static readonly ConcurrentDictionary<string, string> _statusByUserId = new();
@@ -282,6 +286,59 @@ public class ChatHub : Hub
         return chatId;
     }
 
+    // Named, multi-member chat. Unlike a DM, membership can't be derived from the chat id, so
+    // it's tracked the same way as everything else in _chatMembers and persisted separately.
+    public async Task<string> CreateGroupChat(string name, List<string> memberDisplayNames)
+    {
+        var me = RequireUserId();
+        EnforceRateLimit("createGroup", maxPerWindow: 5, window: TimeSpan.FromSeconds(30));
+
+        name = (name ?? string.Empty).Trim();
+        if (name.Length == 0) throw new HubException("Group name can't be empty.");
+        if (name.Length > MaxDisplayNameLength) name = name[..MaxDisplayNameLength];
+
+        var memberIds = new HashSet<string> { me };
+        foreach (var displayName in memberDisplayNames ?? new List<string>())
+        {
+            var trimmed = (displayName ?? string.Empty).Trim();
+            if (trimmed.Length == 0) continue;
+
+            if (!_userIdByDisplayName.TryGetValue(trimmed, out var userId))
+                throw new HubException($"Could not find a user named '{trimmed}'.");
+
+            memberIds.Add(userId);
+        }
+
+        if (memberIds.Count < 2)
+            throw new HubException("A group needs at least one other member.");
+
+        var chatId = "group:" + Guid.NewGuid().ToString("N");
+
+        _chatMembers[chatId] = new HashSet<string>(memberIds);
+        _groupChatNames[chatId] = name;
+
+        await PersistGroupChatAsync(chatId, name, me, memberIds);
+
+        var connMap = _chatMembersByConn.GetOrAdd(chatId, _ => new ConcurrentDictionary<string, byte>());
+        foreach (var uid in memberIds)
+        {
+            var conns = ConnectionsFor(uid).ToList();
+            foreach (var cid in conns)
+            {
+                await Groups.AddToGroupAsync(cid, chatId);
+                connMap[cid] = 1;
+            }
+
+            // Notify every member (including the caller) so the chat shows up immediately.
+            if (conns.Count > 0)
+                await Clients.Clients(conns).SendAsync("AddedChat", chatId, name);
+        }
+
+        await Clients.All.SendAsync("ChatsUpdated", new[] { chatId });
+
+        return chatId;
+    }
+
     public async Task JoinChat(string chatId)
     {
         var me = RequireUserId();
@@ -314,11 +371,12 @@ public class ChatHub : Hub
         if (message.Length > MaxMessageLength) message = message[..MaxMessageLength];
 
         var name = DisplayNameOf(me);
+        var sentAt = DateTime.UtcNow;
 
-        await PersistMessageAsync(chatId, me, name, message);
+        var messageId = await PersistMessageAsync(chatId, me, name, message, sentAt);
 
         // Deliver to everyone currently joined to this chat's SignalR group.
-        await Clients.Group(chatId).SendAsync("ReceiveChatMessage", chatId, name, message);
+        await Clients.Group(chatId).SendAsync("ReceiveChatMessage", chatId, messageId, name, message, sentAt);
 
         // If it's a DM, also notify participants who haven't joined the group yet (e.g. another tab/device).
         if (_dmParticipants.TryGetValue(chatId, out var pair))
@@ -332,26 +390,148 @@ public class ChatHub : Hub
             var notInGroup = allConnIds.Where(cid => cid != senderConnId && !groupMembers.Contains(cid));
 
             foreach (var cid in notInGroup)
-                await Clients.Client(cid).SendAsync("DmNotify", chatId, name, message);
+                await Clients.Client(cid).SendAsync("DmNotify", chatId, messageId, name, message, sentAt);
         }
     }
 
-    // Backfills a chat's message history for a client that just opened it (e.g. after
-    // reconnecting, or opening the app fresh and everything else is in-memory-only).
-    public async Task<List<ChatMessageDto>> GetChatHistory(string chatId, int take = 50)
+    public async Task EditMessage(long messageId, string newBody)
+    {
+        var me = RequireUserId();
+
+        await using var db = await _dbFactory.CreateDbContextAsync();
+        var msg = await db.Messages.FindAsync(messageId) ?? throw new HubException("Message not found.");
+        if (!Ci.Equals(msg.SenderUserId, me)) throw new HubException("You can only edit your own messages.");
+        if (msg.IsDeleted) throw new HubException("Can't edit a deleted message.");
+
+        newBody = (newBody ?? string.Empty).Trim();
+        if (newBody.Length == 0) throw new HubException("Message can't be empty.");
+        if (newBody.Length > MaxMessageLength) newBody = newBody[..MaxMessageLength];
+
+        msg.Body = newBody;
+        msg.EditedAtUtc = DateTime.UtcNow;
+        await db.SaveChangesAsync();
+
+        await Clients.Group(msg.ChatId).SendAsync("MessageEdited", msg.ChatId, msg.Id, newBody, msg.EditedAtUtc);
+    }
+
+    public async Task DeleteMessage(long messageId)
+    {
+        var me = RequireUserId();
+
+        await using var db = await _dbFactory.CreateDbContextAsync();
+        var msg = await db.Messages.FindAsync(messageId) ?? throw new HubException("Message not found.");
+        if (!Ci.Equals(msg.SenderUserId, me)) throw new HubException("You can only delete your own messages.");
+
+        msg.IsDeleted = true;
+        msg.Body = string.Empty;
+        await db.SaveChangesAsync();
+
+        await Clients.Group(msg.ChatId).SendAsync("MessageDeleted", msg.ChatId, msg.Id);
+    }
+
+    // Toggle: reacting again with the same emoji removes it. One reaction per (user, emoji) per
+    // message, enforced by a unique index - see ChatDbContext.
+    public async Task ToggleReaction(long messageId, string emoji)
+    {
+        var me = RequireUserId();
+        EnforceRateLimit("reaction", maxPerWindow: 20, window: TimeSpan.FromSeconds(10));
+
+        emoji = (emoji ?? string.Empty).Trim();
+        if (emoji.Length == 0 || emoji.Length > 8) throw new HubException("Invalid emoji.");
+
+        await using var db = await _dbFactory.CreateDbContextAsync();
+        var msg = await db.Messages.FindAsync(messageId) ?? throw new HubException("Message not found.");
+        RequireMembership(msg.ChatId, me);
+
+        var existing = await db.Reactions.FirstOrDefaultAsync(
+            r => r.MessageId == messageId && r.UserId == me && r.Emoji == emoji);
+
+        bool added;
+        if (existing is not null)
+        {
+            db.Reactions.Remove(existing);
+            added = false;
+        }
+        else
+        {
+            db.Reactions.Add(new MessageReactionEntity { MessageId = messageId, UserId = me, Emoji = emoji });
+            added = true;
+        }
+        await db.SaveChangesAsync();
+
+        var count = await db.Reactions.CountAsync(r => r.MessageId == messageId && r.Emoji == emoji);
+        await Clients.Group(msg.ChatId).SendAsync("ReactionChanged", msg.ChatId, messageId, emoji, count, added, DisplayNameOf(me));
+    }
+
+    // Tells other chat members "I've seen up to message X", so a DM can show a "Seen" marker.
+    public async Task MarkRead(string chatId, long lastReadMessageId)
     {
         var me = RequireUserId();
         RequireMembership(chatId, me);
 
         await using var db = await _dbFactory.CreateDbContextAsync();
-        var rows = await db.Messages
-            .Where(m => m.ChatId == chatId)
-            .OrderByDescending(m => m.SentAtUtc)
-            .Take(Math.Clamp(take, 1, 200))
-            .ToListAsync();
+        var existing = await db.ReadReceipts.FindAsync(chatId, me);
 
+        if (existing is null)
+        {
+            db.ReadReceipts.Add(new ReadReceiptEntity
+            {
+                ChatId = chatId,
+                UserId = me,
+                LastReadMessageId = lastReadMessageId,
+                LastReadAtUtc = DateTime.UtcNow
+            });
+        }
+        else if (lastReadMessageId > existing.LastReadMessageId)
+        {
+            existing.LastReadMessageId = lastReadMessageId;
+            existing.LastReadAtUtc = DateTime.UtcNow;
+        }
+        else
+        {
+            return; // Nothing newer than what's already recorded - no-op.
+        }
+
+        await db.SaveChangesAsync();
+        await Clients.OthersInGroup(chatId).SendAsync("ReadReceipt", chatId, DisplayNameOf(me), lastReadMessageId);
+    }
+
+    // Backfills a chat's message history for a client that just opened it (e.g. after
+    // reconnecting, or opening the app fresh and everything else is in-memory-only).
+    // Pass beforeMessageId (the oldest message id currently loaded) to page further back.
+    public async Task<List<ChatMessageDto>> GetChatHistory(string chatId, long? beforeMessageId = null, int take = 50)
+    {
+        var me = RequireUserId();
+        RequireMembership(chatId, me);
+        take = Math.Clamp(take, 1, 200);
+
+        await using var db = await _dbFactory.CreateDbContextAsync();
+        var query = db.Messages.Where(m => m.ChatId == chatId);
+        if (beforeMessageId is { } before)
+            query = query.Where(m => m.Id < before);
+
+        var rows = await query.OrderByDescending(m => m.Id).Take(take).ToListAsync();
         rows.Reverse();
-        return rows.Select(m => new ChatMessageDto(m.SenderDisplayName, m.Body, m.SentAtUtc)).ToList();
+
+        var ids = rows.Select(r => r.Id).ToList();
+        var reactionRows = await db.Reactions.Where(r => ids.Contains(r.MessageId)).ToListAsync();
+        var reactionsByMessage = reactionRows
+            .GroupBy(r => r.MessageId)
+            .ToDictionary(
+                g => g.Key,
+                g => (IReadOnlyList<ReactionDto>)g.GroupBy(r => r.Emoji)
+                    .Select(eg => new ReactionDto(eg.Key, eg.Count(), eg.Any(r => Ci.Equals(r.UserId, me))))
+                    .ToList());
+
+        return rows.Select(m => new ChatMessageDto(
+            m.Id,
+            m.SenderDisplayName,
+            m.IsDeleted ? string.Empty : m.Body,
+            m.SentAtUtc,
+            m.EditedAtUtc,
+            m.IsDeleted,
+            reactionsByMessage.TryGetValue(m.Id, out var reactions) ? reactions : Array.Empty<ReactionDto>()
+        )).ToList();
     }
 
     // -------------------------------------------------------
@@ -428,6 +608,8 @@ public class ChatHub : Hub
     {
         if (Ci.Equals(chatId, LobbyId)) return "Lobby";
 
+        if (_groupChatNames.TryGetValue(chatId, out var groupName)) return groupName;
+
         if (_dmParticipants.TryGetValue(chatId, out var pair))
         {
             var otherId = Ci.Equals(pair.User1, callerUserId) ? pair.User2 : pair.User1;
@@ -447,6 +629,39 @@ public class ChatHub : Hub
     {
         foreach (var p in profiles)
             ApplyDisplayName(p.UserId, p.DisplayName);
+    }
+
+    // Same idea as PreloadDisplayNames, but for group chat metadata + membership.
+    public static void PreloadGroupChats(IEnumerable<ChatEntity> chats, IEnumerable<ChatMemberEntity> members)
+    {
+        foreach (var c in chats)
+            _groupChatNames[c.ChatId] = c.Name;
+
+        foreach (var group in members.GroupBy(m => m.ChatId))
+            _chatMembers[group.Key] = new HashSet<string>(group.Select(m => m.UserId));
+    }
+
+    private async Task PersistGroupChatAsync(string chatId, string name, string createdByUserId, IEnumerable<string> memberIds)
+    {
+        try
+        {
+            await using var db = await _dbFactory.CreateDbContextAsync();
+            db.Chats.Add(new ChatEntity
+            {
+                ChatId = chatId,
+                Name = name,
+                CreatedByUserId = createdByUserId,
+                CreatedAtUtc = DateTime.UtcNow
+            });
+            foreach (var uid in memberIds)
+                db.ChatMembers.Add(new ChatMemberEntity { ChatId = chatId, UserId = uid });
+            await db.SaveChangesAsync();
+        }
+        catch
+        {
+            // Best-effort, same as the other persistence helpers: the in-memory group still
+            // works for this run even if it doesn't survive a restart.
+        }
     }
 
     private async Task PersistDisplayNameAsync(string userId, string displayName)
@@ -478,24 +693,29 @@ public class ChatHub : Hub
         }
     }
 
-    private async Task PersistMessageAsync(string chatId, string senderUserId, string senderDisplayName, string body)
+    // Returns the new row's id (needed so the live broadcast can carry an id clients can later
+    // use to edit/delete/react to this exact message), or 0 if persistence failed - the message
+    // still gets delivered live in that case, it just won't be editable/reactable this run.
+    private async Task<long> PersistMessageAsync(string chatId, string senderUserId, string senderDisplayName, string body, DateTime sentAtUtc)
     {
         try
         {
             await using var db = await _dbFactory.CreateDbContextAsync();
-            db.Messages.Add(new ChatMessageEntity
+            var entity = new ChatMessageEntity
             {
                 ChatId = chatId,
                 SenderUserId = senderUserId,
                 SenderDisplayName = senderDisplayName,
                 Body = body,
-                SentAtUtc = DateTime.UtcNow
-            });
+                SentAtUtc = sentAtUtc
+            };
+            db.Messages.Add(entity);
             await db.SaveChangesAsync();
+            return entity.Id;
         }
         catch
         {
-            // Best-effort: the message still gets delivered live even if it fails to persist.
+            return 0;
         }
     }
 
