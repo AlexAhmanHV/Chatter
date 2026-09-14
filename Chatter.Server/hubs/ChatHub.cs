@@ -68,6 +68,12 @@ public class ChatHub : Hub
     // userId -> explicit status ("online" | "away" | "busy" | "offline"). No connections -> effective offline.
     private static readonly ConcurrentDictionary<string, string> _statusByUserId = new();
 
+    // ===== Rate limiting =====
+    // (connectionId, bucket name) -> (count so far this window, window start). Per-connection
+    // fixed-window counters. ASP.NET Core's built-in rate limiting middleware only applies to
+    // HTTP requests, not individual SignalR hub method invocations, so this is done by hand here.
+    private static readonly ConcurrentDictionary<(string ConnId, string Bucket), (int Count, long WindowStartTicks)> _rateBuckets = new();
+
     // -------------------------------------------------------
     // Connection lifecycle
     // -------------------------------------------------------
@@ -116,6 +122,9 @@ public class ChatHub : Hub
 
             foreach (var kvp in _chatMembersByConn)
                 kvp.Value.TryRemove(Context.ConnectionId, out _);
+
+            foreach (var key in _rateBuckets.Keys.Where(k => k.ConnId == Context.ConnectionId).ToList())
+                _rateBuckets.TryRemove(key, out _);
 
             await BroadcastRosterAsync();
 
@@ -199,8 +208,15 @@ public class ChatHub : Hub
 
     private Task BroadcastStatusesAsync() => Clients.All.SendAsync("Statuses", ComputeStatusesSnapshot());
 
-    private static Dictionary<string, string> ComputeStatusesSnapshot() =>
-        _displayNameByUserId.ToDictionary(kv => kv.Value, kv => GetEffectiveStatus(kv.Key), Ci);
+    // Not a plain ToDictionary: display names aren't guaranteed unique (two users can pick the
+    // same name), and ToDictionary throws on a duplicate key. Last write wins here instead.
+    private static Dictionary<string, string> ComputeStatusesSnapshot()
+    {
+        var result = new Dictionary<string, string>(Ci);
+        foreach (var kv in _displayNameByUserId)
+            result[kv.Value] = GetEffectiveStatus(kv.Key);
+        return result;
+    }
 
     private static string GetEffectiveStatus(string userId)
     {
@@ -221,6 +237,7 @@ public class ChatHub : Hub
     public async Task<string> CreateDm(string otherDisplayName)
     {
         var me = RequireUserId();
+        EnforceRateLimit("createDm", maxPerWindow: 5, window: TimeSpan.FromSeconds(30));
 
         if (!_userIdByDisplayName.TryGetValue((otherDisplayName ?? string.Empty).Trim(), out var otherId))
             throw new HubException($"Could not find a user named '{otherDisplayName}'.");
@@ -290,6 +307,7 @@ public class ChatHub : Hub
     {
         var me = RequireUserId();
         RequireMembership(chatId, me);
+        EnforceRateLimit("sendToChat", maxPerWindow: 10, window: TimeSpan.FromSeconds(10));
 
         message = (message ?? string.Empty).Trim();
         if (message.Length == 0) return;
@@ -342,6 +360,11 @@ public class ChatHub : Hub
     public async Task Typing(string channelId, bool isTyping)
     {
         var me = RequireUserId();
+
+        // Low-stakes and high-frequency: silently drop excess calls instead of throwing.
+        if (!TryConsumeRateLimit("typing", maxPerWindow: 10, window: TimeSpan.FromSeconds(2)))
+            return;
+
         await Clients.OthersInGroup(channelId).SendAsync("Typing", channelId, DisplayNameOf(me), isTyping);
     }
 
@@ -474,6 +497,28 @@ public class ChatHub : Hub
         {
             // Best-effort: the message still gets delivered live even if it fails to persist.
         }
+    }
+
+    // -------------------------------------------------------
+    // Rate limiting
+    // -------------------------------------------------------
+    private bool TryConsumeRateLimit(string bucket, int maxPerWindow, TimeSpan window)
+    {
+        var key = (Context.ConnectionId, bucket);
+        var now = DateTime.UtcNow.Ticks;
+        var windowTicks = window.Ticks;
+
+        var updated = _rateBuckets.AddOrUpdate(key,
+            _ => (1, now),
+            (_, old) => now - old.WindowStartTicks > windowTicks ? (1, now) : (old.Count + 1, old.WindowStartTicks));
+
+        return updated.Count <= maxPerWindow;
+    }
+
+    private void EnforceRateLimit(string bucket, int maxPerWindow, TimeSpan window)
+    {
+        if (!TryConsumeRateLimit(bucket, maxPerWindow, window))
+            throw new HubException("You're doing that too quickly. Please slow down.");
     }
 
     // -------------------------------------------------------
