@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    # Builds/tests everything except Chatter.Client: the MAUI app needs Android/iOS/MacCatalyst/
+    # Windows workloads that are slow to install and unnecessary just to verify the app's logic
+    # (server, shared models, hub authorization, emoji parsing) is correct.
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "9.0.x"
+
+      - name: Restore
+        run: |
+          dotnet restore Chatter.Core/Chatter.Core.csproj
+          dotnet restore Chatter.Shared/Chatter.Shared.csproj
+          dotnet restore Chatter.Server/Chatter.Server.csproj
+          dotnet restore Chatter.Server.Tests/Chatter.Server.Tests.csproj
+          dotnet restore Chatter.Client.Tests/Chatter.Client.Tests.csproj
+
+      - name: Build
+        run: |
+          dotnet build Chatter.Core/Chatter.Core.csproj --no-restore -c Release
+          dotnet build Chatter.Shared/Chatter.Shared.csproj --no-restore -c Release
+          dotnet build Chatter.Server/Chatter.Server.csproj --no-restore -c Release
+          dotnet build Chatter.Server.Tests/Chatter.Server.Tests.csproj --no-restore -c Release
+          dotnet build Chatter.Client.Tests/Chatter.Client.Tests.csproj --no-restore -c Release -f net9.0
+
+      - name: Test - ChatHub authorization & persistence
+        run: dotnet test Chatter.Server.Tests/Chatter.Server.Tests.csproj --no-build -c Release
+
+      - name: Test - emoji shortcode parser
+        run: dotnet test Chatter.Client.Tests/Chatter.Client.Tests.csproj --no-build -c Release -f net9.0

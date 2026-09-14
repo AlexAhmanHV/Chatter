@@ -2,6 +2,7 @@
 
 > A cross‑platform chat sample built with .NET MAUI and ASP.NET Core, featuring real‑time rooms/DMs, typing indicators, presence, and emoji shortcodes.
 
+![CI](https://github.com/AlexAhmanHV/Chatter/actions/workflows/ci.yml/badge.svg)
 ![Platforms](https://img.shields.io/badge/.NET%20MAUI-Android%20%7C%20iOS%20%7C%20MacCatalyst%20%7C%20Windows-512BD4)
 ![.NET](https://img.shields.io/badge/.NET-9.0-512BD4)
 ![License](https://img.shields.io/badge/license-MIT-green)
