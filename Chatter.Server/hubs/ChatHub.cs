@@ -73,10 +73,12 @@ public class ChatHub : Hub
     private static readonly ConcurrentDictionary<string, string> _statusByUserId = new();
 
     // ===== Rate limiting =====
-    // (connectionId, bucket name) -> (count so far this window, window start). Per-connection
-    // fixed-window counters. ASP.NET Core's built-in rate limiting middleware only applies to
-    // HTTP requests, not individual SignalR hub method invocations, so this is done by hand here.
-    private static readonly ConcurrentDictionary<(string ConnId, string Bucket), (int Count, long WindowStartTicks)> _rateBuckets = new();
+    // (connectionId, bucket name) -> timestamps of recent calls, oldest first. A sliding window
+    // log rather than a fixed window: a fixed window lets a caller burst up to 2x the limit
+    // right at the window boundary (all of window N's tail plus all of window N+1's head).
+    // ASP.NET Core's built-in rate limiting middleware only applies to HTTP requests, not
+    // individual SignalR hub method invocations, so this is done by hand here.
+    private static readonly ConcurrentDictionary<(string ConnId, string Bucket), ConcurrentQueue<long>> _rateBuckets = new();
 
     // -------------------------------------------------------
     // Connection lifecycle
@@ -235,7 +237,7 @@ public class ChatHub : Hub
     public Task<List<ChatSummary>> GetMyChats()
     {
         var userId = RequireUserId();
-        return Task.FromResult(BuildChatSummaries(userId));
+        return BuildChatSummariesAsync(userId);
     }
 
     public async Task<string> CreateDm(string otherDisplayName)
@@ -520,7 +522,11 @@ public class ChatHub : Hub
             .ToDictionary(
                 g => g.Key,
                 g => (IReadOnlyList<ReactionDto>)g.GroupBy(r => r.Emoji)
-                    .Select(eg => new ReactionDto(eg.Key, eg.Count(), eg.Any(r => Ci.Equals(r.UserId, me))))
+                    .Select(eg => new ReactionDto(
+                        eg.Key,
+                        eg.Count(),
+                        eg.Any(r => Ci.Equals(r.UserId, me)),
+                        eg.Select(r => DisplayNameOf(r.UserId)).ToList()))
                     .ToList());
 
         return rows.Select(m => new ChatMessageDto(
@@ -549,12 +555,6 @@ public class ChatHub : Hub
     }
 
     // -------------------------------------------------------
-    // Legacy global broadcast (kept for compatibility; sender is always server-resolved)
-    // -------------------------------------------------------
-    public Task SendMessage(string message) =>
-        Clients.All.SendAsync("ReceiveMessage", DisplayNameOf(RequireUserId()), message);
-
-    // -------------------------------------------------------
     // Roster & snapshots
     // -------------------------------------------------------
     public Task<IReadOnlyList<string>> GetOnlineUsers()
@@ -580,10 +580,14 @@ public class ChatHub : Hub
         return Clients.All.SendAsync("OnlineUsers", online);
     }
 
-    private Task SendChatsToCallerAsync(string userId) =>
-        Clients.Caller.SendAsync("ChatsForMe", BuildChatSummaries(userId));
+    private async Task SendChatsToCallerAsync(string userId) =>
+        await Clients.Caller.SendAsync("ChatsForMe", await BuildChatSummariesAsync(userId));
 
-    private List<ChatSummary> BuildChatSummaries(string userId)
+    // Unread counts come from the caller's own persisted read receipt (ChatHub.MarkRead) -
+    // "last message id I've read in this chat" - versus how many messages from other people
+    // exist past that point. That's what makes the badge survive an app restart instead of
+    // only reflecting whatever arrived live during the current session.
+    private async Task<List<ChatSummary>> BuildChatSummariesAsync(string userId)
     {
         var ids = _chatMembers
             .Where(kv => kv.Value.Contains(userId))
@@ -592,7 +596,19 @@ public class ChatHub : Hub
             .Distinct(Ci)
             .ToList();
 
-        var list = ids.Select(id => new ChatSummary(id, ComputeChatLabelForUser(id, userId))).ToList();
+        await using var db = await _dbFactory.CreateDbContextAsync();
+
+        var lastReadByChat = await db.ReadReceipts
+            .Where(r => r.UserId == userId && ids.Contains(r.ChatId))
+            .ToDictionaryAsync(r => r.ChatId, r => r.LastReadMessageId);
+
+        var list = new List<ChatSummary>();
+        foreach (var id in ids)
+        {
+            var lastRead = lastReadByChat.TryGetValue(id, out var lr) ? lr : 0L;
+            var unread = await db.Messages.CountAsync(m => m.ChatId == id && m.Id > lastRead && m.SenderUserId != userId);
+            list.Add(new ChatSummary(id, ComputeChatLabelForUser(id, userId), unread));
+        }
 
         var lobby = list.FirstOrDefault(c => Ci.Equals(c.Id, LobbyId));
         if (lobby is not null && list.IndexOf(lobby) != 0)
@@ -728,11 +744,13 @@ public class ChatHub : Hub
         var now = DateTime.UtcNow.Ticks;
         var windowTicks = window.Ticks;
 
-        var updated = _rateBuckets.AddOrUpdate(key,
-            _ => (1, now),
-            (_, old) => now - old.WindowStartTicks > windowTicks ? (1, now) : (old.Count + 1, old.WindowStartTicks));
+        var timestamps = _rateBuckets.GetOrAdd(key, _ => new ConcurrentQueue<long>());
+        timestamps.Enqueue(now);
 
-        return updated.Count <= maxPerWindow;
+        while (timestamps.TryPeek(out var oldest) && now - oldest > windowTicks)
+            timestamps.TryDequeue(out _);
+
+        return timestamps.Count <= maxPerWindow;
     }
 
     private void EnforceRateLimit(string bucket, int maxPerWindow, TimeSpan window)

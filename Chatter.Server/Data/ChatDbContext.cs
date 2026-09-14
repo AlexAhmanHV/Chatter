@@ -4,8 +4,11 @@ namespace Chatter.Server.Data;
 
 // Durable storage for chat history and display names, backed by a local SQLite file.
 // A demo-scale replacement for the previous purely in-memory ChatHub state, which lost
-// everything on every restart. Uses EnsureCreated (no migrations) since the schema is
-// small and stable; a production app would use EF Core migrations instead.
+// everything on every restart. Schema changes go through EF Core migrations (see Data/Migrations
+// and ChatDbContextFactory) - Program.cs runs Database.MigrateAsync() at startup.
+//
+// To add a migration after changing this model: cd Chatter.Server && dotnet ef migrations add
+// <Name> -o Data/Migrations
 public class ChatDbContext : DbContext
 {
     public ChatDbContext(DbContextOptions<ChatDbContext> options) : base(options) { }

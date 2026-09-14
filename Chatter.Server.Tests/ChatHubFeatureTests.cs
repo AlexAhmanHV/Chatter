@@ -304,4 +304,75 @@ public class ChatHubFeatureTests
 
         await Assert.ThrowsAsync<HubException>(() => eveHub.GetChatHistory(chatId, beforeMessageId: 1));
     }
+
+    // ---------- Unread count (persisted, not just in-session) ----------
+
+    [Fact]
+    public async Task GetMyChats_UnreadCount_DropsToZeroAfterMarkRead()
+    {
+        var (_, _, _, _, bobName, aliceHub, bobHub) = await SetUpAliceAndBob();
+        var chatId = await aliceHub.CreateDm(bobName);
+        await aliceHub.SendToChat(chatId, "one");
+        await aliceHub.SendToChat(chatId, "two");
+
+        await bobHub.JoinChat(chatId);
+        var beforeRead = (await bobHub.GetMyChats()).Single(c => c.Id == chatId);
+        Assert.Equal(2, beforeRead.UnreadCount);
+
+        var latest = (await bobHub.GetChatHistory(chatId)).Last().Id;
+        await bobHub.MarkRead(chatId, latest);
+
+        var afterRead = (await bobHub.GetMyChats()).Single(c => c.Id == chatId);
+        Assert.Equal(0, afterRead.UnreadCount);
+    }
+
+    [Fact]
+    public async Task GetMyChats_UnreadCount_SurvivesANewHubInstance()
+    {
+        // Simulates a reconnect: a brand new ChatHub instance for the same user/connection
+        // history should see the same persisted unread count, not start over at zero.
+        var db = NewId();
+        var aliceId = NewId();
+        var aliceName = "Alice-" + NewId();
+        var bobId = NewId();
+        var bobName = "Bob-" + NewId();
+
+        var bobHub = ChatHubTestHarness.Create(db, bobId);
+        await bobHub.OnConnectedAsync();
+        await bobHub.SetDisplayName(bobName);
+
+        var aliceHub = ChatHubTestHarness.Create(db, aliceId);
+        await aliceHub.OnConnectedAsync();
+        await aliceHub.SetDisplayName(aliceName);
+
+        var chatId = await aliceHub.CreateDm(bobName);
+        await aliceHub.SendToChat(chatId, "are you there?");
+
+        var reconnectedBobHub = ChatHubTestHarness.Create(db, bobId);
+        await reconnectedBobHub.OnConnectedAsync();
+
+        var summary = (await reconnectedBobHub.GetMyChats()).Single(c => c.Id == chatId);
+        Assert.Equal(1, summary.UnreadCount);
+    }
+
+    // ---------- Reactions: who reacted ----------
+
+    [Fact]
+    public async Task ToggleReaction_ReactedByIncludesReactorsDisplayName()
+    {
+        var (_, _, _, _, bobName, aliceHub, bobHub) = await SetUpAliceAndBob();
+        var chatId = await aliceHub.CreateDm(bobName);
+        await aliceHub.SendToChat(chatId, "funny");
+        var messageId = Assert.Single(await aliceHub.GetChatHistory(chatId)).Id;
+
+        await bobHub.JoinChat(chatId);
+        await bobHub.ToggleReaction(messageId, "😂");
+
+        var reaction = Assert.Single(Assert.Single(await aliceHub.GetChatHistory(chatId)).Reactions);
+        Assert.Contains(bobName, reaction.ReactedBy);
+
+        await bobHub.ToggleReaction(messageId, "😂");
+        var afterRemove = Assert.Single(await aliceHub.GetChatHistory(chatId)).Reactions;
+        Assert.Empty(afterRemove);
+    }
 }

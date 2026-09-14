@@ -105,7 +105,7 @@ using (var scope = app.Services.CreateScope())
 {
     var dbFactory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<ChatDbContext>>();
     await using var db = await dbFactory.CreateDbContextAsync();
-    await db.Database.EnsureCreatedAsync();
+    await db.Database.MigrateAsync();
 
     var profiles = await db.UserProfiles.ToListAsync();
     ChatHub.PreloadDisplayNames(profiles);
