@@ -44,8 +44,8 @@ Chatter is a small but complete chat application that showcases a modern .NET st
 * **Reactions**: Tap 👍/❤️/😂/🎉/😮/😢 on any message; tap an existing reaction to toggle it off, hover/long-press one to see who reacted.
 * **Read receipts**: A "Seen" marker appears under your last DM message once the other person has viewed it.
 * **Paginated history**: Only the most recent messages load at first — a "Load earlier messages" button pages further back.
-* **Persisted history**: Messages, edits, reactions, read receipts, group membership, and unread counts all survive a server restart (SQLite via EF Core migrations).
-* **Authenticated by Supabase**: Every hub connection is validated against a real Supabase JWT — identity is the token's user id, not a name the client types in.
+* **Persisted history**: Messages, edits, reactions, read receipts, group membership, accounts, and unread counts all survive a server restart (SQLite via EF Core migrations).
+* **Self-contained accounts**: Email/password sign-up and login are handled entirely by the server itself (ASP.NET Core Identity + a JWT it issues and validates) — no external identity provider to configure.
 * **Cross‑platform UI**: .NET MAUI app for Android, iOS, macOS (MacCatalyst), and Windows.
 
 ## Why it’s useful
@@ -55,43 +55,48 @@ This repo demonstrates how to:
 * Structure an **MVVM** MAUI app with `CommunityToolkit.Mvvm`.
 * Use **compiled bindings** (`x:DataType`) to eliminate XamlC warnings and speed up the UI.
 * Drive UI with **ObservableCollection** state and event streams from a chat service.
+* Run your **own accounts system** with ASP.NET Core Identity, issuing your own JWTs (`/auth/register`, `/auth/login`) instead of depending on an external auth provider.
 * Secure a **SignalR hub** with JWT bearer auth (including the query-string token workaround WebSockets need) and authorize actions server-side instead of trusting the client.
+* Rate-limit plain HTTP endpoints (login/register) per client IP with ASP.NET Core's built-in rate limiter — a brute-force guard that a SignalR hub method can't get from the same middleware.
 * Give a demo app **durable state** with EF Core + SQLite instead of only in-memory dictionaries.
 * Host a simple **ASP.NET Core** backend with correct HTTP→HTTPS redirection.
 
 ## Architecture
 
-High‑level flow: the client signs in with Supabase, gets a JWT, and presents it when opening the SignalR connection. The ASP.NET Core backend validates that JWT on every connection, resolves identity from it (never from client-supplied text), and pushes chat/presence events that the MAUI client renders via MVVM. Messages and display names are persisted to a local SQLite database so history survives a restart.
+High‑level flow: the client registers or signs in against this app's own `/auth/register`/`/auth/login` endpoints (ASP.NET Core Identity checks the password; a matching row lives in the same SQLite database as everything else) and gets back a JWT the server itself signed. That token is presented when opening the SignalR connection; the backend validates it on every connection, resolves identity from it (never from client-supplied text), and pushes chat/presence events that the MAUI client renders via MVVM.
 
 ```
 Chatter.sln
 ├─ Chatter.Client/                      # .NET MAUI app (Android/iOS/MacCatalyst/Windows)
 │  ├─ Views/                            # Pages (Login, Chat, Settings)
 │  ├─ ViewModels/                       # VM layer (Login, Register, Chat, Settings)
-│  ├─ Converters/                       # EmojiDisplayConverter
+│  ├─ Converters/                       # EmojiDisplayConverter, InvertedBoolConverter
 │  ├─ Messages/                         # DisplayNameChangedMessage
-│  ├─ Services/                         # ChatService client, SupabaseAuthService (auth),
+│  ├─ Services/                         # ChatService client, ApiAuthService (calls /auth/*),
 │  │  │                                 # ServerConfig (per-platform backend URL), EmojiCatalog
-│  │  └─ Models/                        # ChatItem, PresenceStatus, UserPresenceItem
+│  │  └─ Models/                        # ChatItem, ChatMessageItem, PresenceStatus, UserPresenceItem
 │  ├─ Helpers/                          # UI helpers, etc.
-│  ├─ SupabaseConfig.cs                 # Supabase project URL + anon key (public by design)
 │  └─ Resources/                        # Styles, images
 ├─ Chatter.Server/                      # ASP.NET Core backend + SignalR hub
 │  ├─ Hubs/                             # ChatHub — [Authorize]'d, identity from the JWT's "sub" claim
-│  ├─ Auth/                             # SupabaseJwksRetriever (validates tokens against Supabase's JWKS)
-│  ├─ Data/                             # ChatDbContext (EF Core + SQLite): messages, display names
-│  ├─ Program.cs                        # Kestrel endpoints, JWT bearer auth, HTTPS redirection
-│  ├─ appsettings*.json                 # Supabase:Url/Audience, ConnectionStrings:Chatter
+│  ├─ Auth/                             # JwtIssuer — signs the JWTs /auth/register and /auth/login return
+│  ├─ Data/                             # ChatDbContext (EF Core + SQLite + Identity): accounts, messages,
+│  │  │                                 # reactions, group chats, blocks, mutes, read receipts
+│  │  └─ Migrations/
+│  ├─ Program.cs                        # Kestrel endpoints, Identity, JWT bearer auth, /auth/* endpoints
+│  ├─ appsettings*.json                 # Jwt:SigningKey/Issuer/Audience, ConnectionStrings:Chatter
 │  ├─ Dockerfile
 │  └─ Properties/launchSettings.json
-├─ Chatter.Server.Tests/                # ChatHub authorization/persistence/rate-limit tests
+├─ Chatter.Server.Tests/                # ChatHub authorization/persistence/rate-limit tests,
+│                                        # plus Identity/JwtIssuer tests (AuthTests.cs)
 ├─ Chatter.Client.Tests/                # Unit tests
 │  └─ ChatTextParserTests
 ├─ Chatter.Core/
 │  └─ Services/                         # ChatTextParser (emoji shortcode parsing)
 ├─ Chatter.Shared/
 │  ├─ Helpers/                          # ServiceHelper
-│  └─ Models/                           # ChatSummary, ChatMessageDto, ReactionDto — shared client/server DTOs
+│  └─ Models/                           # ChatSummary, ChatMessageDto, ReactionDto,
+│                                        # RegisterRequest/LoginRequest/AuthResponse — shared DTOs
 ├─ docker-compose.yml                   # Runs Chatter.Server standalone (see Getting started)
 └─ .github/workflows/ci.yml             # Build + test on push/PR (build-and-test, docker-build)
 ```
@@ -113,6 +118,7 @@ A few deliberate scope cuts, worth knowing about if you extend this:
 * **Read receipts are DM-only** in the UI — the server tracks them for any chat, but only a DM's last message shows a "Seen" marker.
 * **Blocking only affects DMs** — it stops `CreateDm`/`SendToChat` between the two users, but doesn't remove either from a shared group or from seeing each other in the Lobby.
 * **Display names aren't unique** (a pre-existing, documented tradeoff) — `CreateGroupChat`/`CreateDm` resolve a name to whichever user currently holds it in the server's directory. If two people share a name, starting a chat "by name" can resolve to the wrong one; this doesn't affect access to a chat you already have, since that's always checked by user id, not name.
+* **No refresh tokens** — a login/register JWT is valid for 7 days flat (`Auth/JwtIssuer.cs`) with no rotation or revocation. Simple, but a compromised token stays valid until it expires, and there's no server-side "sign out everywhere" beyond changing the JWT signing key (which invalidates *every* session, not just one).
 
 ## Project structure
 
@@ -149,20 +155,31 @@ cd chatter
 
 ### Configure
 
-**Supabase (required — the hub rejects unauthenticated connections)**
+**JWT signing key (required — the server won't start without it)**
 
-Chatter uses [Supabase](https://supabase.com) for email/password auth. You need a Supabase project either way:
+Chatter is its own identity provider: `/auth/register` and `/auth/login` check the password (ASP.NET Core Identity, hashed in the same SQLite database as everything else) and hand back a JWT the server signs itself with this key, then validates on every hub connection. There's nothing external to configure — no third-party account, no API keys — but the key itself is a real secret and must never be committed:
 
-1. Create a project (or use an existing one) and grab its **Project URL** and **anon/public key** from Project Settings → API.
-2. Client: set `Url`/`AnonKey` in `Chatter.Client/SupabaseConfig.cs`. The anon key is meant to be public in client apps — Supabase enforces access with Row Level Security, not by keeping this secret.
-3. Server: set `Supabase:Url` (and optionally `Supabase:Audience`, default `authenticated`) in `Chatter.Server/appsettings.json`. The server validates tokens against your project's JWKS endpoint automatically — no key needed there for newer Supabase projects.
-   * Only if your project still uses the **legacy HS256 JWT secret** (Project Settings → API → JWT Settings): set `Supabase:JwtSecret` in `Chatter.Server/appsettings.Development.json` (git-ignored) instead of committing it.
+1. Generate a random secret, e.g.:
+   ```bash
+   openssl rand -base64 48
+   ```
+   On Windows without `openssl`, PowerShell works just as well:
+   ```powershell
+   [Convert]::ToBase64String((1..48 | ForEach-Object { Get-Random -Minimum 0 -Maximum 256 }))
+   ```
+2. Put it in `Chatter.Server/appsettings.Development.json` (already git-ignored) as:
+   ```json
+   { "Jwt": { "SigningKey": "<paste your generated secret here>" } }
+   ```
+   For any real deployment, set it via the `Jwt__SigningKey` environment variable instead of a checked-in file.
 
-Without this, `dotnet run` still starts, but every client connection to `/hub/chat` gets `401 Unauthorized`.
+Without this, `dotnet run` throws immediately at startup with a clear error naming the missing config key — it never silently falls back to something insecure.
 
-**Chat data (SQLite)**
+Anyone who obtains this key can forge a valid login as any user, so treat it like a database password: never commit it, and rotate it (which invalidates every existing session) if it ever leaks.
 
-The server stores messages, display names, group chats, reactions, and read receipts in `Chatter.Server/chatter.db`, created automatically on first run via EF Core migrations (git-ignored). Delete the file to reset all chat history.
+**Chat data & accounts (SQLite)**
+
+The server stores accounts (via ASP.NET Core Identity), messages, group chats, reactions, and read receipts in `Chatter.Server/chatter.db`, created automatically on first run via EF Core migrations (git-ignored). Delete the file to reset everything, including registered accounts.
 
 Changed `ChatDbContext`'s model? Add a migration before running:
 
@@ -214,7 +231,7 @@ From the `Chatter.Server` directory:
 docker compose up --build
 ```
 
-Serves plain HTTP on `http://localhost:8080` (no HTTPS inside the container — put a reverse proxy in front of it for that in a real deployment). Chat history/display names persist in a named Docker volume (`chatter-data`) across `docker compose down`/`up`. To point the container at your own Supabase project instead of rebuilding the image, uncomment and set the `Supabase__*` environment variables in `docker-compose.yml` (`__` maps to the `:` in `Supabase:Url` etc.).
+Serves plain HTTP on `http://localhost:8080` (no HTTPS inside the container — put a reverse proxy in front of it for that in a real deployment). Chat history/accounts persist in a named Docker volume (`chatter-data`) across `docker compose down`/`up`. `docker-compose.yml` requires `Jwt__SigningKey` to be set to a real secret - see [Configure](#configure).
 
 Building the image directly, without Compose:
 
@@ -303,9 +320,17 @@ dotnet build -t:Run -f net9.0-maccatalyst
 
 * The simulator uses the host’s network, so `localhost` works as-is (`ServerConfig.cs` uses it for the simulator). A physical iOS device needs `DevMachineLanIp` set the same way as Android above.
 
+**Server won't start: "Missing configuration value 'Jwt:SigningKey'"**
+
+* See [Configure → JWT signing key](#configure) above — set `Jwt:SigningKey` in `Chatter.Server/appsettings.Development.json` (git-ignored) or the `Jwt__SigningKey` environment variable.
+
 **Hub connection fails with 401 Unauthorized**
 
-* The server requires a valid Supabase JWT for every `/hub/chat` connection — see [Configure → Supabase](#configure) above. Make sure `Chatter.Client/SupabaseConfig.cs` and `Chatter.Server/appsettings.json` point at the *same* Supabase project, and that you're actually signed in (LoginPage) before the app tries to connect.
+* The server requires a valid JWT (from `/auth/login` or `/auth/register`) for every `/hub/chat` connection. Make sure you're actually signed in (LoginPage) before the app tries to connect, and that the client's `ServerConfig.BaseUrl` points at the same server instance you registered against - a token from one server run won't validate against another that started with a different `Jwt:SigningKey`.
+
+**Login/register returns 503 Service Unavailable**
+
+* You've hit the per-IP rate limit on `/auth/*` (5 requests/minute, see `Program.cs`) - wait a minute and try again. This is deliberate brute-force protection, not a bug.
 
 **Windows app fails to deploy**
 

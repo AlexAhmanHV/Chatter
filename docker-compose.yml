@@ -9,10 +9,10 @@ services:
       - chatter-data:/app/data
     environment:
       - ASPNETCORE_ENVIRONMENT=Production
-      # Point at your own Supabase project without rebuilding the image:
-      # - Supabase__Url=https://your-project.supabase.co
-      # - Supabase__Audience=authenticated
-      # - Supabase__JwtSecret=only-if-your-project-still-uses-the-legacy-HS256-secret
+      # Required: the server refuses to start without its own JWT signing key (used to both
+      # issue and validate tokens from /auth/login and /auth/register). Generate your own -
+      # e.g. `openssl rand -base64 48` - never reuse the one in this repo's dev settings.
+      - Jwt__SigningKey=replace-me-with-a-real-random-secret
 
 volumes:
   chatter-data:
