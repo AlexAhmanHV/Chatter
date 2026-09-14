@@ -1,12 +1,14 @@
 using System.Text;
+using System.Threading.RateLimiting;
 using Chatter.Server; // so Program.cs can see ChatHub
 using Chatter.Server.Auth;
 using Chatter.Server.Data;
 using Chatter.Server.Hubs;
+using Chatter.Shared.Models;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
-using Microsoft.AspNetCore.SignalR;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.IdentityModel.Protocols;
 using Microsoft.IdentityModel.Tokens;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -15,56 +17,53 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddOpenApi();
 builder.Services.AddSignalR();
 
-// Chat history + display names now live in SQLite instead of only in memory, so a
-// server restart no longer wipes every conversation.
+// Chat history, display names, and (via Identity) accounts all live in SQLite instead of only
+// in memory, so a server restart no longer wipes every conversation or logs everyone out.
 var connectionString = builder.Configuration.GetConnectionString("Chatter") ?? "Data Source=chatter.db";
 builder.Services.AddDbContextFactory<ChatDbContext>(opt => opt.UseSqlite(connectionString));
+// Identity's stores (and minimal API model binding) want a plain scoped DbContext, not just the
+// factory above. Registering AddDbContext *and* AddDbContextFactory separately for the same
+// context conflicts (each configures its own DbContextOptions pipeline) - this is the documented
+// workaround: derive the scoped context from the same factory instead of reconfiguring it.
+builder.Services.AddScoped<ChatDbContext>(sp => sp.GetRequiredService<IDbContextFactory<ChatDbContext>>().CreateDbContext());
 
-// ----- Authentication: verify the Supabase-issued JWT on every hub connection -----
-var supabaseUrl = builder.Configuration["Supabase:Url"]
+// ----- Accounts: ASP.NET Core Identity, no external identity provider -----
+builder.Services.AddIdentityCore<ApplicationUser>(options =>
+    {
+        // Relaxed for a demo app; a real deployment should keep Identity's stronger defaults.
+        options.Password.RequiredLength = 6;
+        options.Password.RequireNonAlphanumeric = false;
+        options.Password.RequireUppercase = false;
+        options.Password.RequireLowercase = false;
+        options.Password.RequireDigit = false;
+        options.User.RequireUniqueEmail = true;
+    })
+    .AddEntityFrameworkStores<ChatDbContext>();
+
+// ----- Authentication: verify the server's own JWT (issued by Auth/JwtIssuer) on every
+// hub connection and every /auth/* call that needs one -----
+var jwtSigningKey = builder.Configuration["Jwt:SigningKey"]
     ?? throw new InvalidOperationException(
-        "Missing configuration value 'Supabase:Url'. Set it in appsettings.json or via the SUPABASE__URL environment variable.");
-var supabaseAudience = builder.Configuration["Supabase:Audience"] ?? "authenticated";
-
-// Optional: only needed for older Supabase projects still using the legacy shared
-// HS256 secret (Project Settings -> API -> JWT Settings -> Legacy JWT secret).
-// Newer projects sign with rotating asymmetric keys published at the JWKS endpoint below,
-// which needs no secret on this server at all.
-var legacyJwtSecret = builder.Configuration["Supabase:JwtSecret"];
+        "Missing configuration value 'Jwt:SigningKey'. Set it in appsettings.json or the Jwt__SigningKey environment variable.");
+var jwtIssuer = builder.Configuration["Jwt:Issuer"] ?? "ChatterServer";
+var jwtAudience = builder.Configuration["Jwt:Audience"] ?? "ChatterClient";
 
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
         options.RequireHttpsMetadata = !builder.Environment.IsDevelopment();
+        options.MapInboundClaims = false; // keep "sub"/"email"/"display_name" exactly as issued
 
-        var validationParameters = new TokenValidationParameters
+        options.TokenValidationParameters = new TokenValidationParameters
         {
             ValidateIssuer = true,
-            ValidIssuer = $"{supabaseUrl}/auth/v1",
+            ValidIssuer = jwtIssuer,
             ValidateAudience = true,
-            ValidAudience = supabaseAudience,
+            ValidAudience = jwtAudience,
             ValidateLifetime = true,
             ValidateIssuerSigningKey = true,
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSigningKey)),
         };
-
-        if (!string.IsNullOrWhiteSpace(legacyJwtSecret))
-        {
-            validationParameters.IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(legacyJwtSecret));
-        }
-        else
-        {
-            var jwksAddress = $"{supabaseUrl}/auth/v1/.well-known/jwks.json";
-            var configManager = new ConfigurationManager<JsonWebKeySet>(
-                jwksAddress, new SupabaseJwksRetriever(), new HttpDocumentRetriever());
-
-            validationParameters.IssuerSigningKeyResolver = (_, _, kid, _) =>
-            {
-                var jwks = configManager.GetConfigurationAsync(CancellationToken.None).GetAwaiter().GetResult();
-                return kid is null ? jwks.Keys : jwks.Keys.Where(k => k.Kid == kid);
-            };
-        }
-
-        options.TokenValidationParameters = validationParameters;
 
         // Browser/.NET SignalR clients can't set an Authorization header on the WebSocket
         // handshake, so the access token travels as a query parameter instead.
@@ -84,6 +83,22 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     });
 
 builder.Services.AddAuthorization();
+
+// Login/register are plain HTTP endpoints (unlike hub methods), so ASP.NET Core's built-in
+// rate limiting middleware actually applies here - basic brute-force protection.
+// Partitioned per client IP: AddFixedWindowLimiter alone would create a single global bucket
+// shared by every caller, so one person hammering /auth/login would lock out everyone else too.
+builder.Services.AddRateLimiter(options =>
+{
+    options.AddPolicy("auth", httpContext => RateLimitPartition.GetFixedWindowLimiter(
+        partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+        factory: _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 5,
+            Window = TimeSpan.FromMinutes(1),
+            QueueLimit = 0,
+        }));
+});
 
 // (Optional) CORS if you’ll test from a browser origin
 builder.Services.AddCors(opt =>
@@ -107,8 +122,8 @@ using (var scope = app.Services.CreateScope())
     await using var db = await dbFactory.CreateDbContextAsync();
     await db.Database.MigrateAsync();
 
-    var profiles = await db.UserProfiles.ToListAsync();
-    ChatHub.PreloadDisplayNames(profiles);
+    var users = await db.Users.ToListAsync();
+    ChatHub.PreloadDisplayNames(users);
 
     var groupChats = await db.Chats.ToListAsync();
     var groupMembers = await db.ChatMembers.ToListAsync();
@@ -131,8 +146,40 @@ app.UseHttpsRedirection();
 app.UseCors();
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseRateLimiter();
 
-// SignalR hub endpoint (requires a valid Supabase JWT — see ChatHub's [Authorize] attribute)
+// ----- Auth endpoints -----
+app.MapPost("/auth/register", async (RegisterRequest req, UserManager<ApplicationUser> userManager, IConfiguration config) =>
+{
+    if (string.IsNullOrWhiteSpace(req.Email) || string.IsNullOrWhiteSpace(req.Password))
+        return Results.BadRequest(new { error = "Email and password are required." });
+
+    var displayName = string.IsNullOrWhiteSpace(req.DisplayName)
+        ? req.Email.Split('@')[0]
+        : req.DisplayName.Trim();
+
+    var user = new ApplicationUser { UserName = req.Email, Email = req.Email, DisplayName = displayName };
+    var result = await userManager.CreateAsync(user, req.Password);
+    if (!result.Succeeded)
+        return Results.BadRequest(new { error = string.Join(" ", result.Errors.Select(e => e.Description)) });
+
+    var (token, expiresAtUtc) = JwtIssuer.CreateToken(user, config);
+    return Results.Ok(new AuthResponse(token, expiresAtUtc, user.DisplayName));
+})
+.RequireRateLimiting("auth");
+
+app.MapPost("/auth/login", async (LoginRequest req, UserManager<ApplicationUser> userManager, IConfiguration config) =>
+{
+    var user = string.IsNullOrWhiteSpace(req.Email) ? null : await userManager.FindByEmailAsync(req.Email);
+    if (user is null || !await userManager.CheckPasswordAsync(user, req.Password ?? string.Empty))
+        return Results.Json(new { error = "Invalid email or password." }, statusCode: StatusCodes.Status401Unauthorized);
+
+    var (token, expiresAtUtc) = JwtIssuer.CreateToken(user, config);
+    return Results.Ok(new AuthResponse(token, expiresAtUtc, user.DisplayName));
+})
+.RequireRateLimiting("auth");
+
+// SignalR hub endpoint (requires a valid JWT from /auth/login or /auth/register - see ChatHub's [Authorize])
 app.MapHub<ChatHub>("/hub/Chat");
 
 // Your sample endpoint unchanged
@@ -163,3 +210,6 @@ record WeatherForecast(DateOnly Date, int TemperatureC, string? Summary)
 {
     public int TemperatureF => 32 + (int)(TemperatureC / 0.5556);
 }
+
+// Exposes the top-level Program for WebApplicationFactory<Program> in Chatter.Server.Tests.
+public partial class Program { }

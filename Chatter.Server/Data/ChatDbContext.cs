@@ -1,20 +1,25 @@
+using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 
 namespace Chatter.Server.Data;
 
-// Durable storage for chat history and display names, backed by a local SQLite file.
-// A demo-scale replacement for the previous purely in-memory ChatHub state, which lost
-// everything on every restart. Schema changes go through EF Core migrations (see Data/Migrations
-// and ChatDbContextFactory) - Program.cs runs Database.MigrateAsync() at startup.
+// Durable storage for chat history, display names, and (via IdentityDbContext) accounts/password
+// hashes, backed by a local SQLite file. A demo-scale replacement for the previous purely
+// in-memory ChatHub state, which lost everything on every restart. Schema changes go through EF
+// Core migrations (see Data/Migrations and ChatDbContextFactory) - Program.cs runs
+// Database.MigrateAsync() at startup.
 //
 // To add a migration after changing this model: cd Chatter.Server && dotnet ef migrations add
 // <Name> -o Data/Migrations
-public class ChatDbContext : DbContext
+//
+// Display names live directly on ApplicationUser (Identity's Users table) rather than a separate
+// profile table - there's no external identity provider anymore, so this app's own user record
+// and Identity's user record are the same row.
+public class ChatDbContext : IdentityDbContext<ApplicationUser>
 {
     public ChatDbContext(DbContextOptions<ChatDbContext> options) : base(options) { }
 
     public DbSet<ChatMessageEntity> Messages => Set<ChatMessageEntity>();
-    public DbSet<UserProfileEntity> UserProfiles => Set<UserProfileEntity>();
     public DbSet<MessageReactionEntity> Reactions => Set<MessageReactionEntity>();
     public DbSet<ChatEntity> Chats => Set<ChatEntity>();
     public DbSet<ChatMemberEntity> ChatMembers => Set<ChatMemberEntity>();
@@ -24,15 +29,16 @@ public class ChatDbContext : DbContext
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        base.OnModelCreating(modelBuilder); // Identity's own tables (Users, Roles, Claims, ...)
+        OnChatModelCreating(modelBuilder);
+    }
+
+    private static void OnChatModelCreating(ModelBuilder modelBuilder)
+    {
         modelBuilder.Entity<ChatMessageEntity>(e =>
         {
             e.HasKey(m => m.Id);
             e.HasIndex(m => new { m.ChatId, m.SentAtUtc });
-        });
-
-        modelBuilder.Entity<UserProfileEntity>(e =>
-        {
-            e.HasKey(u => u.UserId);
         });
 
         modelBuilder.Entity<MessageReactionEntity>(e =>
@@ -78,13 +84,6 @@ public class ChatMessageEntity
     public DateTime SentAtUtc { get; set; }
     public DateTime? EditedAtUtc { get; set; }
     public bool IsDeleted { get; set; }
-}
-
-public class UserProfileEntity
-{
-    public required string UserId { get; set; }
-    public required string DisplayName { get; set; }
-    public DateTime UpdatedAtUtc { get; set; }
 }
 
 public class MessageReactionEntity

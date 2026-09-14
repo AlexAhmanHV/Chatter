@@ -6,8 +6,9 @@ What this does:
 - Purpose: SignalR hub that powers real-time chat. It tracks connections, display names, presence
   (online/away/busy), membership in chats (Lobby + DMs), and delivers messages, typing indicators,
   rosters, and status snapshots.
-- How: Identity is derived from the caller's authenticated Supabase JWT (the "sub" claim), never from
-  a client-supplied string. Display names are just a mutable label attached to that stable user ID, so
+- How: Identity is derived from the caller's authenticated JWT (issued by this app's own /auth/login
+  and /auth/register endpoints - see Auth/JwtIssuer), never from a client-supplied string. The "sub"
+  claim is the stable user ID. Display names are just a mutable label attached to that ID, so
   renaming never changes who you are or what you have access to, and nobody can "become" someone else
   by typing their name. Chat membership and DM routing are keyed by user ID and checked on every join
   and send, so a DM's chat ID being guessed or shared doesn't grant access.
@@ -15,7 +16,6 @@ What this does:
 
 using System.Collections.Concurrent;
 using System.Security.Claims;
-using System.Text.Json;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
@@ -36,7 +36,7 @@ public class ChatHub : Hub
     private const int MaxDisplayNameLength = 40;
     private const int MaxMessageLength = 2000;
 
-    // ===== Connection & identity indices (all keyed by the stable Supabase user ID) =====
+    // ===== Connection & identity indices (all keyed by the stable Identity user ID) =====
     // connectionId -> userId
     private static readonly ConcurrentDictionary<string, string> _connToUserId = new();
 
@@ -880,10 +880,10 @@ public class ChatHub : Hub
 
     // Called once at app startup (see Program.cs) to warm the in-memory display-name
     // cache from what was saved in previous runs, before any client connects.
-    public static void PreloadDisplayNames(IEnumerable<UserProfileEntity> profiles)
+    public static void PreloadDisplayNames(IEnumerable<ApplicationUser> users)
     {
-        foreach (var p in profiles)
-            ApplyDisplayName(p.UserId, p.DisplayName);
+        foreach (var u in users)
+            ApplyDisplayName(u.Id, u.DisplayName);
     }
 
     // Same idea as PreloadDisplayNames, but for group chat metadata + membership.
@@ -939,22 +939,12 @@ public class ChatHub : Hub
         try
         {
             await using var db = await _dbFactory.CreateDbContextAsync();
-            var existing = await db.UserProfiles.FindAsync(userId);
-            if (existing is null)
+            var user = await db.Users.FindAsync(userId);
+            if (user is not null)
             {
-                db.UserProfiles.Add(new UserProfileEntity
-                {
-                    UserId = userId,
-                    DisplayName = displayName,
-                    UpdatedAtUtc = DateTime.UtcNow
-                });
+                user.DisplayName = displayName;
+                await db.SaveChangesAsync();
             }
-            else
-            {
-                existing.DisplayName = displayName;
-                existing.UpdatedAtUtc = DateTime.UtcNow;
-            }
-            await db.SaveChangesAsync();
         }
         catch
         {
@@ -1110,30 +1100,17 @@ public class ChatHub : Hub
 
     private string RequireUserId() => GetUserId() ?? throw new HubException("Unauthorized.");
 
-    // The Supabase JWT's "sub" claim is the stable, non-spoofable identity of the caller.
+    // The "sub" claim in the server-issued JWT is the stable, non-spoofable identity of the caller.
     private string? GetUserId() =>
         Context.User?.FindFirst("sub")?.Value
         ?? Context.User?.FindFirst(ClaimTypes.NameIdentifier)?.Value;
 
+    // The server issues its own tokens now (see Auth/JwtIssuer), so the display name chosen at
+    // registration always arrives as a plain "display_name" claim - no nested metadata to parse.
     private string DeriveDefaultDisplayName()
     {
-        var meta = Context.User?.FindFirst("user_metadata")?.Value;
-        if (!string.IsNullOrWhiteSpace(meta))
-        {
-            try
-            {
-                using var doc = JsonDocument.Parse(meta);
-                if (doc.RootElement.TryGetProperty("display_name", out var dn) && dn.ValueKind == JsonValueKind.String)
-                {
-                    var val = dn.GetString();
-                    if (!string.IsNullOrWhiteSpace(val)) return val!.Trim();
-                }
-            }
-            catch (JsonException)
-            {
-                // Malformed/unexpected metadata shape: fall through to the next default.
-            }
-        }
+        var claimed = Context.User?.FindFirst("display_name")?.Value;
+        if (!string.IsNullOrWhiteSpace(claimed)) return claimed.Trim();
 
         var email = Context.User?.FindFirst("email")?.Value;
         if (!string.IsNullOrWhiteSpace(email))
