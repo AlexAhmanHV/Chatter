@@ -38,6 +38,8 @@ Chatter is a small but complete chat application that showcases a modern .NET st
 * **Presence & typing**: Online/away/busy status and “Alice is typing…” indicators.
 * **Emoji shortcodes**: `:smile:` → 😄 via a converter and parser.
 * **Name aliases/renames**: Seamless display‑name updates.
+* **Persisted history**: Messages and display names survive a server restart (SQLite).
+* **Authenticated by Supabase**: Every hub connection is validated against a real Supabase JWT — identity is the token's user id, not a name the client types in.
 * **Cross‑platform UI**: .NET MAUI app for Android, iOS, macOS (MacCatalyst), and Windows.
 
 ## Why it’s useful
@@ -47,11 +49,13 @@ This repo demonstrates how to:
 * Structure an **MVVM** MAUI app with `CommunityToolkit.Mvvm`.
 * Use **compiled bindings** (`x:DataType`) to eliminate XamlC warnings and speed up the UI.
 * Drive UI with **ObservableCollection** state and event streams from a chat service.
+* Secure a **SignalR hub** with JWT bearer auth (including the query-string token workaround WebSockets need) and authorize actions server-side instead of trusting the client.
+* Give a demo app **durable state** with EF Core + SQLite instead of only in-memory dictionaries.
 * Host a simple **ASP.NET Core** backend with correct HTTP→HTTPS redirection.
 
 ## Architecture
 
-High‑level flow: the ASP.NET Core backend exposes chat endpoints and pushes events; the MAUI client subscribes and renders them via MVVM.
+High‑level flow: the client signs in with Supabase, gets a JWT, and presents it when opening the SignalR connection. The ASP.NET Core backend validates that JWT on every connection, resolves identity from it (never from client-supplied text), and pushes chat/presence events that the MAUI client renders via MVVM. Messages and display names are persisted to a local SQLite database so history survives a restart.
 
 ```
 Chatter.sln
@@ -60,19 +64,26 @@ Chatter.sln
 │  ├─ ViewModels/                       # VM layer (Login, Register, Chat, Settings)
 │  ├─ Converters/                       # EmojiDisplayConverter
 │  ├─ Messages/                         # DisplayNameChangedMessage
-│  ├─ Services/                         # ChatService client, SupabaseAuthService (auth), EmojiCatalog
+│  ├─ Services/                         # ChatService client, SupabaseAuthService (auth),
+│  │  │                                 # ServerConfig (per-platform backend URL), EmojiCatalog
 │  │  └─ Models/                        # ChatItem, PresenceStatus, UserPresenceItem
 │  ├─ Helpers/                          # UI helpers, etc.
+│  ├─ SupabaseConfig.cs                 # Supabase project URL + anon key (public by design)
 │  └─ Resources/                        # Styles, images
-├─ Chatter.Server/                      # ASP.NET Core backend (SignalR or custom endpoints)
-│  ├─ Hubs/                             # ChatHub
-│  ├─ Program.cs                        # Kestrel endpoints + HTTPS redirection
-│  ├─ appsettings*.json
+├─ Chatter.Server/                      # ASP.NET Core backend + SignalR hub
+│  ├─ Hubs/                             # ChatHub — [Authorize]'d, identity from the JWT's "sub" claim
+│  ├─ Auth/                             # SupabaseJwksRetriever (validates tokens against Supabase's JWKS)
+│  ├─ Data/                             # ChatDbContext (EF Core + SQLite): messages, display names
+│  ├─ Program.cs                        # Kestrel endpoints, JWT bearer auth, HTTPS redirection
+│  ├─ appsettings*.json                 # Supabase:Url/Audience, ConnectionStrings:Chatter
 │  └─ Properties/launchSettings.json
 ├─ Chatter.Client.Tests/                # Unit tests
 │  └─ ChatTextParserTests
+├─ Chatter.Core/
+│  └─ Services/                         # ChatTextParser (emoji shortcode parsing)
 └─ Chatter.Shared/
-   └─ Helpers/                          # ServiceHelper
+   ├─ Helpers/                          # ServiceHelper
+   └─ Models/                           # ChatSummary, ChatMessageDto — shared client/server DTOs
 ```
 
 
@@ -117,6 +128,21 @@ cd chatter
 ```
 
 ### Configure
+
+**Supabase (required — the hub rejects unauthenticated connections)**
+
+Chatter uses [Supabase](https://supabase.com) for email/password auth. You need a Supabase project either way:
+
+1. Create a project (or use an existing one) and grab its **Project URL** and **anon/public key** from Project Settings → API.
+2. Client: set `Url`/`AnonKey` in `Chatter.Client/SupabaseConfig.cs`. The anon key is meant to be public in client apps — Supabase enforces access with Row Level Security, not by keeping this secret.
+3. Server: set `Supabase:Url` (and optionally `Supabase:Audience`, default `authenticated`) in `Chatter.Server/appsettings.json`. The server validates tokens against your project's JWKS endpoint automatically — no key needed there for newer Supabase projects.
+   * Only if your project still uses the **legacy HS256 JWT secret** (Project Settings → API → JWT Settings): set `Supabase:JwtSecret` in `Chatter.Server/appsettings.Development.json` (git-ignored) instead of committing it.
+
+Without this, `dotnet run` still starts, but every client connection to `/hub/chat` gets `401 Unauthorized`.
+
+**Chat data (SQLite)**
+
+The server stores messages and display names in `Chatter.Server/chatter.db`, created automatically on first run (git-ignored). Delete the file to reset all chat history.
 
 **Backend URLs**
 
@@ -229,11 +255,15 @@ dotnet build -t:Run -f net9.0-maccatalyst
 
 **Android emulator can’t reach `localhost`**
 
-* Use `http://10.0.2.2:5291` (HTTP) or set your BaseUrl to the machine IP on your LAN with HTTPS properly trusted. For local HTTPS on emulator, ensure the emulator trusts the dev cert.
+* `Chatter.Client/Services/ServerConfig.cs` already handles this — the Android emulator gets `http://10.0.2.2:5291` automatically. Running on a **physical** Android/iOS device instead needs your dev machine's real LAN IP: edit `DevMachineLanIp` in that file.
 
 **iOS simulator network**
 
-* The simulator uses the host’s network; if you stick with `https://localhost:7062`, ensure the dev certificate is trusted. Alternatively, use your Mac’s LAN IP.
+* The simulator uses the host’s network, so `localhost` works as-is (`ServerConfig.cs` uses it for the simulator). A physical iOS device needs `DevMachineLanIp` set the same way as Android above.
+
+**Hub connection fails with 401 Unauthorized**
+
+* The server requires a valid Supabase JWT for every `/hub/chat` connection — see [Configure → Supabase](#configure) above. Make sure `Chatter.Client/SupabaseConfig.cs` and `Chatter.Server/appsettings.json` point at the *same* Supabase project, and that you're actually signed in (LoginPage) before the app tries to connect.
 
 **Windows app fails to deploy**
 
