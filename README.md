@@ -106,9 +106,10 @@ Chatter.sln
 
 * **LoginPage** – Email/password login.
 * **RegisterPage** – Create an account (optional display name).
-* **ChatPage** – Chats list (Lobby/DMs/groups), messages with edit/delete/react/seen/attachments,
-  composer with image attach button, typing indicator, people panel with avatars, "New group"
-  toolbar action, "Load earlier messages" paging.
+* **ChatPage** – Chats list (Lobby/DMs/groups), messages with edit/delete/react/seen/attachments/
+  voice notes/forwarding, composer with image-attach and record buttons, typing indicator, people
+  panel with avatars, group admin management, "New group" toolbar action, "Load earlier messages"
+  paging.
 * **SettingsPage** – Update display name and avatar.
 
 ### Attachments & avatars
@@ -128,16 +129,42 @@ storage dependency to configure. A few consequences worth knowing:
   server-side from display names (`ChatHub.GetAvatarUrls`).
 * **No thumbnailing/resizing** — the original uploaded bytes are stored and served as-is.
 
+### Voice messages
+
+Recorded client-side with [Plugin.Maui.Audio](https://github.com/jfversluis/Plugin.Maui.Audio)
+and uploaded through `ChatHub.SendVoiceMessage` - same blob storage and lazy-fetch model as an
+image attachment, just with an audio content-type allowlist and a smaller size cap (~2 minutes of
+compressed audio). The 🎤 composer button toggles recording; tapping a received voice message
+fetches and plays it. Requires microphone permission (`RECORD_AUDIO` on Android,
+`NSMicrophoneUsageDescription` on iOS/macOS, the `microphone` capability on Windows) - the app
+prompts for it on first use.
+
+### Message forwarding
+
+Swipe a message and choose "Forward" to copy it (text and/or attachment) into any other chat
+you're a member of. A forward is a brand-new message sent as you, not the original sender -
+editing or deleting the original never touches the copy - and is labeled "Forwarded" in the UI
+(`ChatMessageEntity.IsForwarded`).
+
+### Delegated group admins & last seen
+
+Group admin rights are no longer tied to whoever created the group: any admin can promote or
+demote other members (`ChatHub.PromoteGroupAdmin`/`DemoteGroupAdmin`, from the chat's "Manage"
+menu), and the last remaining admin can't be demoted. If the sole admin leaves or is removed, the
+group automatically promotes another member rather than being left without one. Separately, "Last
+seen" (from the same menu, DMs only) shows when an offline user was last connected
+(`ApplicationUser.LastSeenUtc`, updated on disconnect); an online user has no last-seen entry.
+
 ### Known simplifications
 
 A few deliberate scope cuts, worth knowing about if you extend this:
 
-* **Only the group creator is an admin** — no delegated admins, no ownership transfer. If the creator leaves the group, nobody can add/remove members or rename it anymore.
 * **Read receipts are DM-only** in the UI — the server tracks them for any chat, but only a DM's last message shows a "Seen" marker.
 * **Blocking only affects DMs** — it stops `CreateDm`/`SendToChat` between the two users, but doesn't remove either from a shared group or from seeing each other in the Lobby.
 * **Display names aren't unique** (a pre-existing, documented tradeoff) — `CreateGroupChat`/`CreateDm` resolve a name to whichever user currently holds it in the server's directory. If two people share a name, starting a chat "by name" can resolve to the wrong one; this doesn't affect access to a chat you already have, since that's always checked by user id, not name.
 * **No refresh tokens** — a login/register JWT is valid for 7 days flat (`Auth/JwtIssuer.cs`) with no rotation or revocation. Simple, but a compromised token stays valid until it expires, and there's no server-side "sign out everywhere" beyond changing the JWT signing key (which invalidates *every* session, not just one).
-* **Attachments/avatars as SQLite blobs** — see [Attachments & avatars](#attachments--avatars) above. Fine at this scale; a high-traffic deployment would want a real object store instead of growing the database file with image bytes.
+* **Attachments/avatars/voice messages as SQLite blobs** — see [Attachments & avatars](#attachments--avatars) above. Fine at this scale; a high-traffic deployment would want a real object store instead of growing the database file with binary data.
+* **Forwarding doesn't cross a block** — forwarding into a DM still goes through the same block check as sending normally, but there's no separate "this content came from someone you've blocked" warning; it's just refused the same way a direct message would be.
 
 ## Project structure
 
