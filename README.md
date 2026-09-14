@@ -40,10 +40,10 @@ Chatter is a small but complete chat application that showcases a modern .NET st
 * **Emoji shortcodes**: `:smile:` → 😄 via a converter and parser.
 * **Name aliases/renames**: Seamless display‑name updates.
 * **Edit & delete your own messages**: With an "(edited)" marker; deleted messages show a placeholder instead of disappearing from the timeline.
-* **Reactions**: Tap 👍/❤️/😂/🎉/😮/😢 on any message; tap an existing reaction to toggle it off.
+* **Reactions**: Tap 👍/❤️/😂/🎉/😮/😢 on any message; tap an existing reaction to toggle it off, hover/long-press one to see who reacted.
 * **Read receipts**: A "Seen" marker appears under your last DM message once the other person has viewed it.
 * **Paginated history**: Only the most recent messages load at first — a "Load earlier messages" button pages further back.
-* **Persisted history**: Messages, edits, reactions, read receipts, and group membership all survive a server restart (SQLite).
+* **Persisted history**: Messages, edits, reactions, read receipts, group membership, and unread counts all survive a server restart (SQLite via EF Core migrations).
 * **Authenticated by Supabase**: Every hub connection is validated against a real Supabase JWT — identity is the token's user id, not a name the client types in.
 * **Cross‑platform UI**: .NET MAUI app for Android, iOS, macOS (MacCatalyst), and Windows.
 
@@ -160,7 +160,14 @@ Without this, `dotnet run` still starts, but every client connection to `/hub/ch
 
 **Chat data (SQLite)**
 
-The server stores messages and display names in `Chatter.Server/chatter.db`, created automatically on first run (git-ignored). Delete the file to reset all chat history.
+The server stores messages, display names, group chats, reactions, and read receipts in `Chatter.Server/chatter.db`, created automatically on first run via EF Core migrations (git-ignored). Delete the file to reset all chat history.
+
+Changed `ChatDbContext`'s model? Add a migration before running:
+
+```bash
+cd Chatter.Server
+dotnet ef migrations add <DescriptiveName> -o Data/Migrations
+```
 
 **Backend URLs**
 
