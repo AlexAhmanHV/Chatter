@@ -35,11 +35,15 @@
 
 Chatter is a small but complete chat application that showcases a modern .NET stack:
 
-* **Lobby + DMs**: Join the lobby, start direct messages, see unread counts.
+* **Lobby + DMs + group chats**: Join the lobby, start direct messages, or create a named group with several members at once.
 * **Presence & typing**: Online/away/busy status and “Alice is typing…” indicators.
 * **Emoji shortcodes**: `:smile:` → 😄 via a converter and parser.
 * **Name aliases/renames**: Seamless display‑name updates.
-* **Persisted history**: Messages and display names survive a server restart (SQLite).
+* **Edit & delete your own messages**: With an "(edited)" marker; deleted messages show a placeholder instead of disappearing from the timeline.
+* **Reactions**: Tap 👍/❤️/😂/🎉/😮/😢 on any message; tap an existing reaction to toggle it off.
+* **Read receipts**: A "Seen" marker appears under your last DM message once the other person has viewed it.
+* **Paginated history**: Only the most recent messages load at first — a "Load earlier messages" button pages further back.
+* **Persisted history**: Messages, edits, reactions, read receipts, and group membership all survive a server restart (SQLite).
 * **Authenticated by Supabase**: Every hub connection is validated against a real Supabase JWT — identity is the token's user id, not a name the client types in.
 * **Cross‑platform UI**: .NET MAUI app for Android, iOS, macOS (MacCatalyst), and Windows.
 
@@ -86,9 +90,9 @@ Chatter.sln
 │  └─ Services/                         # ChatTextParser (emoji shortcode parsing)
 ├─ Chatter.Shared/
 │  ├─ Helpers/                          # ServiceHelper
-│  └─ Models/                           # ChatSummary, ChatMessageDto — shared client/server DTOs
+│  └─ Models/                           # ChatSummary, ChatMessageDto, ReactionDto — shared client/server DTOs
 ├─ docker-compose.yml                   # Runs Chatter.Server standalone (see Getting started)
-└─ .github/workflows/ci.yml             # Build + test on push/PR
+└─ .github/workflows/ci.yml             # Build + test on push/PR (build-and-test, docker-build)
 ```
 
 
@@ -96,8 +100,17 @@ Chatter.sln
 
 * **LoginPage** – Email/password login.
 * **RegisterPage** – Create an account (optional display name).
-* **ChatPage** – Chats list, messages, composer, typing indicator, people panel.
+* **ChatPage** – Chats list (Lobby/DMs/groups), messages with edit/delete/react/seen, composer,
+  typing indicator, people panel, "New group" toolbar action, "Load earlier messages" paging.
 * **SettingsPage** – Update display name.
+
+### Known simplifications
+
+A few deliberate scope cuts, worth knowing about if you extend this:
+
+* **Group membership is fixed at creation** — there's no "add/remove member" flow after a group is created.
+* **Read receipts are DM-only** in the UI — the server tracks them for any chat, but only a DM's last message shows a "Seen" marker.
+* **Display names aren't unique** (a pre-existing, documented tradeoff) — `CreateGroupChat`/`CreateDm` resolve a name to whichever user currently holds it in the server's directory. If two people share a name, starting a chat "by name" can resolve to the wrong one; this doesn't affect access to a chat you already have, since that's always checked by user id, not name.
 
 ## Project structure
 
