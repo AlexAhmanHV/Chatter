@@ -106,9 +106,27 @@ Chatter.sln
 
 * **LoginPage** – Email/password login.
 * **RegisterPage** – Create an account (optional display name).
-* **ChatPage** – Chats list (Lobby/DMs/groups), messages with edit/delete/react/seen, composer,
-  typing indicator, people panel, "New group" toolbar action, "Load earlier messages" paging.
-* **SettingsPage** – Update display name.
+* **ChatPage** – Chats list (Lobby/DMs/groups), messages with edit/delete/react/seen/attachments,
+  composer with image attach button, typing indicator, people panel with avatars, "New group"
+  toolbar action, "Load earlier messages" paging.
+* **SettingsPage** – Update display name and avatar.
+
+### Attachments & avatars
+
+Images are stored as blobs directly in the SQLite database (`ChatMessageEntity.AttachmentData`,
+`ApplicationUser.AvatarData`) rather than in a separate object store — there's no external
+storage dependency to configure. A few consequences worth knowing:
+
+* **Images only** — PNG/JPEG/GIF/WebP, enforced by content-type allowlist on the server.
+* **Size caps**: attachments up to 5 MB, avatars up to 512 KB. Larger uploads are rejected.
+* **Lazy loading** — attachment bytes are only fetched when a message's placeholder is tapped
+  (`ChatHub.GetAttachmentData`), not eagerly with chat history, to keep scrolling cheap.
+* **Avatars are served from a public, unauthenticated endpoint** (`GET /avatars/{userId}`) so
+  `<Image>` controls can load them directly by URL. This is deliberate — avatars aren't sensitive —
+  but it does mean anyone with a user id can fetch that user's avatar without logging in. The
+  client never learns a raw user id itself; it only ever sees `/avatars/{id}` URLs resolved
+  server-side from display names (`ChatHub.GetAvatarUrls`).
+* **No thumbnailing/resizing** — the original uploaded bytes are stored and served as-is.
 
 ### Known simplifications
 
@@ -119,6 +137,7 @@ A few deliberate scope cuts, worth knowing about if you extend this:
 * **Blocking only affects DMs** — it stops `CreateDm`/`SendToChat` between the two users, but doesn't remove either from a shared group or from seeing each other in the Lobby.
 * **Display names aren't unique** (a pre-existing, documented tradeoff) — `CreateGroupChat`/`CreateDm` resolve a name to whichever user currently holds it in the server's directory. If two people share a name, starting a chat "by name" can resolve to the wrong one; this doesn't affect access to a chat you already have, since that's always checked by user id, not name.
 * **No refresh tokens** — a login/register JWT is valid for 7 days flat (`Auth/JwtIssuer.cs`) with no rotation or revocation. Simple, but a compromised token stays valid until it expires, and there's no server-side "sign out everywhere" beyond changing the JWT signing key (which invalidates *every* session, not just one).
+* **Attachments/avatars as SQLite blobs** — see [Attachments & avatars](#attachments--avatars) above. Fine at this scale; a high-traffic deployment would want a real object store instead of growing the database file with image bytes.
 
 ## Project structure
 
