@@ -10,7 +10,9 @@ What this does:
   response to ChatService events (ReceiveChatMessage, MessageEdited, MessageDeleted, ReactionChanged).
 */
 
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Linq;
 using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace Chatter.Client.Models;
@@ -49,12 +51,16 @@ public partial class ChatMessageItem : ObservableObject
 
 public partial class ReactionItem : ObservableObject
 {
-    public ReactionItem(long messageId, string emoji, int count, bool reactedByMe)
+    private readonly List<string> _reactorNames;
+
+    public ReactionItem(long messageId, string emoji, int count, bool reactedByMe, IEnumerable<string> reactorNames)
     {
         MessageId = messageId;
         Emoji = emoji;
         Count = count;
         ReactedByMe = reactedByMe;
+        _reactorNames = reactorNames.ToList();
+        ReactorsText = string.Join(", ", _reactorNames);
     }
 
     // Carried on the reaction (not just its parent message) so a tap on a reaction pill in the
@@ -64,4 +70,21 @@ public partial class ReactionItem : ObservableObject
 
     [ObservableProperty] public partial int Count { get; set; }
     [ObservableProperty] public partial bool ReactedByMe { get; set; }
+
+    // Bound to a tooltip on the reaction pill ("who reacted"). Maintained incrementally from
+    // live ReactionChanged events rather than round-tripping to the server on every toggle.
+    [ObservableProperty] public partial string ReactorsText { get; set; } = string.Empty;
+
+    public void AddReactor(string displayName)
+    {
+        if (!_reactorNames.Contains(displayName, System.StringComparer.OrdinalIgnoreCase))
+            _reactorNames.Add(displayName);
+        ReactorsText = string.Join(", ", _reactorNames);
+    }
+
+    public void RemoveReactor(string displayName)
+    {
+        _reactorNames.RemoveAll(n => string.Equals(n, displayName, System.StringComparison.OrdinalIgnoreCase));
+        ReactorsText = string.Join(", ", _reactorNames);
+    }
 }

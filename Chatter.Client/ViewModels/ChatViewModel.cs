@@ -74,8 +74,6 @@ public partial class ChatViewModel : ObservableObject
     private readonly Dictionary<string, long> _oldestLoadedMessageId = new(StringComparer.OrdinalIgnoreCase);
     [ObservableProperty] public partial bool CanLoadMoreHistory { get; set; }
 
-    /* Legacy/global lists */
-    public ObservableCollection<string> Messages { get; } = new();
     public ObservableCollection<string> OnlineUsers { get; } = new();
 
     /* Computed properties */
@@ -333,9 +331,6 @@ public partial class ChatViewModel : ObservableObject
         }
         catch { }
 
-        _chat.MessageReceived += (u, m) =>
-            MainThread.BeginInvokeOnMainThread(() => Messages.Add($"{u}: {m}"));
-
         _chat.OnlineUsersUpdated += onlineList =>
             MainThread.BeginInvokeOnMainThread(() =>
             {
@@ -355,7 +350,7 @@ public partial class ChatViewModel : ObservableObject
                 foreach (var summary in list)
                 {
                     if (_hiddenChats.Contains(summary.Id)) continue;
-                    EnsureChatItemWithLabel(summary.Id, summary.Label);
+                    EnsureChatItemWithLabel(summary.Id, summary.Label, summary.UnreadCount);
 
                     // The server resolves DM labels to the *other* participant's current
                     // display name, so this is how the client learns about DM partners now
@@ -490,11 +485,16 @@ public partial class ChatViewModel : ObservableObject
                 }
 
                 if (existing is null)
-                    msg.Reactions.Add(new ReactionItem(messageId, emoji, count, reactedByMe));
+                {
+                    var initialReactors = added ? new[] { byDisplayName } : Array.Empty<string>();
+                    msg.Reactions.Add(new ReactionItem(messageId, emoji, count, reactedByMe, initialReactors));
+                }
                 else
                 {
                     existing.Count = count;
                     existing.ReactedByMe = reactedByMe;
+                    if (added) existing.AddReactor(byDisplayName);
+                    else existing.RemoveReactor(byDisplayName);
                 }
             });
 
@@ -688,12 +688,15 @@ public partial class ChatViewModel : ObservableObject
         return item;
     }
 
-    private ChatItem EnsureChatItemWithLabel(string chatId, string label)
+    // initialUnread is only applied when the item is newly created (e.g. the first ChatsForMe
+    // snapshot after connecting) - once a chat exists locally, its Unread count is driven live
+    // by incoming messages instead, so a later ChatsForMe refresh can't stomp on that.
+    private ChatItem EnsureChatItemWithLabel(string chatId, string label, int? initialUnread = null)
     {
         var item = Chats.FirstOrDefault(c => Ci.Equals(c.Id, chatId));
         if (item is null)
         {
-            item = new ChatItem(chatId) { Label = label };
+            item = new ChatItem(chatId) { Label = label, Unread = initialUnread ?? 0 };
             Chats.Add(item);
         }
         else
@@ -766,7 +769,7 @@ public partial class ChatViewModel : ObservableObject
         };
 
         foreach (var r in dto.Reactions)
-            item.Reactions.Add(new ReactionItem(dto.Id, r.Emoji, r.Count, r.ReactedByMe));
+            item.Reactions.Add(new ReactionItem(dto.Id, r.Emoji, r.Count, r.ReactedByMe, r.ReactedBy));
 
         return item;
     }
@@ -903,7 +906,6 @@ public partial class ChatViewModel : ObservableObject
         try
         {
             await _chat.StartAsync(ServerConfig.BaseUrl);
-            Messages.Add("📶 Connected to server.");
 
             if (!string.IsNullOrWhiteSpace(User))
                 await SafeSetDisplayNameOnServerAsync(User);

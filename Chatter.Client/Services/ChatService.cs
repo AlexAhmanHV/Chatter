@@ -36,7 +36,6 @@ public class ChatService
     */
     public event EventHandler<(string ChannelId, string User, bool IsTyping)>? TypingChanged;
     public event Action<string, string>? OtherDisplayNameChanged;
-    public event Action<string, string>? MessageReceived;
     public event Action<IReadOnlyList<string>>? OnlineUsersUpdated;
     public event Action<IReadOnlyList<ChatSummary>>? ChatsForMeUpdated;
     public event Action<IReadOnlyList<string>>? ChatsUpdated;
@@ -115,10 +114,6 @@ public class ChatService
 
         _conn.On<string, string>("StatusChanged", (displayName, status) =>
             StatusChanged?.Invoke(displayName, status));
-
-        // ----- Handlers: Legacy broadcast (optional) -----
-        _conn.On<string, string>("ReceiveMessage", (user, msg) =>
-            MessageReceived?.Invoke(user, msg));
 
         // ----- Handlers: Chat metadata (server-owned chat IDs + labels) -----
         _conn.On<List<ChatSummary>>("ChatsForMe", list =>
@@ -219,13 +214,6 @@ public class ChatService
         }
         catch { }
     }
-
-    /* Global (legacy) messaging
-       Sends a message on the legacy/global channel if your server supports it.
-       Safe no-op if not connected.
-    */
-    public Task SendAsync(string msg) =>
-        _conn?.SendAsync("SendMessage", msg) ?? Task.CompletedTask;
 
     /* Identity APIs
        Sets or changes the local user's display name on the server.

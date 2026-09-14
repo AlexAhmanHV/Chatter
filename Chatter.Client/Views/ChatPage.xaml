@@ -374,7 +374,8 @@ What this does:
                             <BindableLayout.ItemTemplate>
                               <DataTemplate x:DataType="models:ReactionItem">
                                 <Border Padding="7,3" Margin="0,0,6,0" StrokeThickness="1"
-                                        Stroke="{StaticResource StrokeIdle}" BackgroundColor="{StaticResource PanelBg}">
+                                        Stroke="{StaticResource StrokeIdle}" BackgroundColor="{StaticResource PanelBg}"
+                                        ToolTipProperties.Text="{Binding ReactorsText}">
                                   <Border.StrokeShape>
                                     <RoundRectangle CornerRadius="10" />
                                   </Border.StrokeShape>
