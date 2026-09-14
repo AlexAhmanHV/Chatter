@@ -77,14 +77,18 @@ Chatter.sln
 │  ├─ Data/                             # ChatDbContext (EF Core + SQLite): messages, display names
 │  ├─ Program.cs                        # Kestrel endpoints, JWT bearer auth, HTTPS redirection
 │  ├─ appsettings*.json                 # Supabase:Url/Audience, ConnectionStrings:Chatter
+│  ├─ Dockerfile
 │  └─ Properties/launchSettings.json
+├─ Chatter.Server.Tests/                # ChatHub authorization/persistence/rate-limit tests
 ├─ Chatter.Client.Tests/                # Unit tests
 │  └─ ChatTextParserTests
 ├─ Chatter.Core/
 │  └─ Services/                         # ChatTextParser (emoji shortcode parsing)
-└─ Chatter.Shared/
-   ├─ Helpers/                          # ServiceHelper
-   └─ Models/                           # ChatSummary, ChatMessageDto — shared client/server DTOs
+├─ Chatter.Shared/
+│  ├─ Helpers/                          # ServiceHelper
+│  └─ Models/                           # ChatSummary, ChatMessageDto — shared client/server DTOs
+├─ docker-compose.yml                   # Runs Chatter.Server standalone (see Getting started)
+└─ .github/workflows/ci.yml             # Build + test on push/PR
 ```
 
 
@@ -180,6 +184,21 @@ From the `Chatter.Server` directory:
 
 # or explicitly specify URLs
  dotnet run --urls "http://localhost:5291;https://localhost:7062"
+```
+
+**Or with Docker** — no .NET SDK/workloads needed, just the backend, useful if you only want to poke at the API/hub:
+
+```bash
+docker compose up --build
+```
+
+Serves plain HTTP on `http://localhost:8080` (no HTTPS inside the container — put a reverse proxy in front of it for that in a real deployment). Chat history/display names persist in a named Docker volume (`chatter-data`) across `docker compose down`/`up`. To point the container at your own Supabase project instead of rebuilding the image, uncomment and set the `Supabase__*` environment variables in `docker-compose.yml` (`__` maps to the `:` in `Supabase:Url` etc.).
+
+Building the image directly, without Compose:
+
+```bash
+docker build -f Chatter.Server/Dockerfile -t chatter-server .
+docker run -p 8080:8080 -v chatter-data:/app/data chatter-server
 ```
 
 ### Run the client (MAUI)

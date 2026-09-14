@@ -1,0 +1,15 @@
+**/bin/
+**/obj/
+**/chatter.db
+**/chatter.db-*
+.git/
+.github/
+.vs/
+.vscode/
+.idea/
+Chatter.Client/
+Chatter.Client.Tests/
+Chatter.Server.Tests/
+Chatter.Core/
+README.md
+LICENSE

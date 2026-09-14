@@ -42,3 +42,11 @@ jobs:
 
       - name: Test - emoji shortcode parser
         run: dotnet test Chatter.Client.Tests/Chatter.Client.Tests.csproj --no-build -c Release -f net9.0
+
+  docker-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build server image
+        run: docker build -f Chatter.Server/Dockerfile -t chatter-server:ci .

@@ -1,0 +1,18 @@
+services:
+  chatter-server:
+    build:
+      context: .
+      dockerfile: Chatter.Server/Dockerfile
+    ports:
+      - "8080:8080"
+    volumes:
+      - chatter-data:/app/data
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      # Point at your own Supabase project without rebuilding the image:
+      # - Supabase__Url=https://your-project.supabase.co
+      # - Supabase__Audience=authenticated
+      # - Supabase__JwtSecret=only-if-your-project-still-uses-the-legacy-HS256-secret
+
+volumes:
+  chatter-data:
