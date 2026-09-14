@@ -13,6 +13,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.SignalR.Client;
+using Chatter.Shared.Models;
 
 namespace Chatter.Client.Services;
 
@@ -37,7 +38,7 @@ public class ChatService
     public event Action<string, string>? OtherDisplayNameChanged;
     public event Action<string, string>? MessageReceived;
     public event Action<IReadOnlyList<string>>? OnlineUsersUpdated;
-    public event Action<IReadOnlyList<string>>? ChatsForMeUpdated;
+    public event Action<IReadOnlyList<ChatSummary>>? ChatsForMeUpdated;
     public event Action<IReadOnlyList<string>>? ChatsUpdated;
     public event Action<string, string, string>? ChatMessageReceived; 
     public event Action<string, string>? AddedChat;                   
@@ -110,6 +111,10 @@ public class ChatService
         _conn.On<string, string>("ReceiveMessage", (user, msg) =>
             MessageReceived?.Invoke(user, msg));
 
+        // ----- Handlers: Chat metadata (server-owned chat IDs + labels) -----
+        _conn.On<List<ChatSummary>>("ChatsForMe", list =>
+            ChatsForMeUpdated?.Invoke((list ?? new()).AsReadOnly()));
+
         // ----- Handlers: Name change notifications -----
         _conn.On<string, string>("DisplayNameChanged", (oldName, newName) =>
             ChatMessageReceived?.Invoke(LobbyId, "system",
@@ -123,9 +128,6 @@ public class ChatService
         // ----- Handlers: Rosters & chat lists -----
         _conn.On<List<string>>("OnlineUsers", list =>
             OnlineUsersUpdated?.Invoke((list ?? new()).AsReadOnly()));
-
-        _conn.On<List<string>>("ChatsForMe", list =>
-            ChatsForMeUpdated?.Invoke((list ?? new()).AsReadOnly()));
 
         _conn.On<List<string>>("ChatsUpdated", list =>
             ChatsUpdated?.Invoke((list ?? new()).AsReadOnly()));
@@ -199,8 +201,8 @@ public class ChatService
        Sends a message on the legacy/global channel if your server supports it.
        Safe no-op if not connected.
     */
-    public Task SendAsync(string user, string msg) =>
-        _conn?.SendAsync("SendMessage", user, msg) ?? Task.CompletedTask;
+    public Task SendAsync(string msg) =>
+        _conn?.SendAsync("SendMessage", msg) ?? Task.CompletedTask;
 
     /* Identity APIs
        Sets or changes the local user's display name on the server.
@@ -216,8 +218,8 @@ public class ChatService
        Notifies the server that this user started/stopped typing in a channel.
        The server relays Typing events, which we surface via the TypingChanged event.
     */
-    public Task SendTypingAsync(string channelId, string user, bool isTyping) =>
-        _conn?.InvokeAsync("Typing", channelId, user, isTyping) ?? Task.CompletedTask;
+    public Task SendTypingAsync(string channelId, bool isTyping) =>
+        _conn?.InvokeAsync("Typing", channelId, isTyping) ?? Task.CompletedTask;
 
     /* Roster APIs
        Fetches the list of currently online users from the server.
@@ -234,10 +236,10 @@ public class ChatService
        Fetches the current user's chat list, joins/leaves chats, creates DMs, and sends chat messages.
        All methods are safe no-ops when not connected and return reasonable defaults.
     */
-    public async Task<IReadOnlyList<string>> GetMyChatsAsync()
+    public async Task<IReadOnlyList<ChatSummary>> GetMyChatsAsync()
     {
-        if (_conn is null) return Array.Empty<string>();
-        var list = await _conn.InvokeAsync<List<string>>("GetMyChats");
+        if (_conn is null) return Array.Empty<ChatSummary>();
+        var list = await _conn.InvokeAsync<List<ChatSummary>>("GetMyChats");
         return (list ?? new()).AsReadOnly();
     }
 
@@ -248,12 +250,17 @@ public class ChatService
         _conn?.SendAsync("LeaveChat", chatId) ?? Task.CompletedTask;
 
     public Task<string?> CreateDmAsync(string otherDisplayName) =>
-    _conn is null
-        ? Task.FromResult<string?>(null)
-        : _conn.InvokeAsync<string?>("CreateDm", otherDisplayName);
+        _conn is null
+            ? Task.FromResult<string?>(null)
+            : _conn.InvokeAsync<string?>("CreateDm", otherDisplayName);
 
-    public Task SendToChatAsync(string chatId, string user, string message) =>
-        _conn?.SendAsync("SendToChat", chatId, user, message) ?? Task.CompletedTask;
+    public Task<string?> SendDmFirstAsync(string otherDisplayName, string message) =>
+        _conn is null
+            ? Task.FromResult<string?>(null)
+            : _conn.InvokeAsync<string?>("SendDmFirst", otherDisplayName, message);
+
+    public Task SendToChatAsync(string chatId, string message) =>
+        _conn?.SendAsync("SendToChat", chatId, message) ?? Task.CompletedTask;
 
     /* Stop & dispose
        Gracefully stops the connection and releases resources.
