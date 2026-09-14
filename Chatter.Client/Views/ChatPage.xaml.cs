@@ -58,6 +58,37 @@ public partial class ChatPage : ContentPage
         vm.DeleteChatCommand.Execute(item);
 }
 
+    // Message edit/delete/react — same code-behind pattern as OnDeleteChatTapped above, for the
+    // same reason: a compiled {Binding Source={RelativeSource AncestorType=...}}} inside a
+    // DataTemplate can't see the page-level ChatViewModel's commands (XamlC warns XC0045).
+    private void OnEditMessageInvoked(object? sender, EventArgs e)
+    {
+        if (BindingContext is not ChatViewModel vm) return;
+        if (sender is Element { BindingContext: ChatMessageItem item })
+            vm.EditMessageCommand.Execute(item);
+    }
+
+    private void OnDeleteMessageInvoked(object? sender, EventArgs e)
+    {
+        if (BindingContext is not ChatViewModel vm) return;
+        if (sender is Element { BindingContext: ChatMessageItem item })
+            vm.DeleteMessageCommand.Execute(item);
+    }
+
+    private void OnReactButtonClicked(object? sender, EventArgs e)
+    {
+        if (BindingContext is not ChatViewModel vm) return;
+        if (sender is Element { BindingContext: ChatMessageItem item })
+            vm.ReactCommand.Execute(item);
+    }
+
+    private void OnReactionPillTapped(object? sender, EventArgs e)
+    {
+        if (BindingContext is not ChatViewModel vm) return;
+        if (sender is Element { BindingContext: ReactionItem reaction })
+            vm.ToggleReactionCommand.Execute(reaction);
+    }
+
 
     // Sending: press Enter in the message box to invoke SendCommand (when CanSend)
     private void OnMessageCompleted(object? sender, EventArgs e)

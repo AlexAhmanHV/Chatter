@@ -40,14 +40,23 @@ public class ChatService
     public event Action<IReadOnlyList<string>>? OnlineUsersUpdated;
     public event Action<IReadOnlyList<ChatSummary>>? ChatsForMeUpdated;
     public event Action<IReadOnlyList<string>>? ChatsUpdated;
-    public event Action<string, string, string>? ChatMessageReceived; 
-    public event Action<string, string>? AddedChat;                   
-    public event Action<string, string, string>? DmNotify;            
+
+    // (chatId, messageId, senderDisplayName, body, sentAtUtc). messageId is 0 for synthetic
+    // lines that aren't a real persisted message (rename/system notices) - see ChatService.cs.
+    public event Action<string, long, string, string, DateTime>? ChatMessageReceived;
+    public event Action<string, string>? AddedChat;
+    public event Action<string, long, string, string, DateTime>? DmNotify;
 
     // Server feature: aliases + presence snapshots/deltas
-    public event Action<Dictionary<string, string>>? NameAliasesReceived; 
+    public event Action<Dictionary<string, string>>? NameAliasesReceived;
     public event Action<Dictionary<string, string>>? StatusesUpdated;
     public event Action<string, string>? StatusChanged;
+
+    // Message editing/deletion, reactions, read receipts
+    public event Action<string, long, string, DateTime>? MessageEdited;      // chatId, messageId, newBody, editedAtUtc
+    public event Action<string, long>? MessageDeleted;                       // chatId, messageId
+    public event Action<string, long, string, int, bool, string>? ReactionChanged; // chatId, messageId, emoji, count, added, byDisplayName
+    public event Action<string, string, long>? ReadReceipt;                  // chatId, fromDisplayName, lastReadMessageId
 
     /* Constructor
        Stores the auth dependency used to supply an access token when establishing the hub connection.
@@ -116,14 +125,15 @@ public class ChatService
             ChatsForMeUpdated?.Invoke((list ?? new()).AsReadOnly()));
 
         // ----- Handlers: Name change notifications -----
+        // messageId 0: these are synthesized locally, not a real persisted ChatMessageDto row.
         _conn.On<string, string>("DisplayNameChanged", (oldName, newName) =>
-            ChatMessageReceived?.Invoke(LobbyId, "system",
-                $"{oldName} changed their name to “{newName}”."));
+            ChatMessageReceived?.Invoke(LobbyId, 0, "system",
+                $"{oldName} changed their name to “{newName}”.", DateTime.UtcNow));
         _conn.On<string, string>("DisplayNameChanged", (oldName, newName) =>
             OtherDisplayNameChanged?.Invoke(oldName, newName));
 
         _conn.On<string>("LobbySystemMessage", text =>
-            ChatMessageReceived?.Invoke(LobbyId, "system", text));
+            ChatMessageReceived?.Invoke(LobbyId, 0, "system", text, DateTime.UtcNow));
 
         // ----- Handlers: Rosters & chat lists -----
         _conn.On<List<string>>("OnlineUsers", list =>
@@ -133,15 +143,28 @@ public class ChatService
             ChatsUpdated?.Invoke((list ?? new()).AsReadOnly()));
 
         // ----- Handlers: Per-chat messages -----
-        _conn.On<string, string, string>("ReceiveChatMessage", (chatId, user, msg) =>
-            ChatMessageReceived?.Invoke(chatId, user, msg));
+        _conn.On<string, long, string, string, DateTime>("ReceiveChatMessage", (chatId, messageId, user, msg, sentAt) =>
+            ChatMessageReceived?.Invoke(chatId, messageId, user, msg, sentAt));
 
-        // ----- Handlers: DM helpers -----
-        _conn.On<string, string>("AddedChat", (chatId, fromUser) =>
-            AddedChat?.Invoke(chatId, fromUser));
+        _conn.On<string, long, string, DateTime>("MessageEdited", (chatId, messageId, newBody, editedAt) =>
+            MessageEdited?.Invoke(chatId, messageId, newBody, editedAt));
 
-        _conn.On<string, string, string>("DmNotify", (chatId, fromUser, msg) =>
-            DmNotify?.Invoke(chatId, fromUser, msg));
+        _conn.On<string, long>("MessageDeleted", (chatId, messageId) =>
+            MessageDeleted?.Invoke(chatId, messageId));
+
+        _conn.On<string, long, string, int, bool, string>("ReactionChanged",
+            (chatId, messageId, emoji, count, added, byDisplayName) =>
+                ReactionChanged?.Invoke(chatId, messageId, emoji, count, added, byDisplayName));
+
+        _conn.On<string, string, long>("ReadReceipt", (chatId, fromDisplayName, lastReadMessageId) =>
+            ReadReceipt?.Invoke(chatId, fromDisplayName, lastReadMessageId));
+
+        // ----- Handlers: DM/group helpers -----
+        _conn.On<string, string>("AddedChat", (chatId, label) =>
+            AddedChat?.Invoke(chatId, label));
+
+        _conn.On<string, long, string, string, DateTime>("DmNotify", (chatId, messageId, fromUser, msg, sentAt) =>
+            DmNotify?.Invoke(chatId, messageId, fromUser, msg, sentAt));
 
         // Reconnect flow: re-assert identity and refresh all lists/snapshots
         _conn.Reconnected += async _ =>
@@ -243,12 +266,29 @@ public class ChatService
         return (list ?? new()).AsReadOnly();
     }
 
-    public async Task<IReadOnlyList<ChatMessageDto>> GetChatHistoryAsync(string chatId, int take = 50)
+    public async Task<IReadOnlyList<ChatMessageDto>> GetChatHistoryAsync(string chatId, long? beforeMessageId = null, int take = 50)
     {
         if (_conn is null) return Array.Empty<ChatMessageDto>();
-        var list = await _conn.InvokeAsync<List<ChatMessageDto>>("GetChatHistory", chatId, take);
+        var list = await _conn.InvokeAsync<List<ChatMessageDto>>("GetChatHistory", chatId, beforeMessageId, take);
         return (list ?? new()).AsReadOnly();
     }
+
+    public Task<string?> CreateGroupChatAsync(string name, List<string> memberDisplayNames) =>
+        _conn is null
+            ? Task.FromResult<string?>(null)
+            : _conn.InvokeAsync<string?>("CreateGroupChat", name, memberDisplayNames);
+
+    public Task EditMessageAsync(long messageId, string newBody) =>
+        _conn?.SendAsync("EditMessage", messageId, newBody) ?? Task.CompletedTask;
+
+    public Task DeleteMessageAsync(long messageId) =>
+        _conn?.SendAsync("DeleteMessage", messageId) ?? Task.CompletedTask;
+
+    public Task ToggleReactionAsync(long messageId, string emoji) =>
+        _conn?.SendAsync("ToggleReaction", messageId, emoji) ?? Task.CompletedTask;
+
+    public Task MarkReadAsync(string chatId, long lastReadMessageId) =>
+        _conn?.SendAsync("MarkRead", chatId, lastReadMessageId) ?? Task.CompletedTask;
 
     public Task JoinChatAsync(string chatId) =>
         _conn?.SendAsync("JoinChat", chatId) ?? Task.CompletedTask;

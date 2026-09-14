@@ -3,7 +3,8 @@ File: ChatViewModel.cs
 
 What this does:
 - Purpose: The main view-model driving the chat screen. It orchestrates connection lifecycle, chat lists, messages,
-  presence/roster, typing indicators, and UI commands (send, start DM, delete, emoji help/picker).
+  presence/roster, typing indicators, and UI commands (send, start DM, delete, emoji help/picker, edit/delete/react,
+  group chat creation, paginated history).
 - How: Subscribes to ChatService events for real-time updates, maintains UI-facing observable collections/properties,
   and wraps server calls with small helpers (name canonicalization, placeholder logic, etc.).
 */
@@ -32,7 +33,10 @@ public partial class ChatViewModel : ObservableObject
 {
     /* Core services & constants */
     private readonly ChatService _chat;
-    private readonly Dictionary<string, string?> _lastLineByChat = new(StringComparer.OrdinalIgnoreCase);
+
+    // De-dup only for synthetic lines (rename/system notices) that have no server-assigned id.
+    // Real messages are de-duped by id instead - see ChatMessageReceived/DmNotify below.
+    private readonly Dictionary<string, string?> _lastSystemLineByChat = new(StringComparer.OrdinalIgnoreCase);
 
     /* Root page helper to avoid obsolete Application.MainPage */
     private static Page? GetRootPage() => Application.Current?.Windows?.FirstOrDefault()?.Page;
@@ -59,9 +63,16 @@ public partial class ChatViewModel : ObservableObject
     /* Chats & messages */
     public ObservableCollection<ChatItem> Chats { get; } = new();
     [ObservableProperty] public partial ChatItem? SelectedChat { get; set; }
-    public ObservableCollection<string> CurrentChatMessages { get; } = new();
-    private readonly Dictionary<string, ObservableCollection<string>> _chatMessages =
+    public ObservableCollection<ChatMessageItem> CurrentChatMessages { get; } = new();
+    private readonly Dictionary<string, ObservableCollection<ChatMessageItem>> _chatMessages =
         new(StringComparer.OrdinalIgnoreCase);
+
+    /* Paginated history */
+    private const int HistoryPageSize = 50;
+    private readonly HashSet<string> _historyLoaded = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _noMoreHistory = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, long> _oldestLoadedMessageId = new(StringComparer.OrdinalIgnoreCase);
+    [ObservableProperty] public partial bool CanLoadMoreHistory { get; set; }
 
     /* Legacy/global lists */
     public ObservableCollection<string> Messages { get; } = new();
@@ -77,6 +88,14 @@ public partial class ChatViewModel : ObservableObject
     public IAsyncRelayCommand<string> StartDmCommand { get; }
     public IRelayCommand<ChatItem> DeleteChatCommand { get; }
     public IAsyncRelayCommand<PresenceStatus> SetMyStatusCommand { get; }
+    public IAsyncRelayCommand<ChatMessageItem> EditMessageCommand { get; }
+    public IAsyncRelayCommand<ChatMessageItem> DeleteMessageCommand { get; }
+    public IAsyncRelayCommand<ChatMessageItem> ReactCommand { get; }
+    public IAsyncRelayCommand<ReactionItem> ToggleReactionCommand { get; }
+    public IAsyncRelayCommand CreateGroupChatCommand { get; }
+    public IAsyncRelayCommand LoadMoreHistoryCommand { get; }
+
+    private static readonly string[] QuickReactionEmojis = { "👍", "❤️", "😂", "🎉", "😮", "😢" };
 
     /* Chat ID helpers */
     private static bool IsDraftId(string id) => id.StartsWith("draft:", StringComparison.OrdinalIgnoreCase);
@@ -364,39 +383,44 @@ public partial class ChatViewModel : ObservableObject
                 UpdateMessagePlaceholder();
             });
 
-        _chat.AddedChat += (chatId, otherDisplayName) =>
+        _chat.AddedChat += (chatId, label) =>
             MainThread.BeginInvokeOnMainThread(() =>
             {
                 _hiddenChats.Remove(chatId);
-                EnsureChatItemWithLabel(chatId, otherDisplayName);
-                _knownUsers.Add(Canon(otherDisplayName));
+                EnsureChatItemWithLabel(chatId, label);
+                if (chatId.StartsWith("dm:", StringComparison.OrdinalIgnoreCase))
+                    _knownUsers.Add(Canon(label));
                 RecomputePeople(OnlineUsers);
                 _ = _chat.JoinChatAsync(chatId);
             });
 
-        _chat.DmNotify += (chatId, fromUser, msg) =>
+        _chat.DmNotify += (chatId, messageId, fromUser, msg, sentAtUtc) =>
             MainThread.BeginInvokeOnMainThread(() =>
             {
                 _knownUsers.Add(Canon(fromUser));
-                var item = EnsureChatItemWithLabel(chatId, fromUser);
-
-                var line = $"{fromUser}: {msg}";
-                if (_lastLineByChat.TryGetValue(chatId, out var last) && last == line) return;
-                _lastLineByChat[chatId] = line;
+                var chatItem = EnsureChatItemWithLabel(chatId, fromUser);
 
                 if (!_chatMessages.TryGetValue(chatId, out var list))
-                    _chatMessages[chatId] = list = new ObservableCollection<string>();
-                list.Add(line);
+                    _chatMessages[chatId] = list = new ObservableCollection<ChatMessageItem>();
+
+                if (messageId > 0 && list.Any(x => x.Id == messageId)) return;
+
+                var msgItem = new ChatMessageItem(messageId, fromUser, msg, sentAtUtc, isMine: false, isSystem: false);
+                list.Add(msgItem);
 
                 bool isViewingThis = IsActive && SelectedChat?.Id == chatId;
-                if (isViewingThis) CurrentChatMessages.Add(line);
-                else item.Unread++;
+                if (isViewingThis)
+                {
+                    CurrentChatMessages.Add(msgItem);
+                    MarkReadIfViewing(chatId, messageId);
+                }
+                else chatItem.Unread++;
 
                 RecomputePeople(OnlineUsers);
                 _ = _chat.JoinChatAsync(chatId);
             });
 
-        _chat.ChatMessageReceived += (chatId, u, m) =>
+        _chat.ChatMessageReceived += (chatId, messageId, u, m, sentAtUtc) =>
             MainThread.BeginInvokeOnMainThread(() =>
             {
                 if (_hiddenChats.Remove(chatId))
@@ -405,19 +429,84 @@ public partial class ChatViewModel : ObservableObject
                     EnsureChatItemWithLabel(chatId, label);
                 }
 
-                var line = string.Equals(u, "system", StringComparison.OrdinalIgnoreCase) ? m : $"{u}: {m}";
-
-                if (_lastLineByChat.TryGetValue(chatId, out var last) && last == line) return;
-                _lastLineByChat[chatId] = line;
+                var isSystem = string.Equals(u, "system", StringComparison.OrdinalIgnoreCase);
 
                 if (!_chatMessages.TryGetValue(chatId, out var list))
-                    _chatMessages[chatId] = list = new ObservableCollection<string>();
-                list.Add(line);
+                    _chatMessages[chatId] = list = new ObservableCollection<ChatMessageItem>();
+
+                if (messageId > 0)
+                {
+                    if (list.Any(x => x.Id == messageId)) return;
+                }
+                else if (isSystem)
+                {
+                    if (_lastSystemLineByChat.TryGetValue(chatId, out var lastLine) && lastLine == m) return;
+                    _lastSystemLineByChat[chatId] = m;
+                }
+
+                var item = new ChatMessageItem(messageId, u, m, sentAtUtc, isMine: Ci.Equals(u, User), isSystem: isSystem);
+                list.Add(item);
 
                 bool isViewingThis = IsActive && SelectedChat?.Id == chatId;
-
-                if (isViewingThis) CurrentChatMessages.Add(line);
+                if (isViewingThis)
+                {
+                    CurrentChatMessages.Add(item);
+                    MarkReadIfViewing(chatId, messageId);
+                }
                 else EnsureChatItem(chatId).Unread++;
+            });
+
+        _chat.MessageEdited += (chatId, messageId, newBody, editedAt) =>
+            MainThread.BeginInvokeOnMainThread(() =>
+            {
+                var msg = FindMessage(chatId, messageId);
+                if (msg is null) return;
+                msg.Body = newBody;
+                msg.EditedAtUtc = editedAt;
+            });
+
+        _chat.MessageDeleted += (chatId, messageId) =>
+            MainThread.BeginInvokeOnMainThread(() =>
+            {
+                var msg = FindMessage(chatId, messageId);
+                if (msg is null) return;
+                msg.IsDeleted = true;
+                msg.Body = string.Empty;
+            });
+
+        _chat.ReactionChanged += (chatId, messageId, emoji, count, added, byDisplayName) =>
+            MainThread.BeginInvokeOnMainThread(() =>
+            {
+                var msg = FindMessage(chatId, messageId);
+                if (msg is null) return;
+
+                var existing = msg.Reactions.FirstOrDefault(r => r.Emoji == emoji);
+                var reactedByMe = Ci.Equals(byDisplayName, User) ? added : (existing?.ReactedByMe ?? false);
+
+                if (count <= 0)
+                {
+                    if (existing is not null) msg.Reactions.Remove(existing);
+                    return;
+                }
+
+                if (existing is null)
+                    msg.Reactions.Add(new ReactionItem(messageId, emoji, count, reactedByMe));
+                else
+                {
+                    existing.Count = count;
+                    existing.ReactedByMe = reactedByMe;
+                }
+            });
+
+        _chat.ReadReceipt += (chatId, fromDisplayName, lastReadMessageId) =>
+            MainThread.BeginInvokeOnMainThread(() =>
+            {
+                if (!_chatMessages.TryGetValue(chatId, out var list)) return;
+
+                var latestMine = list.Where(m => m.IsMine && m.Id > 0).OrderByDescending(m => m.Id).FirstOrDefault();
+                foreach (var m in list.Where(m => m.IsMine)) m.SeenByOther = false;
+                if (latestMine is not null && latestMine.Id <= lastReadMessageId)
+                    latestMine.SeenByOther = true;
             });
 
         // De-duped rename handler with hard return + presence harmonization
@@ -464,6 +553,109 @@ public partial class ChatViewModel : ObservableObject
         StartDmCommand = new AsyncRelayCommand<string>(StartDmAsync);
         DeleteChatCommand = new RelayCommand<ChatItem>(DeleteChat);
         SetMyStatusCommand = new AsyncRelayCommand<PresenceStatus>(SetMyStatusAsync);
+        EditMessageCommand = new AsyncRelayCommand<ChatMessageItem>(EditMessageAsync);
+        DeleteMessageCommand = new AsyncRelayCommand<ChatMessageItem>(DeleteMessageAsync);
+        ReactCommand = new AsyncRelayCommand<ChatMessageItem>(ReactAsync);
+        ToggleReactionCommand = new AsyncRelayCommand<ReactionItem>(ToggleReactionAsync);
+        CreateGroupChatCommand = new AsyncRelayCommand(CreateGroupChatAsync);
+        LoadMoreHistoryCommand = new AsyncRelayCommand(LoadMoreHistoryAsync);
+    }
+
+    private ChatMessageItem? FindMessage(string chatId, long messageId) =>
+        messageId > 0 && _chatMessages.TryGetValue(chatId, out var list)
+            ? list.FirstOrDefault(m => m.Id == messageId)
+            : null;
+
+    private void MarkReadIfViewing(string chatId, long lastMessageId)
+    {
+        if (lastMessageId <= 0) return;
+        if (IsActive && SelectedChat?.Id == chatId)
+            _ = _chat.MarkReadAsync(chatId, lastMessageId);
+    }
+
+    /* Message edit/delete/react commands */
+    private async Task EditMessageAsync(ChatMessageItem? item)
+    {
+        if (item is null || !item.CanModify) return;
+        var page = GetRootPage();
+        if (page is null) return;
+
+        var newText = await page.DisplayPromptAsync("Edit message", "Update your message:", initialValue: item.Body, maxLength: 2000);
+        if (newText is null) return; // cancelled
+
+        newText = newText.Trim();
+        if (newText.Length == 0 || newText == item.Body) return;
+
+        try { await _chat.EditMessageAsync(item.Id, newText); }
+        catch (Exception ex) { await Ui.DisplayAlert("Couldn't edit message", ex.Message, "OK"); }
+    }
+
+    private async Task DeleteMessageAsync(ChatMessageItem? item)
+    {
+        if (item is null || !item.CanModify) return;
+        var page = GetRootPage();
+        if (page is null) return;
+
+        var confirmed = await page.DisplayAlert("Delete message", "This can't be undone.", "Delete", "Cancel");
+        if (!confirmed) return;
+
+        try { await _chat.DeleteMessageAsync(item.Id); }
+        catch (Exception ex) { await Ui.DisplayAlert("Couldn't delete message", ex.Message, "OK"); }
+    }
+
+    private async Task ReactAsync(ChatMessageItem? item)
+    {
+        if (item is null || item.Id <= 0) return;
+        var page = GetRootPage();
+        if (page is null) return;
+
+        var choice = await page.DisplayActionSheet("React", "Cancel", null, QuickReactionEmojis);
+        if (string.IsNullOrEmpty(choice) || choice == "Cancel") return;
+
+        try { await _chat.ToggleReactionAsync(item.Id, choice); }
+        catch { }
+    }
+
+    // Tapping an existing reaction pill toggles that exact emoji directly (no action sheet).
+    private async Task ToggleReactionAsync(ReactionItem? reaction)
+    {
+        if (reaction is null || reaction.MessageId <= 0) return;
+        try { await _chat.ToggleReactionAsync(reaction.MessageId, reaction.Emoji); }
+        catch { }
+    }
+
+    /* Group chat creation */
+    private async Task CreateGroupChatAsync()
+    {
+        var page = GetRootPage();
+        if (page is null) return;
+
+        var name = await page.DisplayPromptAsync("New group", "Group name:");
+        if (string.IsNullOrWhiteSpace(name)) return;
+
+        var membersText = await page.DisplayPromptAsync("New group", "Members (comma-separated display names):");
+        if (membersText is null) return;
+
+        var members = membersText
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .ToList();
+
+        if (members.Count == 0)
+        {
+            await Ui.DisplayAlert("Add at least one member", "A group needs at least one other member.", "OK");
+            return;
+        }
+
+        try
+        {
+            var chatId = await _chat.CreateGroupChatAsync(name.Trim(), members);
+            if (!string.IsNullOrWhiteSpace(chatId))
+                SelectedChat = EnsureChatItemWithLabel(chatId, name.Trim());
+        }
+        catch (Exception ex)
+        {
+            await Ui.DisplayAlert("Couldn't create group", ex.Message, "OK");
+        }
     }
 
     /* Chat labeling & item management
@@ -555,6 +747,7 @@ public partial class ChatViewModel : ObservableObject
         UpdateMessagePlaceholder();
 
         OnPropertyChanged(nameof(CanSend));
+        CanLoadMoreHistory = false;
 
         if (value is not null && !value.Id.StartsWith("draft:", StringComparison.OrdinalIgnoreCase))
         {
@@ -563,34 +756,91 @@ public partial class ChatViewModel : ObservableObject
         }
     }
 
+    private ChatMessageItem ToItem(ChatMessageDto dto)
+    {
+        var item = new ChatMessageItem(dto.Id, dto.Sender, dto.Body, dto.SentAtUtc,
+            isMine: Ci.Equals(dto.Sender, User), isSystem: false)
+        {
+            EditedAtUtc = dto.EditedAtUtc,
+            IsDeleted = dto.IsDeleted,
+        };
+
+        foreach (var r in dto.Reactions)
+            item.Reactions.Add(new ReactionItem(dto.Id, r.Emoji, r.Count, r.ReactedByMe));
+
+        return item;
+    }
+
     // Chats only hold whatever arrived live during this app session, so the first time a
     // chat is opened we backfill from the server's persisted history (see ChatHub.GetChatHistory).
-    private readonly HashSet<string> _historyLoaded = new(StringComparer.OrdinalIgnoreCase);
-
     private async Task LoadHistoryIfNeededAsync(string chatId)
     {
         if (!_historyLoaded.Add(chatId)) return;
 
         try
         {
-            var history = await _chat.GetChatHistoryAsync(chatId);
-            if (history.Count == 0) return;
+            var history = await _chat.GetChatHistoryAsync(chatId, beforeMessageId: null, take: HistoryPageSize);
 
             MainThread.BeginInvokeOnMainThread(() =>
             {
                 if (!_chatMessages.TryGetValue(chatId, out var list))
-                    _chatMessages[chatId] = list = new ObservableCollection<string>();
+                    _chatMessages[chatId] = list = new ObservableCollection<ChatMessageItem>();
 
-                var historyLines = history.Select(m => $"{m.Sender}: {m.Body}");
                 var insertAt = 0;
-                foreach (var line in historyLines)
-                    list.Insert(insertAt++, line);
+                foreach (var dto in history)
+                {
+                    if (list.Any(x => x.Id == dto.Id)) continue;
+                    list.Insert(insertAt++, ToItem(dto));
+                }
 
-                if (list.Count > 0)
-                    _lastLineByChat[chatId] = list[^1];
+                if (history.Count > 0)
+                    _oldestLoadedMessageId[chatId] = history[0].Id;
+
+                if (history.Count < HistoryPageSize) _noMoreHistory.Add(chatId);
+                else _noMoreHistory.Remove(chatId);
 
                 if (SelectedChat?.Id == chatId)
+                {
                     RefreshVisibleChat();
+                    CanLoadMoreHistory = !_noMoreHistory.Contains(chatId);
+                }
+            });
+        }
+        catch { }
+    }
+
+    private async Task LoadMoreHistoryAsync()
+    {
+        var chat = SelectedChat;
+        if (chat is null || IsDraftId(chat.Id)) return;
+        if (!_oldestLoadedMessageId.TryGetValue(chat.Id, out var before)) return;
+
+        try
+        {
+            var older = await _chat.GetChatHistoryAsync(chat.Id, beforeMessageId: before, take: HistoryPageSize);
+
+            MainThread.BeginInvokeOnMainThread(() =>
+            {
+                if (!_chatMessages.TryGetValue(chat.Id, out var list))
+                    _chatMessages[chat.Id] = list = new ObservableCollection<ChatMessageItem>();
+
+                var insertAt = 0;
+                foreach (var dto in older)
+                {
+                    if (list.Any(x => x.Id == dto.Id)) continue;
+                    list.Insert(insertAt++, ToItem(dto));
+                }
+
+                if (older.Count > 0)
+                    _oldestLoadedMessageId[chat.Id] = older[0].Id;
+
+                if (older.Count < HistoryPageSize) _noMoreHistory.Add(chat.Id);
+
+                if (SelectedChat?.Id == chat.Id)
+                {
+                    RefreshVisibleChat();
+                    CanLoadMoreHistory = !_noMoreHistory.Contains(chat.Id);
+                }
             });
         }
         catch { }
@@ -636,8 +886,13 @@ public partial class ChatViewModel : ObservableObject
         if (SelectedChat is null) return;
 
         if (_chatMessages.TryGetValue(SelectedChat.Id, out var list))
-            foreach (var line in list)
-                CurrentChatMessages.Add(line);
+        {
+            foreach (var item in list)
+                CurrentChatMessages.Add(item);
+
+            var lastRealId = list.Where(m => m.Id > 0).Select(m => m.Id).DefaultIfEmpty(0).Max();
+            MarkReadIfViewing(SelectedChat.Id, lastRealId);
+        }
 
         SelectedChat.Unread = 0;
     }

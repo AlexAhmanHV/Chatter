@@ -27,6 +27,14 @@ What this does:
 
   <!-- Toolbar -->
   <ContentPage.ToolbarItems>
+    <ToolbarItem Text="New group"
+                 Order="Primary"
+                 Priority="0"
+                 Command="{Binding CreateGroupChatCommand}">
+      <ToolbarItem.IconImageSource>
+        <FontImageSource Glyph="👥" Size="20" Color="#E5E7EB" />
+      </ToolbarItem.IconImageSource>
+    </ToolbarItem>
     <ToolbarItem x:Name="SettingsItem"
                  Text="Settings"
                  Order="Secondary"
@@ -41,6 +49,7 @@ What this does:
   <ContentPage.Resources>
     <ResourceDictionary>
       <conv:EmojiDisplayConverter x:Key="EmojiDisplay" />
+      <conv:InvertedBoolConverter x:Key="InvertBool" />
       <Color x:Key="PrimaryStart">#6EE7F9</Color>
       <Color x:Key="PrimaryEnd">#8B5CF6</Color>
       <Color x:Key="CardBg">#101827</Color>
@@ -287,28 +296,120 @@ What this does:
 
       <Border Grid.Row="1" Style="{StaticResource Card}" Padding="16,12" Margin="0,0,12,12">
         <ScrollView>
-          <CollectionView ItemsSource="{Binding CurrentChatMessages}">
-            <CollectionView.ItemsLayout>
-              <LinearItemsLayout Orientation="Vertical" ItemSpacing="10" />
-            </CollectionView.ItemsLayout>
-            <CollectionView.ItemTemplate>
-              <DataTemplate x:DataType="x:String">
-                <Border BackgroundColor="{StaticResource BubbleBg}" Padding="14,10" Stroke="{StaticResource StrokeIdle}" StrokeThickness="1">
-                  <Border.StrokeShape>
-                    <RoundRectangle CornerRadius="12" />
-                  </Border.StrokeShape>
-                  <Border.Shadow>
-                    <Shadow Opacity="0.15" Radius="10" Offset="0,4" />
-                  </Border.Shadow>
+          <VerticalStackLayout Spacing="10">
+            <Button Text="Load earlier messages"
+                    Command="{Binding LoadMoreHistoryCommand}"
+                    IsVisible="{Binding CanLoadMoreHistory}"
+                    BackgroundColor="#1F2937"
+                    TextColor="{StaticResource TextSecondary}"
+                    FontSize="12"
+                    HeightRequest="36"
+                    CornerRadius="10"
+                    HorizontalOptions="Center" />
 
-                  <Label Text="{Binding ., Converter={StaticResource EmojiDisplay}}"
-                         LineBreakMode="WordWrap"
-                         TextColor="{StaticResource TextPrimary}"
-                         FontSize="14" />
-                </Border>
-              </DataTemplate>
-            </CollectionView.ItemTemplate>
-          </CollectionView>
+            <CollectionView ItemsSource="{Binding CurrentChatMessages}">
+              <CollectionView.ItemsLayout>
+                <LinearItemsLayout Orientation="Vertical" ItemSpacing="10" />
+              </CollectionView.ItemsLayout>
+              <CollectionView.ItemTemplate>
+                <DataTemplate x:DataType="models:ChatMessageItem">
+                  <SwipeView>
+                    <SwipeView.RightItems>
+                      <SwipeItems Mode="Reveal">
+                        <SwipeItem Text="Edit"
+                                   BackgroundColor="#374151"
+                                   IsVisible="{Binding CanModify}"
+                                   Invoked="OnEditMessageInvoked" />
+                        <SwipeItem Text="Delete"
+                                   BackgroundColor="#DC2626"
+                                   IsVisible="{Binding CanModify}"
+                                   Invoked="OnDeleteMessageInvoked" />
+                      </SwipeItems>
+                    </SwipeView.RightItems>
+
+                    <!-- System notice: centered italic line, no bubble chrome -->
+                    <Label Text="{Binding Body}"
+                           IsVisible="{Binding IsSystem}"
+                           FontAttributes="Italic"
+                           FontSize="12"
+                           TextColor="{StaticResource TextSecondary}"
+                           HorizontalOptions="Center"
+                           Margin="0,4" />
+
+                    <!-- Real message bubble -->
+                    <Border IsVisible="{Binding IsSystem, Converter={StaticResource InvertBool}}"
+                            BackgroundColor="{StaticResource BubbleBg}" Padding="14,10"
+                            Stroke="{StaticResource StrokeIdle}" StrokeThickness="1">
+                      <Border.StrokeShape>
+                        <RoundRectangle CornerRadius="12" />
+                      </Border.StrokeShape>
+                      <Border.Shadow>
+                        <Shadow Opacity="0.15" Radius="10" Offset="0,4" />
+                      </Border.Shadow>
+
+                      <VerticalStackLayout Spacing="4">
+                        <HorizontalStackLayout Spacing="8">
+                          <Label Text="{Binding Sender}" FontAttributes="Bold" FontSize="12"
+                                 TextColor="{StaticResource PrimaryStart}" />
+                          <Label Text="{Binding SentAtUtc, StringFormat='{0:HH:mm}'}"
+                                 FontSize="11" TextColor="{StaticResource TextSecondary}" VerticalOptions="Center" />
+                          <Label Text="(edited)" FontSize="11" FontAttributes="Italic"
+                                 TextColor="{StaticResource TextSecondary}" IsVisible="{Binding IsEdited}"
+                                 VerticalOptions="Center" />
+                        </HorizontalStackLayout>
+
+                        <Label Text="{Binding Body, Converter={StaticResource EmojiDisplay}}"
+                               IsVisible="{Binding IsDeleted, Converter={StaticResource InvertBool}}"
+                               LineBreakMode="WordWrap"
+                               TextColor="{StaticResource TextPrimary}"
+                               FontSize="14" />
+                        <Label Text="Message deleted"
+                               IsVisible="{Binding IsDeleted}"
+                               FontAttributes="Italic"
+                               FontSize="13"
+                               TextColor="{StaticResource TextSecondary}" />
+
+                        <HorizontalStackLayout Spacing="8">
+                          <FlexLayout Wrap="Wrap" BindableLayout.ItemsSource="{Binding Reactions}">
+                            <BindableLayout.ItemTemplate>
+                              <DataTemplate x:DataType="models:ReactionItem">
+                                <Border Padding="7,3" Margin="0,0,6,0" StrokeThickness="1"
+                                        Stroke="{StaticResource StrokeIdle}" BackgroundColor="{StaticResource PanelBg}">
+                                  <Border.StrokeShape>
+                                    <RoundRectangle CornerRadius="10" />
+                                  </Border.StrokeShape>
+                                  <Border.GestureRecognizers>
+                                    <TapGestureRecognizer Tapped="OnReactionPillTapped" />
+                                  </Border.GestureRecognizers>
+                                  <HorizontalStackLayout Spacing="4">
+                                    <Label Text="{Binding Emoji}" FontSize="12" />
+                                    <Label Text="{Binding Count}" FontSize="11" TextColor="{StaticResource TextSecondary}" />
+                                  </HorizontalStackLayout>
+                                </Border>
+                              </DataTemplate>
+                            </BindableLayout.ItemTemplate>
+                          </FlexLayout>
+
+                          <Button Text="+"
+                                  IsVisible="{Binding IsDeleted, Converter={StaticResource InvertBool}}"
+                                  Clicked="OnReactButtonClicked"
+                                  WidthRequest="28" HeightRequest="24" Padding="0" FontSize="12"
+                                  BackgroundColor="{StaticResource PanelBg}" TextColor="{StaticResource TextSecondary}"
+                                  CornerRadius="8" />
+                        </HorizontalStackLayout>
+
+                        <Label Text="Seen"
+                               IsVisible="{Binding SeenByOther}"
+                               FontSize="10"
+                               TextColor="{StaticResource TextSecondary}"
+                               HorizontalOptions="End" />
+                      </VerticalStackLayout>
+                    </Border>
+                  </SwipeView>
+                </DataTemplate>
+              </CollectionView.ItemTemplate>
+            </CollectionView>
+          </VerticalStackLayout>
         </ScrollView>
       </Border>
 
