@@ -15,13 +15,14 @@ using System.Collections.ObjectModel;
 using System.Linq;
 using CommunityToolkit.Mvvm.ComponentModel;
 using Microsoft.Maui.Controls;
+using Chatter.Shared.Models;
 
 namespace Chatter.Client.Models;
 
 public partial class ChatMessageItem : ObservableObject
 {
     public ChatMessageItem(long id, string sender, string body, DateTime sentAtUtc, bool isMine, bool isSystem,
-        string? attachmentFileName = null, string? attachmentContentType = null, int? attachmentSizeBytes = null)
+        AttachmentMetaDto? attachment = null, bool isForwarded = false)
     {
         Id = id;
         Sender = sender;
@@ -29,9 +30,8 @@ public partial class ChatMessageItem : ObservableObject
         SentAtUtc = sentAtUtc;
         IsMine = isMine;
         IsSystem = isSystem;
-        AttachmentFileName = attachmentFileName;
-        AttachmentContentType = attachmentContentType;
-        AttachmentSizeBytes = attachmentSizeBytes;
+        Attachment = attachment;
+        IsForwarded = isForwarded;
     }
 
     public long Id { get; }
@@ -39,10 +39,15 @@ public partial class ChatMessageItem : ObservableObject
     public DateTime SentAtUtc { get; }
     public bool IsMine { get; }
     public bool IsSystem { get; }
+    public bool IsForwarded { get; }
 
     // Editable/deletable only make sense for the caller's own, real (non-synthetic) messages -
     // the server re-checks ownership independently, this just drives what the UI offers.
     public bool CanModify => IsMine && Id > 0 && !IsSystem;
+
+    // Forwarding (and viewing an attachment) both need a real persisted message id to reference
+    // server-side - never a synthetic system line.
+    public bool CanForward => Id > 0 && !IsSystem;
 
     [ObservableProperty] public partial string Body { get; set; } = string.Empty;
     [ObservableProperty] public partial DateTime? EditedAtUtc { get; set; }
@@ -52,20 +57,27 @@ public partial class ChatMessageItem : ObservableObject
     public bool IsEdited => EditedAtUtc.HasValue;
 
     // Metadata only - the bytes are fetched on demand (see ChatViewModel.ViewAttachmentAsync)
-    // and cached here as ImageSource once loaded, so scrolling a long image history doesn't
-    // mean downloading every image up front.
-    public string? AttachmentFileName { get; }
-    public string? AttachmentContentType { get; }
-    public int? AttachmentSizeBytes { get; }
-    public bool HasAttachment => !string.IsNullOrEmpty(AttachmentContentType);
+    // and cached here (as ImageSource for a photo, or a playable stream for a voice message)
+    // once loaded, so scrolling a long history doesn't mean downloading every attachment up front.
+    public AttachmentMetaDto? Attachment { get; }
+    public bool HasAttachment => Attachment is not null;
+    public bool IsVoiceMessage => Attachment?.ContentType.StartsWith("audio/", StringComparison.OrdinalIgnoreCase) == true;
+    public bool IsImageAttachment => HasAttachment && !IsVoiceMessage;
+    public string VoiceMessageDurationText => Attachment?.DurationSeconds is { } s
+        ? TimeSpan.FromSeconds(s).ToString(s >= 3600 ? @"h\:mm\:ss" : @"m\:ss")
+        : string.Empty;
 
     [ObservableProperty] public partial ImageSource? AttachmentImage { get; set; }
     [ObservableProperty] public partial bool IsAttachmentLoading { get; set; }
+    [ObservableProperty] public partial byte[]? VoiceMessageData { get; set; }
+    [ObservableProperty] public partial bool IsPlayingVoiceMessage { get; set; }
 
-    // Drives which of the two attachment visuals (tap-to-view placeholder vs. loaded image) is
-    // shown; re-evaluated whenever AttachmentImage changes (see the generated partial hook below).
-    public bool ShowAttachmentPlaceholder => HasAttachment && AttachmentImage is null;
-    public bool ShowAttachmentImage => AttachmentImage is not null;
+    // Drives which of the two image-attachment visuals (tap-to-view placeholder vs. loaded
+    // image) is shown; re-evaluated whenever AttachmentImage changes (see the generated partial
+    // hook below). A voice message uses IsAttachmentLoading/VoiceMessageData directly instead -
+    // it always renders as a play button, never a placeholder-vs-image toggle.
+    public bool ShowAttachmentPlaceholder => IsImageAttachment && AttachmentImage is null;
+    public bool ShowAttachmentImage => IsImageAttachment && AttachmentImage is not null;
 
     partial void OnAttachmentImageChanged(ImageSource? value)
     {

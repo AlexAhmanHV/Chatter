@@ -27,6 +27,7 @@ using Microsoft.Maui.ApplicationModel;
 using Microsoft.Maui.Controls;
 using Microsoft.Maui.Media;
 using Microsoft.Maui.Storage;
+using Plugin.Maui.Audio;
 using Chatter.Client.Helpers;
 using Chatter.Shared.Models;
 
@@ -36,6 +37,7 @@ public partial class ChatViewModel : ObservableObject
 {
     /* Core services & constants */
     private readonly ChatService _chat;
+    private readonly IAudioManager _audio;
 
     // De-dup only for synthetic lines (rename/system notices) that have no server-assigned id.
     // Real messages are de-duped by id instead - see ChatMessageReceived/DmNotify below.
@@ -98,6 +100,15 @@ public partial class ChatViewModel : ObservableObject
     public IAsyncRelayCommand ManageChatCommand { get; }
     public IAsyncRelayCommand<ChatMessageItem> ViewAttachmentCommand { get; }
     public IAsyncRelayCommand PickAndSendAttachmentCommand { get; }
+    public IAsyncRelayCommand<ChatMessageItem> PlayVoiceMessageCommand { get; }
+    public IAsyncRelayCommand RecordVoiceMessageCommand { get; }
+    public IAsyncRelayCommand<ChatMessageItem> ForwardMessageCommand { get; }
+
+    /* Voice message recording state */
+    [ObservableProperty] public partial bool IsRecordingVoiceMessage { get; set; }
+    private IAudioRecorder? _voiceRecorder;
+    private IAudioPlayer? _voicePlayer;
+    private ChatMessageItem? _playingVoiceMessageItem;
 
     private static readonly string[] QuickReactionEmojis = { "👍", "❤️", "😂", "🎉", "😮", "😢" };
 
@@ -269,9 +280,10 @@ public partial class ChatViewModel : ObservableObject
     }
 
     /* Constructor: event wiring & initial command setup */
-    public ChatViewModel(ChatService chat)
+    public ChatViewModel(ChatService chat, IAudioManager audio)
     {
         _chat = chat;
+        _audio = audio;
 
         People.CollectionChanged += (_, __) => OnPropertyChanged(nameof(OfflineCount));
         OnlineUsers.CollectionChanged += (_, __) => OnPropertyChanged(nameof(OfflineCount));
@@ -396,7 +408,7 @@ public partial class ChatViewModel : ObservableObject
                 _ = _chat.JoinChatAsync(chatId);
             });
 
-        _chat.DmNotify += (chatId, messageId, fromUser, msg, sentAtUtc, attFileName, attContentType, attSize) =>
+        _chat.DmNotify += (chatId, messageId, fromUser, msg, sentAtUtc, attachment, isForwarded) =>
             MainThread.BeginInvokeOnMainThread(() =>
             {
                 _knownUsers.Add(Canon(fromUser));
@@ -408,7 +420,7 @@ public partial class ChatViewModel : ObservableObject
                 if (messageId > 0 && list.Any(x => x.Id == messageId)) return;
 
                 var msgItem = new ChatMessageItem(messageId, fromUser, msg, sentAtUtc, isMine: false, isSystem: false,
-                    attFileName, attContentType, attSize);
+                    attachment, isForwarded);
                 list.Add(msgItem);
 
                 bool isViewingThis = IsActive && SelectedChat?.Id == chatId;
@@ -423,7 +435,7 @@ public partial class ChatViewModel : ObservableObject
                 _ = _chat.JoinChatAsync(chatId);
             });
 
-        _chat.ChatMessageReceived += (chatId, messageId, u, m, sentAtUtc, attFileName, attContentType, attSize) =>
+        _chat.ChatMessageReceived += (chatId, messageId, u, m, sentAtUtc, attachment, isForwarded) =>
             MainThread.BeginInvokeOnMainThread(() =>
             {
                 if (_hiddenChats.Remove(chatId))
@@ -448,7 +460,7 @@ public partial class ChatViewModel : ObservableObject
                 }
 
                 var item = new ChatMessageItem(messageId, u, m, sentAtUtc, isMine: Ci.Equals(u, User), isSystem: isSystem,
-                    attFileName, attContentType, attSize);
+                    attachment, isForwarded);
                 list.Add(item);
 
                 bool isViewingThis = IsActive && SelectedChat?.Id == chatId;
@@ -590,6 +602,9 @@ public partial class ChatViewModel : ObservableObject
         ManageChatCommand = new AsyncRelayCommand(ManageChatAsync);
         ViewAttachmentCommand = new AsyncRelayCommand<ChatMessageItem>(ViewAttachmentAsync);
         PickAndSendAttachmentCommand = new AsyncRelayCommand(PickAndSendAttachmentAsync);
+        PlayVoiceMessageCommand = new AsyncRelayCommand<ChatMessageItem>(PlayVoiceMessageAsync);
+        RecordVoiceMessageCommand = new AsyncRelayCommand(ToggleRecordVoiceMessageAsync);
+        ForwardMessageCommand = new AsyncRelayCommand<ChatMessageItem>(ForwardMessageAsync);
     }
 
     private ChatMessageItem? FindMessage(string chatId, long messageId) =>
@@ -655,10 +670,10 @@ public partial class ChatViewModel : ObservableObject
         catch { }
     }
 
-    /* Attachments (images only) - fetched lazily on tap, not pre-loaded with the rest of history */
+    /* Image attachments - fetched lazily on tap, not pre-loaded with the rest of history */
     private async Task ViewAttachmentAsync(ChatMessageItem? item)
     {
-        if (item is null || !item.HasAttachment || item.Id <= 0) return;
+        if (item is null || !item.IsImageAttachment || item.Id <= 0) return;
         if (item.AttachmentImage is not null || item.IsAttachmentLoading) return;
 
         item.IsAttachmentLoading = true;
@@ -739,6 +754,196 @@ public partial class ChatViewModel : ObservableObject
             _ => "image/jpeg",
         };
 
+    /* Voice messages - record with Plugin.Maui.Audio, upload the same way as an image attachment
+       (see SendVoiceMessage on the hub), and play back lazily (same fetch-on-tap idea as
+       ViewAttachmentAsync). Only one recording and one playback happen at a time. */
+    private async Task ToggleRecordVoiceMessageAsync()
+    {
+        if (IsRecordingVoiceMessage)
+        {
+            IsRecordingVoiceMessage = false;
+            if (_voiceRecorder is null) return;
+
+            IAudioSource recorded;
+            try
+            {
+                recorded = await _voiceRecorder.StopAsync();
+            }
+            catch (Exception ex)
+            {
+                await Ui.DisplayAlert("Couldn't stop recording", ex.Message, "OK");
+                return;
+            }
+            finally
+            {
+                _voiceRecorder = null;
+            }
+
+            await SendRecordedVoiceMessageAsync(recorded);
+            return;
+        }
+
+        if (SelectedChat is null)
+        {
+            await Ui.DisplayAlert("Pick a chat", "Select a chat before recording a voice message.", "OK");
+            return;
+        }
+        if (IsDraftId(SelectedChat.Id))
+        {
+            await Ui.DisplayAlert("Send a message first", "Send a text message to start this conversation before sending a voice message.", "OK");
+            return;
+        }
+
+        var granted = await Permissions.RequestAsync<Permissions.Microphone>();
+        if (granted != PermissionStatus.Granted)
+        {
+            await Ui.DisplayAlert("Microphone access needed", "Allow microphone access to record a voice message.", "OK");
+            return;
+        }
+
+        try
+        {
+            _voiceRecorder = _audio.CreateRecorder();
+            await _voiceRecorder.StartAsync();
+            IsRecordingVoiceMessage = true;
+            _voiceRecordingStartedAt = DateTime.UtcNow;
+        }
+        catch (Exception ex)
+        {
+            _voiceRecorder = null;
+            await Ui.DisplayAlert("Couldn't start recording", ex.Message, "OK");
+        }
+    }
+
+    private DateTime _voiceRecordingStartedAt;
+
+    private async Task SendRecordedVoiceMessageAsync(IAudioSource recorded)
+    {
+        if (SelectedChat is null) return;
+
+        byte[] bytes;
+        try
+        {
+            using var stream = recorded.GetAudioStream();
+            using var ms = new MemoryStream();
+            await stream.CopyToAsync(ms);
+            bytes = ms.ToArray();
+        }
+        catch (Exception ex)
+        {
+            await Ui.DisplayAlert("Couldn't read recording", ex.Message, "OK");
+            return;
+        }
+
+        if (bytes.Length == 0) return; // e.g. stopped almost immediately
+
+        var duration = (int)Math.Max(1, (DateTime.UtcNow - _voiceRecordingStartedAt).TotalSeconds);
+
+        try
+        {
+            await _chat.SendVoiceMessageAsync(SelectedChat.Id, "audio/wav", bytes, duration);
+        }
+        catch (Exception ex)
+        {
+            await Ui.DisplayAlert("Couldn't send voice message", ex.Message, "OK");
+        }
+    }
+
+    private async Task PlayVoiceMessageAsync(ChatMessageItem? item)
+    {
+        if (item is null || !item.IsVoiceMessage || item.Id <= 0) return;
+
+        // Tapping the item that's currently playing stops it instead of restarting it.
+        if (_playingVoiceMessageItem == item && item.IsPlayingVoiceMessage)
+        {
+            StopVoicePlayback();
+            return;
+        }
+
+        StopVoicePlayback();
+
+        if (item.VoiceMessageData is null)
+        {
+            if (item.IsAttachmentLoading) return;
+            item.IsAttachmentLoading = true;
+            try
+            {
+                var data = await _chat.GetAttachmentDataAsync(item.Id);
+                if (data is null) return;
+                item.VoiceMessageData = data.Data;
+            }
+            catch (Exception ex)
+            {
+                await Ui.DisplayAlert("Couldn't load voice message", ex.Message, "OK");
+                return;
+            }
+            finally
+            {
+                item.IsAttachmentLoading = false;
+            }
+        }
+
+        try
+        {
+            var stream = new MemoryStream(item.VoiceMessageData!);
+            _voicePlayer = _audio.CreatePlayer(stream);
+            _playingVoiceMessageItem = item;
+            item.IsPlayingVoiceMessage = true;
+            _voicePlayer.PlaybackEnded += (_, __) =>
+                MainThread.BeginInvokeOnMainThread(StopVoicePlayback);
+            _voicePlayer.Play();
+        }
+        catch (Exception ex)
+        {
+            item.IsPlayingVoiceMessage = false;
+            await Ui.DisplayAlert("Couldn't play voice message", ex.Message, "OK");
+        }
+    }
+
+    private void StopVoicePlayback()
+    {
+        if (_playingVoiceMessageItem is not null)
+            _playingVoiceMessageItem.IsPlayingVoiceMessage = false;
+        _playingVoiceMessageItem = null;
+
+        if (_voicePlayer is null) return;
+        try { _voicePlayer.Stop(); } catch { }
+        _voicePlayer.Dispose();
+        _voicePlayer = null;
+    }
+
+    /* Forwarding - offers every chat except the one the message already lives in (matching by
+       label, since that's all a DisplayActionSheet choice gives back). */
+    private async Task ForwardMessageAsync(ChatMessageItem? item)
+    {
+        if (item is null || !item.CanForward) return;
+
+        var page = GetRootPage();
+        if (page is null) return;
+
+        var targets = Chats.Where(c => c != SelectedChat && !IsDraftId(c.Id)).ToList();
+        if (targets.Count == 0)
+        {
+            await Ui.DisplayAlert("Nowhere to forward to", "You need another chat to forward this message to.", "OK");
+            return;
+        }
+
+        var choice = await page.DisplayActionSheet("Forward to…", "Cancel", null, targets.Select(c => c.Label).ToArray());
+        if (string.IsNullOrEmpty(choice) || choice == "Cancel") return;
+
+        var target = targets.FirstOrDefault(c => c.Label == choice);
+        if (target is null) return;
+
+        try
+        {
+            await _chat.ForwardMessageAsync(item.Id, target.Id);
+        }
+        catch (Exception ex)
+        {
+            await Ui.DisplayAlert("Couldn't forward message", ex.Message, "OK");
+        }
+    }
+
     // Re-resolves one person's avatar URL after an AvatarChanged notification, appending
     // `version` as a cache-busting query string so the client actually refetches the new image
     // instead of reusing whatever it had cached for the old URL.
@@ -805,8 +1010,8 @@ public partial class ChatViewModel : ObservableObject
         var isDm = chat.Id.StartsWith("dm:", StringComparison.OrdinalIgnoreCase);
 
         var options = new List<string> { chat.IsMuted ? "Unmute" : "Mute" };
-        if (isGroup) options.AddRange(new[] { "View members", "Add member", "Remove member", "Rename group" });
-        if (isDm) options.AddRange(new[] { "Block user", "Unblock user" });
+        if (isGroup) options.AddRange(new[] { "View members", "Add member", "Remove member", "Rename group", "Promote to admin", "Demote from admin" });
+        if (isDm) options.AddRange(new[] { "Block user", "Unblock user", "Last seen" });
 
         var choice = await page.DisplayActionSheet($"Manage \"{chat.Label}\"", "Cancel", null, options.ToArray());
         if (string.IsNullOrEmpty(choice) || choice == "Cancel") return;
@@ -825,7 +1030,19 @@ public partial class ChatViewModel : ObservableObject
                     break;
                 case "View members":
                     var members = await _chat.GetGroupMembersAsync(chat.Id);
-                    await Ui.DisplayAlert("Members", string.Join("\n", members), "OK");
+                    var admins = new HashSet<string>(await _chat.GetGroupAdminsAsync(chat.Id), Ci);
+                    var lines = members.Select(m => admins.Contains(m) ? $"{m} (admin)" : m);
+                    await Ui.DisplayAlert("Members", string.Join("\n", lines), "OK");
+                    break;
+                case "Promote to admin":
+                    var toPromote = await page.DisplayPromptAsync("Promote to admin", "Display name:");
+                    if (!string.IsNullOrWhiteSpace(toPromote))
+                        await _chat.PromoteGroupAdminAsync(chat.Id, toPromote.Trim());
+                    break;
+                case "Demote from admin":
+                    var toDemote = await page.DisplayPromptAsync("Demote from admin", "Display name:");
+                    if (!string.IsNullOrWhiteSpace(toDemote))
+                        await _chat.DemoteGroupAdminAsync(chat.Id, toDemote.Trim());
                     break;
                 case "Add member":
                     var toAdd = await page.DisplayPromptAsync("Add member", "Display name:");
@@ -847,6 +1064,13 @@ public partial class ChatViewModel : ObservableObject
                     break;
                 case "Unblock user":
                     await _chat.UnblockUserAsync(chat.Label);
+                    break;
+                case "Last seen":
+                    var lastSeen = await _chat.GetLastSeenAsync(new List<string> { chat.Label });
+                    var text = lastSeen.TryGetValue(chat.Label, out var when)
+                        ? $"Last seen {when.ToLocalTime():g}"
+                        : "Online now, or never seen offline.";
+                    await Ui.DisplayAlert("Last seen", text, "OK");
                     break;
             }
         }
@@ -961,7 +1185,7 @@ public partial class ChatViewModel : ObservableObject
     {
         var item = new ChatMessageItem(dto.Id, dto.Sender, dto.Body, dto.SentAtUtc,
             isMine: Ci.Equals(dto.Sender, User), isSystem: false,
-            dto.AttachmentFileName, dto.AttachmentContentType, dto.AttachmentSizeBytes)
+            dto.Attachment, dto.IsForwarded)
         {
             EditedAtUtc = dto.EditedAtUtc,
             IsDeleted = dto.IsDeleted,

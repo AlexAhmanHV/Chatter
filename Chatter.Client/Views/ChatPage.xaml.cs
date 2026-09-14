@@ -96,6 +96,20 @@ public partial class ChatPage : ContentPage
             vm.ViewAttachmentCommand.Execute(item);
     }
 
+    private void OnPlayVoiceMessageTapped(object? sender, EventArgs e)
+    {
+        if (BindingContext is not ChatViewModel vm) return;
+        if (sender is Element { BindingContext: ChatMessageItem item })
+            vm.PlayVoiceMessageCommand.Execute(item);
+    }
+
+    private void OnForwardMessageInvoked(object? sender, EventArgs e)
+    {
+        if (BindingContext is not ChatViewModel vm) return;
+        if (sender is Element { BindingContext: ChatMessageItem item })
+            vm.ForwardMessageCommand.Execute(item);
+    }
+
 
     // Sending: press Enter in the message box to invoke SendCommand (when CanSend)
     private void OnMessageCompleted(object? sender, EventArgs e)
