@@ -35,6 +35,7 @@ public class ChatService
        The ViewModel subscribes to update typing indicators, rosters, message lists, and presence.
     */
     public event EventHandler<(string ChannelId, string User, bool IsTyping)>? TypingChanged;
+    public event EventHandler<(string ChannelId, string User, bool IsRecording)>? RecordingChanged;
     public event Action<string, string>? OtherDisplayNameChanged;
     public event Action<IReadOnlyList<string>>? OnlineUsersUpdated;
     public event Action<IReadOnlyList<ChatSummary>>? ChatsForMeUpdated;
@@ -114,6 +115,12 @@ public class ChatService
         {
             var payload = (ChannelId: channelId, User: user, IsTyping: isTyping);
             TypingChanged?.Invoke(this, payload);
+        });
+
+        _conn.On<string, string, bool>("RecordingVoiceMessage", (channelId, user, isRecording) =>
+        {
+            var payload = (ChannelId: channelId, User: user, IsRecording: isRecording);
+            RecordingChanged?.Invoke(this, payload);
         });
 
         // ----- Handlers: Presence -----
@@ -252,6 +259,9 @@ public class ChatService
     public Task SendTypingAsync(string channelId, bool isTyping) =>
         _conn?.InvokeAsync("Typing", channelId, isTyping) ?? Task.CompletedTask;
 
+    public Task SendRecordingAsync(string channelId, bool isRecording) =>
+        _conn?.InvokeAsync("SetRecordingVoiceMessage", channelId, isRecording) ?? Task.CompletedTask;
+
     /* Roster APIs
        Fetches the list of currently online users from the server.
        Returned as a read-only list for safety in consumers.
@@ -278,6 +288,13 @@ public class ChatService
     {
         if (_conn is null) return Array.Empty<ChatMessageDto>();
         var list = await _conn.InvokeAsync<List<ChatMessageDto>>("GetChatHistory", chatId, beforeMessageId, take);
+        return (list ?? new()).AsReadOnly();
+    }
+
+    public async Task<IReadOnlyList<ChatMessageDto>> SearchMessagesAsync(string chatId, string query, int take = 50)
+    {
+        if (_conn is null) return Array.Empty<ChatMessageDto>();
+        var list = await _conn.InvokeAsync<List<ChatMessageDto>>("SearchMessages", chatId, query, take);
         return (list ?? new()).AsReadOnly();
     }
 

@@ -54,6 +54,8 @@ public partial class ChatViewModel : ObservableObject
     private CancellationTokenSource? _typingCts;
     [ObservableProperty] public partial bool IsPeerTyping { get; set; }
     [ObservableProperty] public partial string? TypingUser { get; set; }
+    [ObservableProperty] public partial bool IsPeerRecordingVoiceMessage { get; set; }
+    [ObservableProperty] public partial string? RecordingUser { get; set; }
 
     // Channel used for typing before a chat is selected.
     private string CurrentChannelId => SelectedChat?.Id ?? "Lobby";
@@ -103,12 +105,22 @@ public partial class ChatViewModel : ObservableObject
     public IAsyncRelayCommand<ChatMessageItem> PlayVoiceMessageCommand { get; }
     public IAsyncRelayCommand RecordVoiceMessageCommand { get; }
     public IAsyncRelayCommand<ChatMessageItem> ForwardMessageCommand { get; }
+    public IRelayCommand ToggleSearchCommand { get; }
+    public IAsyncRelayCommand<ChatMessageItem> JumpToSearchResultCommand { get; }
+
+    /* In-chat message search */
+    [ObservableProperty] public partial bool IsSearching { get; set; }
+    [ObservableProperty] public partial string? SearchQuery { get; set; }
+    [ObservableProperty] public partial bool IsSearchRunning { get; set; }
+    public ObservableCollection<ChatMessageItem> SearchResults { get; } = new();
+    private CancellationTokenSource? _searchCts;
 
     /* Voice message recording state */
     [ObservableProperty] public partial bool IsRecordingVoiceMessage { get; set; }
     private IAudioRecorder? _voiceRecorder;
     private IAudioPlayer? _voicePlayer;
     private ChatMessageItem? _playingVoiceMessageItem;
+    private IDispatcherTimer? _voicePlaybackProgressTimer;
 
     private static readonly string[] QuickReactionEmojis = { "👍", "❤️", "😂", "🎉", "😮", "😢" };
 
@@ -294,6 +306,15 @@ public partial class ChatViewModel : ObservableObject
             {
                 IsPeerTyping = e.IsTyping;
                 TypingUser = e.IsTyping ? e.User : null;
+            }
+        };
+
+        _chat.RecordingChanged += (_, e) =>
+        {
+            if (e.ChannelId == CurrentChannelId && e.User != User)
+            {
+                IsPeerRecordingVoiceMessage = e.IsRecording;
+                RecordingUser = e.IsRecording ? e.User : null;
             }
         };
 
@@ -605,6 +626,8 @@ public partial class ChatViewModel : ObservableObject
         PlayVoiceMessageCommand = new AsyncRelayCommand<ChatMessageItem>(PlayVoiceMessageAsync);
         RecordVoiceMessageCommand = new AsyncRelayCommand(ToggleRecordVoiceMessageAsync);
         ForwardMessageCommand = new AsyncRelayCommand<ChatMessageItem>(ForwardMessageAsync);
+        ToggleSearchCommand = new RelayCommand(ToggleSearch);
+        JumpToSearchResultCommand = new AsyncRelayCommand<ChatMessageItem>(JumpToSearchResultAsync);
     }
 
     private ChatMessageItem? FindMessage(string chatId, long messageId) =>
@@ -762,6 +785,7 @@ public partial class ChatViewModel : ObservableObject
         if (IsRecordingVoiceMessage)
         {
             IsRecordingVoiceMessage = false;
+            _ = _chat.SendRecordingAsync(CurrentChannelId, false);
             if (_voiceRecorder is null) return;
 
             IAudioSource recorded;
@@ -807,6 +831,7 @@ public partial class ChatViewModel : ObservableObject
             await _voiceRecorder.StartAsync();
             IsRecordingVoiceMessage = true;
             _voiceRecordingStartedAt = DateTime.UtcNow;
+            _ = _chat.SendRecordingAsync(CurrentChannelId, true);
         }
         catch (Exception ex)
         {
@@ -889,9 +914,13 @@ public partial class ChatViewModel : ObservableObject
             _voicePlayer = _audio.CreatePlayer(stream);
             _playingVoiceMessageItem = item;
             item.IsPlayingVoiceMessage = true;
+            item.PlaybackPositionSeconds = 0;
+            if (_voicePlayer.Duration > 0)
+                item.PlaybackDurationSeconds = _voicePlayer.Duration;
             _voicePlayer.PlaybackEnded += (_, __) =>
                 MainThread.BeginInvokeOnMainThread(StopVoicePlayback);
             _voicePlayer.Play();
+            StartVoicePlaybackProgressTimer();
         }
         catch (Exception ex)
         {
@@ -900,10 +929,40 @@ public partial class ChatViewModel : ObservableObject
         }
     }
 
+    // Plugin.Maui.Audio doesn't raise a position-changed event, so playback progress (for the
+    // bubble's progress bar / "0:03 / 0:12" label) is polled on a short timer instead, and
+    // stopped as soon as nothing is playing.
+    private void StartVoicePlaybackProgressTimer()
+    {
+        _voicePlaybackProgressTimer ??= Application.Current!.Dispatcher.CreateTimer();
+        _voicePlaybackProgressTimer.Interval = TimeSpan.FromMilliseconds(200);
+        _voicePlaybackProgressTimer.Tick -= OnVoicePlaybackProgressTick;
+        _voicePlaybackProgressTimer.Tick += OnVoicePlaybackProgressTick;
+        _voicePlaybackProgressTimer.Start();
+    }
+
+    private void OnVoicePlaybackProgressTick(object? sender, EventArgs e)
+    {
+        if (_voicePlayer is null || _playingVoiceMessageItem is null)
+        {
+            _voicePlaybackProgressTimer?.Stop();
+            return;
+        }
+
+        _playingVoiceMessageItem.PlaybackPositionSeconds = _voicePlayer.CurrentPosition;
+        if (_voicePlayer.Duration > 0)
+            _playingVoiceMessageItem.PlaybackDurationSeconds = _voicePlayer.Duration;
+    }
+
     private void StopVoicePlayback()
     {
+        _voicePlaybackProgressTimer?.Stop();
+
         if (_playingVoiceMessageItem is not null)
+        {
             _playingVoiceMessageItem.IsPlayingVoiceMessage = false;
+            _playingVoiceMessageItem.PlaybackPositionSeconds = 0;
+        }
         _playingVoiceMessageItem = null;
 
         if (_voicePlayer is null) return;
@@ -942,6 +1001,80 @@ public partial class ChatViewModel : ObservableObject
         {
             await Ui.DisplayAlert("Couldn't forward message", ex.Message, "OK");
         }
+    }
+
+    /* In-chat search - debounced on SearchQuery changes (same idea as the typing debounce above),
+       scoped to whichever chat is currently selected. */
+    private void ToggleSearch()
+    {
+        IsSearching = !IsSearching;
+        if (!IsSearching)
+        {
+            SearchQuery = null;
+            SearchResults.Clear();
+            _searchCts?.Cancel();
+        }
+    }
+
+    partial void OnSearchQueryChanged(string? value)
+    {
+        _searchCts?.Cancel();
+        if (!IsSearching || SelectedChat is null || IsDraftId(SelectedChat.Id) || string.IsNullOrWhiteSpace(value))
+        {
+            SearchResults.Clear();
+            return;
+        }
+
+        _searchCts = new CancellationTokenSource();
+        _ = DelayedSearchAsync(SelectedChat.Id, value, _searchCts.Token);
+    }
+
+    private async Task DelayedSearchAsync(string chatId, string query, CancellationToken ct)
+    {
+        try { await Task.Delay(300, ct); }
+        catch (TaskCanceledException) { return; }
+        if (ct.IsCancellationRequested) return;
+
+        IsSearchRunning = true;
+        try
+        {
+            var results = await _chat.SearchMessagesAsync(chatId, query);
+            if (ct.IsCancellationRequested) return;
+
+            SearchResults.Clear();
+            foreach (var dto in results)
+                SearchResults.Add(ToItem(dto));
+        }
+        catch
+        {
+            // Transient connection hiccup - leave whatever results were already shown.
+        }
+        finally
+        {
+            if (!ct.IsCancellationRequested) IsSearchRunning = false;
+        }
+    }
+
+    // Closes search and, if the message is already among the currently-loaded messages, scrolls
+    // to it (handled by the page's code-behind, which owns the CollectionView reference). Older
+    // messages that haven't been paged in yet just don't scroll - there's no "load history around
+    // this id" API, only "load older from the top" (see LoadMoreHistoryCommand).
+    private async Task JumpToSearchResultAsync(ChatMessageItem? item)
+    {
+        if (item is null || SelectedChat is null) return;
+
+        IsSearching = false;
+        SearchQuery = null;
+        SearchResults.Clear();
+
+        var target = FindMessage(SelectedChat.Id, item.Id);
+        if (target is null)
+        {
+            await Ui.DisplayAlert("Message not loaded", "This message is older than what's currently loaded. Use \"Load earlier messages\" first.", "OK");
+            return;
+        }
+
+        WeakReferenceMessenger.Default.Send(new ScrollToMessageMessage(target));
     }
 
     // Re-resolves one person's avatar URL after an AvatarChanged notification, appending

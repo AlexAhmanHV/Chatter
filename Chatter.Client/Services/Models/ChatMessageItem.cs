@@ -32,6 +32,7 @@ public partial class ChatMessageItem : ObservableObject
         IsSystem = isSystem;
         Attachment = attachment;
         IsForwarded = isForwarded;
+        PlaybackDurationSeconds = attachment?.DurationSeconds ?? 0;
     }
 
     public long Id { get; }
@@ -71,6 +72,36 @@ public partial class ChatMessageItem : ObservableObject
     [ObservableProperty] public partial bool IsAttachmentLoading { get; set; }
     [ObservableProperty] public partial byte[]? VoiceMessageData { get; set; }
     [ObservableProperty] public partial bool IsPlayingVoiceMessage { get; set; }
+
+    // Playback progress for a voice message, updated on a short timer while playing (see
+    // ChatViewModel.PlayVoiceMessageAsync) - PlaybackDurationSeconds defaults to the duration the
+    // sender reported, but is corrected once the player itself knows the real one.
+    [ObservableProperty] public partial double PlaybackPositionSeconds { get; set; }
+    [ObservableProperty] public partial double PlaybackDurationSeconds { get; set; }
+
+    public double PlaybackProgress => PlaybackDurationSeconds > 0
+        ? Math.Clamp(PlaybackPositionSeconds / PlaybackDurationSeconds, 0, 1)
+        : 0;
+
+    public string PlaybackPositionText => FormatSeconds(PlaybackPositionSeconds) + " / " + FormatSeconds(PlaybackDurationSeconds);
+
+    private static string FormatSeconds(double seconds)
+    {
+        var span = TimeSpan.FromSeconds(Math.Max(0, seconds));
+        return span.ToString(span.TotalHours >= 1 ? @"h\:mm\:ss" : @"m\:ss");
+    }
+
+    partial void OnPlaybackPositionSecondsChanged(double value)
+    {
+        OnPropertyChanged(nameof(PlaybackProgress));
+        OnPropertyChanged(nameof(PlaybackPositionText));
+    }
+
+    partial void OnPlaybackDurationSecondsChanged(double value)
+    {
+        OnPropertyChanged(nameof(PlaybackProgress));
+        OnPropertyChanged(nameof(PlaybackPositionText));
+    }
 
     // Drives which of the two image-attachment visuals (tap-to-view placeholder vs. loaded
     // image) is shown; re-evaluated whenever AttachmentImage changes (see the generated partial

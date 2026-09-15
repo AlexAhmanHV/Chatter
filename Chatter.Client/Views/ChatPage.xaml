@@ -278,34 +278,73 @@ What this does:
       </Grid.RowDefinitions>
 
       <Border Grid.Row="0" Style="{StaticResource Card}" Padding="20,16" Margin="0,0,12,12">
-        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
-          <Border Grid.Column="0" WidthRequest="40" HeightRequest="40" StrokeThickness="0" Background="{StaticResource HeaderBrush}">
-            <Border.StrokeShape>
-              <RoundRectangle CornerRadius="20" />
-            </Border.StrokeShape>
-            <Label Text="💬" FontSize="18" HorizontalOptions="Center" VerticalOptions="Center"
-                   HorizontalTextAlignment="Center" VerticalTextAlignment="Center" />
-          </Border>
-          <VerticalStackLayout Grid.Column="1" Spacing="2" VerticalOptions="Center">
-            <HorizontalStackLayout Spacing="6">
-              <Label Text="{Binding SelectedChat.Label, FallbackValue='Select a chat'}"
-                     FontSize="16" FontAttributes="Bold" TextColor="{StaticResource TextPrimary}" />
-              <Label Text="🔇" FontSize="13" IsVisible="{Binding SelectedChat.IsMuted, FallbackValue=False}" VerticalOptions="Center" />
-            </HorizontalStackLayout>
-            <HorizontalStackLayout Spacing="8">
-              <Label Text="Messages" FontSize="12" TextColor="{StaticResource TextSecondary}" />
-              <Border Style="{StaticResource Pill}" Padding="8,2" VerticalOptions="Center">
-                <Label Text="{Binding CurrentChatMessages.Count, StringFormat='{0}'}"
-                       FontSize="11" FontAttributes="Bold" TextColor="White" />
-              </Border>
-            </HorizontalStackLayout>
-          </VerticalStackLayout>
-          <!-- ManageChatCommand no-ops for Lobby/drafts/no selection, so this can always be visible. -->
-          <Button Grid.Column="2" Text="⋮"
-                  Command="{Binding ManageChatCommand}"
-                  WidthRequest="40" HeightRequest="40" FontSize="18" Padding="0"
-                  BackgroundColor="#1F2937" TextColor="{StaticResource TextPrimary}" CornerRadius="20" />
-        </Grid>
+        <VerticalStackLayout Spacing="10">
+          <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="12">
+            <Border Grid.Column="0" WidthRequest="40" HeightRequest="40" StrokeThickness="0" Background="{StaticResource HeaderBrush}">
+              <Border.StrokeShape>
+                <RoundRectangle CornerRadius="20" />
+              </Border.StrokeShape>
+              <Label Text="💬" FontSize="18" HorizontalOptions="Center" VerticalOptions="Center"
+                     HorizontalTextAlignment="Center" VerticalTextAlignment="Center" />
+            </Border>
+            <VerticalStackLayout Grid.Column="1" Spacing="2" VerticalOptions="Center">
+              <HorizontalStackLayout Spacing="6">
+                <Label Text="{Binding SelectedChat.Label, FallbackValue='Select a chat'}"
+                       FontSize="16" FontAttributes="Bold" TextColor="{StaticResource TextPrimary}" />
+                <Label Text="🔇" FontSize="13" IsVisible="{Binding SelectedChat.IsMuted, FallbackValue=False}" VerticalOptions="Center" />
+              </HorizontalStackLayout>
+              <HorizontalStackLayout Spacing="8">
+                <Label Text="Messages" FontSize="12" TextColor="{StaticResource TextSecondary}" />
+                <Border Style="{StaticResource Pill}" Padding="8,2" VerticalOptions="Center">
+                  <Label Text="{Binding CurrentChatMessages.Count, StringFormat='{0}'}"
+                         FontSize="11" FontAttributes="Bold" TextColor="White" />
+                </Border>
+              </HorizontalStackLayout>
+            </VerticalStackLayout>
+            <Button Grid.Column="2" Text="🔍"
+                    Command="{Binding ToggleSearchCommand}"
+                    WidthRequest="40" HeightRequest="40" FontSize="16" Padding="0"
+                    BackgroundColor="#1F2937" TextColor="{StaticResource TextPrimary}" CornerRadius="20" />
+            <!-- ManageChatCommand no-ops for Lobby/drafts/no selection, so this can always be visible. -->
+            <Button Grid.Column="3" Text="⋮"
+                    Command="{Binding ManageChatCommand}"
+                    WidthRequest="40" HeightRequest="40" FontSize="18" Padding="0"
+                    BackgroundColor="#1F2937" TextColor="{StaticResource TextPrimary}" CornerRadius="20" />
+          </Grid>
+
+          <Grid IsVisible="{Binding IsSearching}" ColumnDefinitions="*,Auto" ColumnSpacing="8">
+            <Border Grid.Column="0" Style="{StaticResource FieldBorder}">
+              <Entry Placeholder="Search this chat…"
+                     Text="{Binding SearchQuery}"
+                     TextColor="{StaticResource TextPrimary}"
+                     PlaceholderColor="{StaticResource TextSecondary}"
+                     BackgroundColor="Transparent" />
+            </Border>
+            <Label Grid.Column="1" Text="…" FontSize="20" VerticalOptions="Center"
+                   TextColor="{StaticResource TextSecondary}" IsVisible="{Binding IsSearchRunning}" />
+          </Grid>
+
+          <CollectionView IsVisible="{Binding IsSearching}" ItemsSource="{Binding SearchResults}" MaximumHeightRequest="260">
+            <CollectionView.ItemTemplate>
+              <DataTemplate x:DataType="models:ChatMessageItem">
+                <Border Padding="10,8" Margin="0,0,0,6" StrokeThickness="1"
+                        Stroke="{StaticResource StrokeIdle}" BackgroundColor="{StaticResource PanelBg}">
+                  <Border.StrokeShape><RoundRectangle CornerRadius="10" /></Border.StrokeShape>
+                  <Border.GestureRecognizers>
+                    <TapGestureRecognizer Tapped="OnSearchResultTapped" />
+                  </Border.GestureRecognizers>
+                  <VerticalStackLayout Spacing="2">
+                    <HorizontalStackLayout Spacing="6">
+                      <Label Text="{Binding Sender}" FontSize="12" FontAttributes="Bold" TextColor="{StaticResource PrimaryStart}" />
+                      <Label Text="{Binding SentAtUtc, StringFormat='{0:g}'}" FontSize="11" TextColor="{StaticResource TextSecondary}" />
+                    </HorizontalStackLayout>
+                    <Label Text="{Binding Body}" FontSize="13" LineBreakMode="TailTruncation" MaxLines="2" TextColor="{StaticResource TextPrimary}" />
+                  </VerticalStackLayout>
+                </Border>
+              </DataTemplate>
+            </CollectionView.ItemTemplate>
+          </CollectionView>
+        </VerticalStackLayout>
       </Border>
 
       <Border Grid.Row="1" Style="{StaticResource Card}" Padding="16,12" Margin="0,0,12,12">
@@ -321,7 +360,7 @@ What this does:
                     CornerRadius="10"
                     HorizontalOptions="Center" />
 
-            <CollectionView ItemsSource="{Binding CurrentChatMessages}">
+            <CollectionView x:Name="MessagesList" ItemsSource="{Binding CurrentChatMessages}">
               <CollectionView.ItemsLayout>
                 <LinearItemsLayout Orientation="Vertical" ItemSpacing="10" />
               </CollectionView.ItemsLayout>
@@ -423,24 +462,31 @@ What this does:
                           <Border.GestureRecognizers>
                             <TapGestureRecognizer Tapped="OnPlayVoiceMessageTapped" />
                           </Border.GestureRecognizers>
-                          <HorizontalStackLayout Spacing="8">
-                            <Label FontSize="16" VerticalOptions="Center">
-                              <Label.Triggers>
-                                <DataTrigger TargetType="Label" Binding="{Binding IsPlayingVoiceMessage}" Value="True">
-                                  <Setter Property="Text" Value="⏸" />
-                                </DataTrigger>
-                                <DataTrigger TargetType="Label" Binding="{Binding IsPlayingVoiceMessage}" Value="False">
-                                  <Setter Property="Text" Value="▶" />
-                                </DataTrigger>
-                              </Label.Triggers>
-                            </Label>
-                            <Label Text="Voice message" FontSize="12" TextColor="{StaticResource TextPrimary}" VerticalOptions="Center" />
-                            <Label Text="{Binding VoiceMessageDurationText}" FontSize="11"
-                                   TextColor="{StaticResource TextSecondary}" VerticalOptions="Center" />
-                            <Label Text="{Binding IsAttachmentLoading, Converter={StaticResource AttachmentStatusText}}"
-                                   FontSize="11" TextColor="{StaticResource TextSecondary}"
-                                   IsVisible="{Binding IsAttachmentLoading}" VerticalOptions="Center" />
-                          </HorizontalStackLayout>
+                          <VerticalStackLayout Spacing="4" MinimumWidthRequest="170">
+                            <HorizontalStackLayout Spacing="8">
+                              <Label FontSize="16" VerticalOptions="Center">
+                                <Label.Triggers>
+                                  <DataTrigger TargetType="Label" Binding="{Binding IsPlayingVoiceMessage}" Value="True">
+                                    <Setter Property="Text" Value="⏸" />
+                                  </DataTrigger>
+                                  <DataTrigger TargetType="Label" Binding="{Binding IsPlayingVoiceMessage}" Value="False">
+                                    <Setter Property="Text" Value="▶" />
+                                  </DataTrigger>
+                                </Label.Triggers>
+                              </Label>
+                              <Label Text="Voice message" FontSize="12" TextColor="{StaticResource TextPrimary}" VerticalOptions="Center" />
+                              <Label Text="{Binding VoiceMessageDurationText}" FontSize="11"
+                                     TextColor="{StaticResource TextSecondary}" VerticalOptions="Center"
+                                     IsVisible="{Binding IsPlayingVoiceMessage, Converter={StaticResource InvertBool}}" />
+                              <Label Text="{Binding IsAttachmentLoading, Converter={StaticResource AttachmentStatusText}}"
+                                     FontSize="11" TextColor="{StaticResource TextSecondary}"
+                                     IsVisible="{Binding IsAttachmentLoading}" VerticalOptions="Center" />
+                            </HorizontalStackLayout>
+                            <VerticalStackLayout Spacing="2" IsVisible="{Binding IsPlayingVoiceMessage}">
+                              <ProgressBar Progress="{Binding PlaybackProgress}" ProgressColor="{StaticResource PrimaryStart}" />
+                              <Label Text="{Binding PlaybackPositionText}" FontSize="10" TextColor="{StaticResource TextSecondary}" />
+                            </VerticalStackLayout>
+                          </VerticalStackLayout>
                         </Border>
 
                         <HorizontalStackLayout Spacing="8">
@@ -561,6 +607,14 @@ What this does:
           <Label Grid.Row="1" Grid.ColumnSpan="5"
                  Text="{Binding TypingUser, StringFormat='{0} is typing…'}"
                  IsVisible="{Binding IsPeerTyping}"
+                 FontAttributes="Italic"
+                 FontSize="12"
+                 TextColor="{StaticResource TextSecondary}"
+                 Margin="6,6,0,0" />
+
+          <Label Grid.Row="1" Grid.ColumnSpan="5"
+                 Text="{Binding RecordingUser, StringFormat='🎤 {0} is recording a voice message…'}"
+                 IsVisible="{Binding IsPeerRecordingVoiceMessage}"
                  FontAttributes="Italic"
                  FontSize="12"
                  TextColor="{StaticResource TextSecondary}"

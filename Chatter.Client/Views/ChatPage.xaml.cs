@@ -11,9 +11,11 @@ What this does:
 
 using System;
 using System.Linq;
+using CommunityToolkit.Mvvm.Messaging;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Maui.Controls;
 using Chatter.Client.Helpers;
+using Chatter.Client.Messages;
 using Chatter.Client.Models;
 using Chatter.Client.ViewModels;
 
@@ -46,6 +48,9 @@ public partial class ChatPage : ContentPage
 
         if (SettingsItem is not null)
             SettingsItem.Clicked += OnSettingsClicked;
+
+        WeakReferenceMessenger.Default.Register<ScrollToMessageMessage>(this, (_, msg) =>
+            MessagesList?.ScrollTo(msg.Value, position: ScrollToPosition.Center, animate: true));
     }
 
     private void OnDeleteChatTapped(object? sender, EventArgs e)
@@ -108,6 +113,13 @@ public partial class ChatPage : ContentPage
         if (BindingContext is not ChatViewModel vm) return;
         if (sender is Element { BindingContext: ChatMessageItem item })
             vm.ForwardMessageCommand.Execute(item);
+    }
+
+    private void OnSearchResultTapped(object? sender, EventArgs e)
+    {
+        if (BindingContext is not ChatViewModel vm) return;
+        if (sender is Element { BindingContext: ChatMessageItem item })
+            vm.JumpToSearchResultCommand.Execute(item);
     }
 
 
