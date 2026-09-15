@@ -1,0 +1,82 @@
+name: Release Windows build
+
+# Publishes a self-contained (no .NET install needed on the target machine), unpackaged Windows
+# build of Chatter.Client and attaches it as a zip to a GitHub Release - so a non-developer can
+# download, unzip, and run Chatter.Client.exe instead of installing the .NET SDK/MAUI workloads
+# and building from source (see README's "Getting started" for that path).
+#
+# Triggers on pushing a version tag (e.g. `git tag v1.0.0 && git push origin v1.0.0`), or manually
+# via the Actions tab (workflow_dispatch) for a test build without cutting a real release.
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version label for this build (used as the release tag/name)"
+        required: true
+        default: "v0.0.0-manual"
+
+permissions:
+  contents: write # needed to create/update the GitHub Release and upload its asset
+
+jobs:
+  build-windows-exe:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "9.0.x"
+
+      - name: Install MAUI Windows workload
+        run: dotnet workload install maui-windows
+
+      - name: Determine version
+        id: version
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "value=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          fi
+
+      # No explicit -r/RuntimeIdentifier here: MAUI's Windows TFM already resolves its own
+      # (win10-x64) internally, and passing one on the command line instead conflicts with the
+      # other projects in the solution graph. -p:SelfContained=true is what actually determines
+      # whether the .NET runtime is bundled - verified locally: framework-dependent published
+      # output has no hostfxr/coreclr and needs the .NET Desktop Runtime installed; this does not.
+      - name: Publish self-contained Windows build
+        run: >
+          dotnet publish Chatter.Client/Chatter.Client.csproj
+          -f net9.0-windows10.0.19041.0
+          -c Release
+          -p:SelfContained=true
+          -o publish/win-x64
+
+      - name: Zip the build
+        shell: bash
+        run: |
+          version="${{ steps.version.outputs.value }}"
+          cd publish/win-x64
+          7z a -tzip "../../Chatter-Windows-${version}.zip" . > /dev/null
+
+      - name: Create or update the GitHub Release with the zip attached
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          version="${{ steps.version.outputs.value }}"
+          asset="Chatter-Windows-${version}.zip"
+          notes="Self-contained Windows build - no .NET install needed. Unzip and run Chatter.Client.exe.
+
+          Unsigned build: Windows SmartScreen may warn \"Windows protected your PC\" on first run - click \"More info\" then \"Run anyway\".
+
+          Before first use, point the app at your server: on the login screen, tap \"Server address\" and enter your server's address (see the project README for how to run the server)."
+
+          gh release create "$version" "$asset" --title "$version" --notes "$notes" \
+            || gh release upload "$version" "$asset" --clobber

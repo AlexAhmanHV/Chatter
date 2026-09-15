@@ -351,6 +351,16 @@ docker run -p 8080:8080 -v chatter-data:/app/data chatter-server
 
 ### Run the client (MAUI)
 
+**Windows: pre-built download, no SDK needed** — [GitHub Releases](../../releases) has a
+self-contained `.exe` build published by `.github/workflows/release-windows.yml` (triggered on
+a version tag, or manually via the Actions tab). Unzip and run `Chatter.Client.exe` - it's
+unsigned, so Windows SmartScreen will warn once ("Windows protected your PC" → "More info" →
+"Run anyway"). On first launch, tap "Server address" on the login screen and point it at your
+server (see [Configure](#configure) to run one).
+
+Everything below is for building from source instead (any other platform, or if you want to
+change the code):
+
 MAUI projects are multi‑targeted; prefer `-t:Run -f <TFM>`.
 
 From the `Chatter.Client` directory:
