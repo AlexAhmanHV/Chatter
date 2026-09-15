@@ -14,7 +14,7 @@
 1. Download the latest Windows build from **[Releases](../../releases/latest)** - grab the `Chatter-Windows-*.zip` file under "Assets".
 2. Unzip it anywhere and run `Chatter.Client.exe`. It's self-contained - no .NET install needed.
 3. Windows SmartScreen will likely warn "Windows protected your PC" the first time, since this build isn't code-signed - click **More info** → **Run anyway**.
-4. On the login screen, tap **Server address** and enter the address of a running Chatter server (e.g. `http://192.168.1.42:5291`) - either your own ([Configure](#configure) + [Run the backend](#run-the-backend-aspnet-core) below) or one someone else is already hosting for you.
+4. On the login screen, tap **Server address** and enter the address of a running Chatter server (e.g. `http://192.168.1.42:5291`) - either your own ([Configure](#configure) + [Run the backend](#run-the-backend-aspnet-core) below, optionally [exposed to the internet](#expose-your-server-to-the-internet-optional) via a tunnel) or one someone else is already hosting for you.
 5. Register an account and start chatting.
 
 This covers the Windows client only. The server, and every other platform (Android/iOS/macOS), still need to be built from source - see [Getting started](#getting-started) below.
@@ -35,6 +35,7 @@ This covers the Windows client only. The server, and every other platform (Andro
   * [Clone](#clone)
   * [Configure](#configure)
   * [Run the backend (ASP.NET Core)](#run-the-backend-aspnet-core)
+  * [Expose your server to the internet (optional)](#expose-your-server-to-the-internet-optional)
   * [Run the client (MAUI)](#run-the-client-maui)
   * [Build & run cheat‑sheet](#build--run-cheat-sheet)
 * [Troubleshooting](#troubleshooting)
@@ -361,6 +362,41 @@ Building the image directly, without Compose:
 docker build -f Chatter.Server/Dockerfile -t chatter-server .
 docker run -p 8080:8080 -v chatter-data:/app/data chatter-server
 ```
+
+### Expose your server to the internet (optional)
+
+Running the server as above only makes it reachable on your local network - someone on different
+WiFi/mobile data can't reach `192.168.x.x`. Getting a real public address normally means
+forwarding a port on your router (works, but opens your home network up) or renting a server
+somewhere. For just playing around with friends, a **tunnel** is the easiest middle ground: it
+gives you a temporary public HTTPS URL that forwards straight to your local server, with nothing
+to configure on your router.
+
+**Cloudflare Tunnel (recommended - no account needed for a quick one-off tunnel):**
+
+1. Install `cloudflared`: [download](https://github.com/cloudflare/cloudflared/releases), or on
+   Windows: `winget install --id Cloudflare.cloudflared`.
+2. With the server already running locally, in a separate terminal:
+   ```bash
+   cloudflared tunnel --url http://localhost:5291
+   ```
+3. It prints a public URL like `https://random-words-here.trycloudflare.com`. Give that to
+   whoever wants to connect - they enter it (with `https://`) in the app's "Server address"
+   field instead of a LAN IP.
+
+That URL is temporary: it changes every time you restart the tunnel, and stops working the
+moment the `cloudflared` process exits - fine for a session with friends, not a permanent
+address. For something longer-lived, either set up a named Cloudflare Tunnel (needs a free
+Cloudflare account and a domain) or deploy the server somewhere with a stable address.
+
+**ngrok** is a common alternative (`ngrok http 5291`) with the same idea, but it requires a free
+account and an authtoken even for its most basic tunnel, where Cloudflare's quick tunnel needs
+neither.
+
+One thing to keep in mind: exposing the server publicly, even temporarily, means *anyone* with
+the URL can register an account and use it - there's no invite system or access list (see
+[Known simplifications](#known-simplifications)). Fine for a casual session with people you
+trust with the link; don't post the URL somewhere public.
 
 ### Run the client (MAUI)
 
