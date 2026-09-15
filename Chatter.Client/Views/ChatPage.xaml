@@ -381,6 +381,10 @@ What this does:
                                    BackgroundColor="#2563EB"
                                    IsVisible="{Binding CanForward}"
                                    Invoked="OnForwardMessageInvoked" />
+                        <SwipeItem Text="Reply"
+                                   BackgroundColor="#059669"
+                                   IsVisible="{Binding CanReply}"
+                                   Invoked="OnReplyToMessageInvoked" />
                       </SwipeItems>
                     </SwipeView.RightItems>
 
@@ -414,6 +418,33 @@ What this does:
                                  TextColor="{StaticResource TextSecondary}" IsVisible="{Binding IsEdited}"
                                  VerticalOptions="Center" />
                         </HorizontalStackLayout>
+
+                        <Border IsVisible="{Binding HasReplyPreview}"
+                                Padding="8,6" StrokeThickness="0" BackgroundColor="{StaticResource PanelBg}">
+                          <Border.StrokeShape>
+                            <RoundRectangle CornerRadius="6" />
+                          </Border.StrokeShape>
+                          <Border.GestureRecognizers>
+                            <TapGestureRecognizer Tapped="OnReplyPreviewTapped" />
+                          </Border.GestureRecognizers>
+                          <VerticalStackLayout Spacing="1">
+                            <Label Text="{Binding ReplyTo.Sender}" FontSize="11" FontAttributes="Bold"
+                                   TextColor="{StaticResource PrimaryStart}" />
+                            <Label FontSize="12" LineBreakMode="TailTruncation" MaxLines="1">
+                              <Label.Triggers>
+                                <DataTrigger TargetType="Label" Binding="{Binding ReplyTo.IsDeleted}" Value="True">
+                                  <Setter Property="Text" Value="Original message deleted" />
+                                  <Setter Property="FontAttributes" Value="Italic" />
+                                  <Setter Property="TextColor" Value="{StaticResource TextSecondary}" />
+                                </DataTrigger>
+                                <DataTrigger TargetType="Label" Binding="{Binding ReplyTo.IsDeleted}" Value="False">
+                                  <Setter Property="Text" Value="{Binding ReplyTo.Snippet}" />
+                                  <Setter Property="TextColor" Value="{StaticResource TextPrimary}" />
+                                </DataTrigger>
+                              </Label.Triggers>
+                            </Label>
+                          </VerticalStackLayout>
+                        </Border>
 
                         <Label Text="{Binding Body, Converter={StaticResource EmojiDisplay}}"
                                IsVisible="{Binding IsDeleted, Converter={StaticResource InvertBool}}"
@@ -524,6 +555,12 @@ What this does:
                                FontSize="10"
                                TextColor="{StaticResource TextSecondary}"
                                HorizontalOptions="End" />
+
+                        <Label Text="{Binding GroupSeenText}"
+                               IsVisible="{Binding ShowGroupSeenIndicator}"
+                               FontSize="10"
+                               TextColor="{StaticResource TextSecondary}"
+                               HorizontalOptions="End" />
                       </VerticalStackLayout>
                     </Border>
                   </SwipeView>
@@ -539,6 +576,7 @@ What this does:
           <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
           </Grid.RowDefinitions>
           <Grid.ColumnDefinitions>
             <ColumnDefinition Width="*" />
@@ -548,7 +586,25 @@ What this does:
             <ColumnDefinition Width="Auto" />
           </Grid.ColumnDefinitions>
 
-          <Border Grid.Row="0" Grid.Column="0" Style="{StaticResource FieldBorder}">
+          <Border Grid.Row="0" Grid.ColumnSpan="5" IsVisible="{Binding IsReplying}"
+                  Padding="10,6" StrokeThickness="0" BackgroundColor="{StaticResource PanelBg}">
+            <Border.StrokeShape>
+              <RoundRectangle CornerRadius="8" />
+            </Border.StrokeShape>
+            <Grid ColumnDefinitions="*,Auto">
+              <VerticalStackLayout Grid.Column="0" Spacing="1">
+                <Label Text="{Binding PendingReply.Sender, StringFormat='Replying to {0}'}" FontSize="11"
+                       FontAttributes="Bold" TextColor="{StaticResource PrimaryStart}" />
+                <Label Text="{Binding PendingReply.Body}" FontSize="12" LineBreakMode="TailTruncation" MaxLines="1"
+                       TextColor="{StaticResource TextSecondary}" />
+              </VerticalStackLayout>
+              <Button Grid.Column="1" Text="✕" Command="{Binding CancelReplyCommand}"
+                      WidthRequest="28" HeightRequest="28" Padding="0" FontSize="12"
+                      BackgroundColor="Transparent" TextColor="{StaticResource TextSecondary}" />
+            </Grid>
+          </Border>
+
+          <Border Grid.Row="1" Grid.Column="0" Style="{StaticResource FieldBorder}">
             <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8" VerticalOptions="Center">
               <Label Grid.Column="0" Text="✍️" VerticalOptions="Center" />
               <Entry Grid.Column="1"
@@ -562,7 +618,7 @@ What this does:
             </Grid>
           </Border>
 
-          <Button Grid.Row="0" Grid.Column="1"
+          <Button Grid.Row="1" Grid.Column="1"
                   Text="📎"
                   Command="{Binding PickAndSendAttachmentCommand}"
                   WidthRequest="44"
@@ -571,7 +627,7 @@ What this does:
                   TextColor="#E5E7EB"
                   CornerRadius="12" />
 
-          <Button Grid.Row="0" Grid.Column="2"
+          <Button Grid.Row="1" Grid.Column="2"
                   Text="{Binding IsRecordingVoiceMessage, Converter={StaticResource RecordButtonText}}"
                   Command="{Binding RecordVoiceMessageCommand}"
                   WidthRequest="44"
@@ -580,7 +636,7 @@ What this does:
                   TextColor="#E5E7EB"
                   CornerRadius="12" />
 
-          <Button Grid.Row="0" Grid.Column="3"
+          <Button Grid.Row="1" Grid.Column="3"
                   Text="😊"
                   Command="{Binding ShowEmojiPickerCommand}"
                   WidthRequest="44"
@@ -589,14 +645,14 @@ What this does:
                   TextColor="#E5E7EB"
                   CornerRadius="12" />
 
-          <Button Grid.Row="0" Grid.Column="4"
+          <Button Grid.Row="1" Grid.Column="4"
                   Text="Send"
                   Command="{Binding SendCommand}"
                   IsEnabled="{Binding CanSend}"
                   Style="{StaticResource PrimaryBtn}"
                   WidthRequest="110" />
 
-          <Label Grid.Row="1" Grid.ColumnSpan="5"
+          <Label Grid.Row="2" Grid.ColumnSpan="5"
                   Text="{Binding CharacterCounterText}"
                   HorizontalOptions="End"
                   FontSize="12"
@@ -604,7 +660,7 @@ What this does:
                   FontAttributes="Italic"
                   TextColor="{DynamicResource TextSecondary}" />
 
-          <Label Grid.Row="1" Grid.ColumnSpan="5"
+          <Label Grid.Row="2" Grid.ColumnSpan="5"
                  Text="{Binding TypingUser, StringFormat='{0} is typing…'}"
                  IsVisible="{Binding IsPeerTyping}"
                  FontAttributes="Italic"
@@ -612,7 +668,7 @@ What this does:
                  TextColor="{StaticResource TextSecondary}"
                  Margin="6,6,0,0" />
 
-          <Label Grid.Row="1" Grid.ColumnSpan="5"
+          <Label Grid.Row="2" Grid.ColumnSpan="5"
                  Text="{Binding RecordingUser, StringFormat='🎤 {0} is recording a voice message…'}"
                  IsVisible="{Binding IsPeerRecordingVoiceMessage}"
                  FontAttributes="Italic"

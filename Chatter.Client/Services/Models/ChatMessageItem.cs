@@ -22,7 +22,7 @@ namespace Chatter.Client.Models;
 public partial class ChatMessageItem : ObservableObject
 {
     public ChatMessageItem(long id, string sender, string body, DateTime sentAtUtc, bool isMine, bool isSystem,
-        AttachmentMetaDto? attachment = null, bool isForwarded = false)
+        AttachmentMetaDto? attachment = null, bool isForwarded = false, ReplyPreviewDto? replyTo = null)
     {
         Id = id;
         Sender = sender;
@@ -32,6 +32,7 @@ public partial class ChatMessageItem : ObservableObject
         IsSystem = isSystem;
         Attachment = attachment;
         IsForwarded = isForwarded;
+        ReplyTo = replyTo;
         PlaybackDurationSeconds = attachment?.DurationSeconds ?? 0;
     }
 
@@ -42,18 +43,40 @@ public partial class ChatMessageItem : ObservableObject
     public bool IsSystem { get; }
     public bool IsForwarded { get; }
 
+    // Resolved fresh by the server on every fetch/broadcast (see ReplyPreviewDto) - null for a
+    // message that isn't a reply.
+    public ReplyPreviewDto? ReplyTo { get; }
+    public bool HasReplyPreview => ReplyTo is not null;
+
     // Editable/deletable only make sense for the caller's own, real (non-synthetic) messages -
     // the server re-checks ownership independently, this just drives what the UI offers.
     public bool CanModify => IsMine && Id > 0 && !IsSystem;
 
-    // Forwarding (and viewing an attachment) both need a real persisted message id to reference
-    // server-side - never a synthetic system line.
+    // Forwarding, replying, and viewing an attachment all need a real persisted message id to
+    // reference server-side - never a synthetic system line.
     public bool CanForward => Id > 0 && !IsSystem;
+    public bool CanReply => Id > 0 && !IsSystem;
 
     [ObservableProperty] public partial string Body { get; set; } = string.Empty;
     [ObservableProperty] public partial DateTime? EditedAtUtc { get; set; }
     [ObservableProperty] public partial bool IsDeleted { get; set; }
+
+    // DM-only "Seen" marker - exactly one other person, so a plain bool is enough there.
     [ObservableProperty] public partial bool SeenByOther { get; set; }
+
+    // Group-only equivalent - a group has more than one other member, so "seen" is a count
+    // instead of a bool (see ChatViewModel.RecomputeGroupSeenCounts). Null until computed.
+    [ObservableProperty] public partial int? SeenCount { get; set; }
+    [ObservableProperty] public partial int? SeenTotal { get; set; }
+    public bool ShowGroupSeenIndicator => SeenTotal is > 0;
+    public string GroupSeenText => $"Seen by {SeenCount}/{SeenTotal}";
+
+    partial void OnSeenCountChanged(int? value) => OnPropertyChanged(nameof(GroupSeenText));
+    partial void OnSeenTotalChanged(int? value)
+    {
+        OnPropertyChanged(nameof(ShowGroupSeenIndicator));
+        OnPropertyChanged(nameof(GroupSeenText));
+    }
 
     public bool IsEdited => EditedAtUtc.HasValue;
 

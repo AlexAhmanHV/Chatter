@@ -115,6 +115,20 @@ public partial class ChatPage : ContentPage
             vm.ForwardMessageCommand.Execute(item);
     }
 
+    private void OnReplyToMessageInvoked(object? sender, EventArgs e)
+    {
+        if (BindingContext is not ChatViewModel vm) return;
+        if (sender is Element { BindingContext: ChatMessageItem item })
+            vm.ReplyToMessageCommand.Execute(item);
+    }
+
+    private void OnReplyPreviewTapped(object? sender, EventArgs e)
+    {
+        if (BindingContext is not ChatViewModel vm) return;
+        if (sender is Element { BindingContext: ChatMessageItem item })
+            vm.JumpToRepliedMessageCommand.Execute(item);
+    }
+
     private void OnSearchResultTapped(object? sender, EventArgs e)
     {
         if (BindingContext is not ChatViewModel vm) return;

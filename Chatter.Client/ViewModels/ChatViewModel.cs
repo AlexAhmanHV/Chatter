@@ -43,6 +43,12 @@ public partial class ChatViewModel : ObservableObject
     // Real messages are de-duped by id instead - see ChatMessageReceived/DmNotify below.
     private readonly Dictionary<string, string?> _lastSystemLineByChat = new(StringComparer.OrdinalIgnoreCase);
 
+    // Group-chat "seen by N/M" support: cached membership (fetched once per chat, on selection)
+    // and each member's last-read message id (bootstrapped via GetChatReadReceiptsAsync, then
+    // kept current from live ReadReceipt events - see the constructor's _chat.ReadReceipt handler).
+    private readonly Dictionary<string, List<string>> _groupMembersByChatId = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, Dictionary<string, long>> _lastReadByChatAndUser = new(StringComparer.OrdinalIgnoreCase);
+
     /* Root page helper to avoid obsolete Application.MainPage */
     private static Page? GetRootPage() => Application.Current?.Windows?.FirstOrDefault()?.Page;
 
@@ -105,7 +111,18 @@ public partial class ChatViewModel : ObservableObject
     public IAsyncRelayCommand<ChatMessageItem> PlayVoiceMessageCommand { get; }
     public IAsyncRelayCommand RecordVoiceMessageCommand { get; }
     public IAsyncRelayCommand<ChatMessageItem> ForwardMessageCommand { get; }
+    public IRelayCommand<ChatMessageItem> ReplyToMessageCommand { get; }
+    public IRelayCommand CancelReplyCommand { get; }
+    public IAsyncRelayCommand<ChatMessageItem> JumpToRepliedMessageCommand { get; }
     public IRelayCommand ToggleSearchCommand { get; }
+
+    // The message the composer will attach as a reply when the next SendCommand/attachment/voice
+    // message goes out - null means "not replying to anything". Cleared after every send attempt
+    // (successful or not) so a failed send doesn't leave a stale reply banner pointing at the
+    // wrong thing after the user's tried something else.
+    [ObservableProperty] public partial ChatMessageItem? PendingReply { get; set; }
+    public bool IsReplying => PendingReply is not null;
+    partial void OnPendingReplyChanged(ChatMessageItem? value) => OnPropertyChanged(nameof(IsReplying));
     public IAsyncRelayCommand<ChatMessageItem> JumpToSearchResultCommand { get; }
 
     /* In-chat message search */
@@ -429,7 +446,7 @@ public partial class ChatViewModel : ObservableObject
                 _ = _chat.JoinChatAsync(chatId);
             });
 
-        _chat.DmNotify += (chatId, messageId, fromUser, msg, sentAtUtc, attachment, isForwarded) =>
+        _chat.DmNotify += (chatId, messageId, fromUser, msg, sentAtUtc, attachment, isForwarded, replyTo) =>
             MainThread.BeginInvokeOnMainThread(() =>
             {
                 _knownUsers.Add(Canon(fromUser));
@@ -441,7 +458,7 @@ public partial class ChatViewModel : ObservableObject
                 if (messageId > 0 && list.Any(x => x.Id == messageId)) return;
 
                 var msgItem = new ChatMessageItem(messageId, fromUser, msg, sentAtUtc, isMine: false, isSystem: false,
-                    attachment, isForwarded);
+                    attachment, isForwarded, replyTo);
                 list.Add(msgItem);
 
                 bool isViewingThis = IsActive && SelectedChat?.Id == chatId;
@@ -456,7 +473,7 @@ public partial class ChatViewModel : ObservableObject
                 _ = _chat.JoinChatAsync(chatId);
             });
 
-        _chat.ChatMessageReceived += (chatId, messageId, u, m, sentAtUtc, attachment, isForwarded) =>
+        _chat.ChatMessageReceived += (chatId, messageId, u, m, sentAtUtc, attachment, isForwarded, replyTo) =>
             MainThread.BeginInvokeOnMainThread(() =>
             {
                 if (_hiddenChats.Remove(chatId))
@@ -481,7 +498,7 @@ public partial class ChatViewModel : ObservableObject
                 }
 
                 var item = new ChatMessageItem(messageId, u, m, sentAtUtc, isMine: Ci.Equals(u, User), isSystem: isSystem,
-                    attachment, isForwarded);
+                    attachment, isForwarded, replyTo);
                 list.Add(item);
 
                 bool isViewingThis = IsActive && SelectedChat?.Id == chatId;
@@ -543,12 +560,23 @@ public partial class ChatViewModel : ObservableObject
         _chat.ReadReceipt += (chatId, fromDisplayName, lastReadMessageId) =>
             MainThread.BeginInvokeOnMainThread(() =>
             {
+                if (!_lastReadByChatAndUser.TryGetValue(chatId, out var byUser))
+                    _lastReadByChatAndUser[chatId] = byUser = new(Ci);
+                byUser[fromDisplayName] = lastReadMessageId;
+
                 if (!_chatMessages.TryGetValue(chatId, out var list)) return;
 
-                var latestMine = list.Where(m => m.IsMine && m.Id > 0).OrderByDescending(m => m.Id).FirstOrDefault();
-                foreach (var m in list.Where(m => m.IsMine)) m.SeenByOther = false;
-                if (latestMine is not null && latestMine.Id <= lastReadMessageId)
-                    latestMine.SeenByOther = true;
+                if (chatId.StartsWith("group:", StringComparison.OrdinalIgnoreCase))
+                {
+                    RecomputeGroupSeenCounts(chatId);
+                }
+                else
+                {
+                    var latestMine = list.Where(m => m.IsMine && m.Id > 0).OrderByDescending(m => m.Id).FirstOrDefault();
+                    foreach (var m in list.Where(m => m.IsMine)) m.SeenByOther = false;
+                    if (latestMine is not null && latestMine.Id <= lastReadMessageId)
+                        latestMine.SeenByOther = true;
+                }
             });
 
         _chat.RemovedFromChat += chatId =>
@@ -626,6 +654,9 @@ public partial class ChatViewModel : ObservableObject
         PlayVoiceMessageCommand = new AsyncRelayCommand<ChatMessageItem>(PlayVoiceMessageAsync);
         RecordVoiceMessageCommand = new AsyncRelayCommand(ToggleRecordVoiceMessageAsync);
         ForwardMessageCommand = new AsyncRelayCommand<ChatMessageItem>(ForwardMessageAsync);
+        ReplyToMessageCommand = new RelayCommand<ChatMessageItem>(item => { if (item?.CanReply == true) PendingReply = item; });
+        CancelReplyCommand = new RelayCommand(() => PendingReply = null);
+        JumpToRepliedMessageCommand = new AsyncRelayCommand<ChatMessageItem>(JumpToRepliedMessageAsync);
         ToggleSearchCommand = new RelayCommand(ToggleSearch);
         JumpToSearchResultCommand = new AsyncRelayCommand<ChatMessageItem>(JumpToSearchResultAsync);
     }
@@ -718,6 +749,10 @@ public partial class ChatViewModel : ObservableObject
         }
     }
 
+    // Picks one or more images (FilePicker, not MediaPicker - MediaPicker.PickPhotoAsync only
+    // ever returns a single photo, MAUI has no multi-select variant of it) and sends each as its
+    // own attachment message, sequentially. A pending reply (see PendingReply) is attached only
+    // to the first image sent, not to every one of them.
     private async Task PickAndSendAttachmentAsync()
     {
         if (SelectedChat is null)
@@ -731,40 +766,54 @@ public partial class ChatViewModel : ObservableObject
             return;
         }
 
-        FileResult? photo;
+        IEnumerable<FileResult>? photos;
         try
         {
-            photo = await MediaPicker.Default.PickPhotoAsync();
+            photos = await FilePicker.Default.PickMultipleAsync(PickOptions.Images);
         }
         catch (Exception ex)
         {
             await Ui.DisplayAlert("Couldn't open picker", ex.Message, "OK");
             return;
         }
-        if (photo is null) return; // user cancelled
 
-        byte[] bytes;
-        try
+        var photoList = photos?.ToList() ?? new List<FileResult>();
+        if (photoList.Count == 0) return; // user cancelled
+
+        var replyToId = PendingReply?.Id;
+        PendingReply = null;
+
+        var failures = 0;
+        foreach (var photo in photoList)
         {
-            await using var stream = await photo.OpenReadAsync();
-            using var ms = new MemoryStream();
-            await stream.CopyToAsync(ms);
-            bytes = ms.ToArray();
-        }
-        catch (Exception ex)
-        {
-            await Ui.DisplayAlert("Couldn't read image", ex.Message, "OK");
-            return;
+            byte[] bytes;
+            try
+            {
+                await using var stream = await photo.OpenReadAsync();
+                using var ms = new MemoryStream();
+                await stream.CopyToAsync(ms);
+                bytes = ms.ToArray();
+            }
+            catch
+            {
+                failures++;
+                continue;
+            }
+
+            try
+            {
+                await _chat.SendAttachmentAsync(SelectedChat.Id, photo.FileName, GuessImageContentType(photo.FileName), bytes, caption: null, replyToId);
+            }
+            catch
+            {
+                failures++;
+            }
+
+            replyToId = null; // only the first image carries the reply
         }
 
-        try
-        {
-            await _chat.SendAttachmentAsync(SelectedChat.Id, photo.FileName, GuessImageContentType(photo.FileName), bytes, caption: null);
-        }
-        catch (Exception ex)
-        {
-            await Ui.DisplayAlert("Couldn't send image", ex.Message, "OK");
-        }
+        if (failures > 0)
+            await Ui.DisplayAlert("Some images didn't send", $"{failures} of {photoList.Count} image(s) couldn't be sent.", "OK");
     }
 
     private static string GuessImageContentType(string fileName) =>
@@ -863,10 +912,12 @@ public partial class ChatViewModel : ObservableObject
         if (bytes.Length == 0) return; // e.g. stopped almost immediately
 
         var duration = (int)Math.Max(1, (DateTime.UtcNow - _voiceRecordingStartedAt).TotalSeconds);
+        var replyToId = PendingReply?.Id;
+        PendingReply = null;
 
         try
         {
-            await _chat.SendVoiceMessageAsync(SelectedChat.Id, "audio/wav", bytes, duration);
+            await _chat.SendVoiceMessageAsync(SelectedChat.Id, "audio/wav", bytes, duration, replyToId);
         }
         catch (Exception ex)
         {
@@ -1068,6 +1119,23 @@ public partial class ChatViewModel : ObservableObject
         SearchResults.Clear();
 
         var target = FindMessage(SelectedChat.Id, item.Id);
+        if (target is null)
+        {
+            await Ui.DisplayAlert("Message not loaded", "This message is older than what's currently loaded. Use \"Load earlier messages\" first.", "OK");
+            return;
+        }
+
+        WeakReferenceMessenger.Default.Send(new ScrollToMessageMessage(target));
+    }
+
+    // Tapping a reply preview inside a bubble scrolls to the original message it points to - same
+    // "only works if already loaded" limitation as JumpToSearchResultAsync above, for the same
+    // reason (no "load history around this id" API).
+    private async Task JumpToRepliedMessageAsync(ChatMessageItem? item)
+    {
+        if (item?.ReplyTo is not { } replyTo || SelectedChat is null) return;
+
+        var target = FindMessage(SelectedChat.Id, replyTo.MessageId);
         if (target is null)
         {
             await Ui.DisplayAlert("Message not loaded", "This message is older than what's currently loaded. Use \"Load earlier messages\" first.", "OK");
@@ -1306,19 +1374,61 @@ public partial class ChatViewModel : ObservableObject
 
         OnPropertyChanged(nameof(CanSend));
         CanLoadMoreHistory = false;
+        PendingReply = null; // a reply to a message in the chat we're leaving wouldn't make sense here
 
         if (value is not null && !value.Id.StartsWith("draft:", StringComparison.OrdinalIgnoreCase))
         {
             _ = _chat.JoinChatAsync(value.Id);
             _ = LoadHistoryIfNeededAsync(value.Id);
+
+            if (value.Id.StartsWith("group:", StringComparison.OrdinalIgnoreCase))
+                _ = LoadGroupSeenStateAsync(value.Id);
         }
+    }
+
+    // Bootstraps membership + existing read receipts for a group chat once (on first selection),
+    // then recomputes the "seen by N/M" indicator on its latest own message, if any.
+    private async Task LoadGroupSeenStateAsync(string chatId)
+    {
+        try
+        {
+            if (!_groupMembersByChatId.ContainsKey(chatId))
+                _groupMembersByChatId[chatId] = (await _chat.GetGroupMembersAsync(chatId)).ToList();
+
+            var receipts = await _chat.GetChatReadReceiptsAsync(chatId);
+            var byUser = _lastReadByChatAndUser.TryGetValue(chatId, out var existing) ? existing : new(Ci);
+            foreach (var kv in receipts) byUser[kv.Key] = kv.Value;
+            _lastReadByChatAndUser[chatId] = byUser;
+
+            RecomputeGroupSeenCounts(chatId);
+        }
+        catch
+        {
+            // Best-effort - worst case the "seen by" indicator just doesn't show for this chat.
+        }
+    }
+
+    // Mirrors the DM "Seen" marker's single-latest-message convention, but as a count instead of
+    // a bool: only the caller's most recent real message in the chat shows "Seen by N/M".
+    private void RecomputeGroupSeenCounts(string chatId)
+    {
+        if (!_chatMessages.TryGetValue(chatId, out var list)) return;
+        var latestMine = list.Where(m => m.IsMine && m.Id > 0).OrderByDescending(m => m.Id).FirstOrDefault();
+        if (latestMine is null) return;
+
+        var members = _groupMembersByChatId.TryGetValue(chatId, out var m) ? m : new List<string>();
+        var others = members.Where(n => !Ci.Equals(n, User)).ToList();
+        var byUser = _lastReadByChatAndUser.TryGetValue(chatId, out var r) ? r : new Dictionary<string, long>(Ci);
+
+        latestMine.SeenTotal = others.Count;
+        latestMine.SeenCount = others.Count(n => byUser.TryGetValue(n, out var last) && last >= latestMine.Id);
     }
 
     private ChatMessageItem ToItem(ChatMessageDto dto)
     {
         var item = new ChatMessageItem(dto.Id, dto.Sender, dto.Body, dto.SentAtUtc,
             isMine: Ci.Equals(dto.Sender, User), isSystem: false,
-            dto.Attachment, dto.IsForwarded)
+            dto.Attachment, dto.IsForwarded, dto.ReplyTo)
         {
             EditedAtUtc = dto.EditedAtUtc,
             IsDeleted = dto.IsDeleted,
@@ -1547,7 +1657,9 @@ public partial class ChatViewModel : ObservableObject
             return;
         }
 
-        await _chat.SendToChatAsync(SelectedChat.Id, msg);
+        var replyToId = PendingReply?.Id;
+        PendingReply = null;
+        await _chat.SendToChatAsync(SelectedChat.Id, msg, replyToId);
     }
 
     /* Start DM & presence setter */

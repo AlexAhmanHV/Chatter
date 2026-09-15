@@ -41,12 +41,12 @@ public class ChatService
     public event Action<IReadOnlyList<ChatSummary>>? ChatsForMeUpdated;
     public event Action<IReadOnlyList<string>>? ChatsUpdated;
 
-    // (chatId, messageId, senderDisplayName, body, sentAtUtc, attachment, isForwarded).
+    // (chatId, messageId, senderDisplayName, body, sentAtUtc, attachment, isForwarded, replyTo).
     // messageId is 0 for synthetic lines that aren't a real persisted message (rename/system
-    // notices); attachment is null for a plain text message.
-    public event Action<string, long, string, string, DateTime, AttachmentMetaDto?, bool>? ChatMessageReceived;
+    // notices); attachment/replyTo are null for a plain, non-reply text message.
+    public event Action<string, long, string, string, DateTime, AttachmentMetaDto?, bool, ReplyPreviewDto?>? ChatMessageReceived;
     public event Action<string, string>? AddedChat;
-    public event Action<string, long, string, string, DateTime, AttachmentMetaDto?, bool>? DmNotify;
+    public event Action<string, long, string, string, DateTime, AttachmentMetaDto?, bool, ReplyPreviewDto?>? DmNotify;
 
     // Server feature: aliases + presence snapshots/deltas
     public event Action<Dictionary<string, string>>? NameAliasesReceived;
@@ -139,17 +139,17 @@ public class ChatService
         // persisted ChatMessageDto row.
         _conn.On<string, string>("DisplayNameChanged", (oldName, newName) =>
             ChatMessageReceived?.Invoke(LobbyId, 0, "system",
-                $"{oldName} changed their name to “{newName}”.", DateTime.UtcNow, null, false));
+                $"{oldName} changed their name to “{newName}”.", DateTime.UtcNow, null, false, null));
         _conn.On<string, string>("DisplayNameChanged", (oldName, newName) =>
             OtherDisplayNameChanged?.Invoke(oldName, newName));
 
         _conn.On<string>("LobbySystemMessage", text =>
-            ChatMessageReceived?.Invoke(LobbyId, 0, "system", text, DateTime.UtcNow, null, false));
+            ChatMessageReceived?.Invoke(LobbyId, 0, "system", text, DateTime.UtcNow, null, false, null));
 
         // Same idea as LobbySystemMessage, but for any chat (used for group membership
         // add/remove notices) - carries its own chatId instead of assuming Lobby.
         _conn.On<string, string>("ChatSystemMessage", (chatId, text) =>
-            ChatMessageReceived?.Invoke(chatId, 0, "system", text, DateTime.UtcNow, null, false));
+            ChatMessageReceived?.Invoke(chatId, 0, "system", text, DateTime.UtcNow, null, false, null));
 
         _conn.On<string>("RemovedFromChat", chatId => RemovedFromChat?.Invoke(chatId));
         _conn.On<string, string>("ChatRenamed", (chatId, newLabel) => ChatRenamed?.Invoke(chatId, newLabel));
@@ -163,9 +163,9 @@ public class ChatService
             ChatsUpdated?.Invoke((list ?? new()).AsReadOnly()));
 
         // ----- Handlers: Per-chat messages -----
-        _conn.On<string, long, string, string, DateTime, AttachmentMetaDto?, bool>("ReceiveChatMessage",
-            (chatId, messageId, user, msg, sentAt, attachment, isForwarded) =>
-                ChatMessageReceived?.Invoke(chatId, messageId, user, msg, sentAt, attachment, isForwarded));
+        _conn.On<string, long, string, string, DateTime, AttachmentMetaDto?, bool, ReplyPreviewDto?>("ReceiveChatMessage",
+            (chatId, messageId, user, msg, sentAt, attachment, isForwarded, replyTo) =>
+                ChatMessageReceived?.Invoke(chatId, messageId, user, msg, sentAt, attachment, isForwarded, replyTo));
 
         _conn.On<string, long, string, DateTime>("MessageEdited", (chatId, messageId, newBody, editedAt) =>
             MessageEdited?.Invoke(chatId, messageId, newBody, editedAt));
@@ -184,9 +184,9 @@ public class ChatService
         _conn.On<string, string>("AddedChat", (chatId, label) =>
             AddedChat?.Invoke(chatId, label));
 
-        _conn.On<string, long, string, string, DateTime, AttachmentMetaDto?, bool>("DmNotify",
-            (chatId, messageId, fromUser, msg, sentAt, attachment, isForwarded) =>
-                DmNotify?.Invoke(chatId, messageId, fromUser, msg, sentAt, attachment, isForwarded));
+        _conn.On<string, long, string, string, DateTime, AttachmentMetaDto?, bool, ReplyPreviewDto?>("DmNotify",
+            (chatId, messageId, fromUser, msg, sentAt, attachment, isForwarded, replyTo) =>
+                DmNotify?.Invoke(chatId, messageId, fromUser, msg, sentAt, attachment, isForwarded, replyTo));
 
         // Reconnect flow: re-assert identity and refresh all lists/snapshots
         _conn.Reconnected += async _ =>
@@ -315,6 +315,13 @@ public class ChatService
     public Task MarkReadAsync(string chatId, long lastReadMessageId) =>
         _conn?.SendAsync("MarkRead", chatId, lastReadMessageId) ?? Task.CompletedTask;
 
+    public async Task<Dictionary<string, long>> GetChatReadReceiptsAsync(string chatId)
+    {
+        if (_conn is null) return new();
+        var dict = await _conn.InvokeAsync<Dictionary<string, long>>("GetChatReadReceipts", chatId);
+        return dict ?? new();
+    }
+
     public Task SetChatMutedAsync(string chatId, bool muted) =>
         _conn?.SendAsync("SetChatMuted", chatId, muted) ?? Task.CompletedTask;
 
@@ -378,19 +385,19 @@ public class ChatService
             ? Task.FromResult<string?>(null)
             : _conn.InvokeAsync<string?>("SendDmFirst", otherDisplayName, message);
 
-    public Task SendToChatAsync(string chatId, string message) =>
-        _conn?.SendAsync("SendToChat", chatId, message) ?? Task.CompletedTask;
+    public Task SendToChatAsync(string chatId, string message, long? replyToMessageId = null) =>
+        _conn?.SendAsync("SendToChat", chatId, message, replyToMessageId) ?? Task.CompletedTask;
 
     /* Attachments (images) and voice messages */
-    public Task<long> SendAttachmentAsync(string chatId, string fileName, string contentType, byte[] data, string? caption) =>
+    public Task<long> SendAttachmentAsync(string chatId, string fileName, string contentType, byte[] data, string? caption, long? replyToMessageId = null) =>
         _conn is null
             ? Task.FromResult(0L)
-            : _conn.InvokeAsync<long>("SendAttachment", chatId, fileName, contentType, data, caption);
+            : _conn.InvokeAsync<long>("SendAttachment", chatId, fileName, contentType, data, caption, replyToMessageId);
 
-    public Task<long> SendVoiceMessageAsync(string chatId, string contentType, byte[] data, int durationSeconds) =>
+    public Task<long> SendVoiceMessageAsync(string chatId, string contentType, byte[] data, int durationSeconds, long? replyToMessageId = null) =>
         _conn is null
             ? Task.FromResult(0L)
-            : _conn.InvokeAsync<long>("SendVoiceMessage", chatId, contentType, data, durationSeconds);
+            : _conn.InvokeAsync<long>("SendVoiceMessage", chatId, contentType, data, durationSeconds, replyToMessageId);
 
     public async Task<AttachmentDataDto?> GetAttachmentDataAsync(long messageId)
     {
