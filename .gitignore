@@ -24,3 +24,5 @@ appsettings.Development.json
 # Local runtime data
 Chatter.Server/chatter.db
 Chatter.Server/chatter.db-*
+# Auto-generated when Jwt:SigningKey isn't explicitly configured - see Program.cs
+Chatter.Server/jwt-signing-key.txt

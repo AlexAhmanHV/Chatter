@@ -42,9 +42,16 @@ builder.Services.AddIdentityCore<ApplicationUser>(options =>
 
 // ----- Authentication: verify the server's own JWT (issued by Auth/JwtIssuer) on every
 // hub connection and every /auth/* call that needs one -----
+//
+// If Jwt:SigningKey isn't explicitly configured, generate one and persist it next to the SQLite
+// database (same directory, same "survives restarts" volume in the Docker case) rather than
+// failing outright - this is what makes `dotnet run`/`docker compose up` work with zero manual
+// setup for local/first-time use. Explicitly setting Jwt__SigningKey (as docker-compose.yml's
+// template still does) always wins and skips this entirely - a real deployment should keep doing
+// that rather than rely on a file quietly written to disk.
 var jwtSigningKey = builder.Configuration["Jwt:SigningKey"]
-    ?? throw new InvalidOperationException(
-        "Missing configuration value 'Jwt:SigningKey'. Set it in appsettings.json or the Jwt__SigningKey environment variable.");
+    ?? JwtSigningKeyResolver.ResolveOrGenerate(connectionString);
+builder.Configuration["Jwt:SigningKey"] = jwtSigningKey; // so JwtIssuer's injected IConfiguration sees it too
 var jwtIssuer = builder.Configuration["Jwt:Issuer"] ?? "ChatterServer";
 var jwtAudience = builder.Configuration["Jwt:Audience"] ?? "ChatterClient";
 
