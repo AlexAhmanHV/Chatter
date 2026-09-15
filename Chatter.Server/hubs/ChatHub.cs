@@ -1080,6 +1080,40 @@ public class ChatHub : Hub
         var rows = await query.OrderByDescending(m => m.Id).Take(take).ToListAsync();
         rows.Reverse();
 
+        return await ToDtosAsync(db, rows, me);
+    }
+
+    // Full-text (substring) search within one chat's history. Case-insensitive via ToLower() on
+    // both sides rather than EF.Functions.Like, so behavior is identical whether this runs
+    // against the real SQLite provider or the InMemory provider used in tests. Deleted messages
+    // are excluded - their body is already blanked out everywhere else, so they'd never usefully
+    // match anyway.
+    public async Task<List<ChatMessageDto>> SearchMessages(string chatId, string query, int take = 50)
+    {
+        var me = RequireUserId();
+        RequireMembership(chatId, me);
+        take = Math.Clamp(take, 1, 200);
+
+        query = (query ?? string.Empty).Trim();
+        if (query.Length == 0) return new List<ChatMessageDto>();
+
+        var needle = query.ToLowerInvariant();
+
+        await using var db = await _dbFactory.CreateDbContextAsync();
+        var rows = await db.Messages
+            .Where(m => m.ChatId == chatId && !m.IsDeleted && m.Body.ToLower().Contains(needle))
+            .OrderByDescending(m => m.Id)
+            .Take(take)
+            .ToListAsync();
+        rows.Reverse();
+
+        return await ToDtosAsync(db, rows, me);
+    }
+
+    // Shared by GetChatHistory/SearchMessages: attaches each row's reactions and maps to the DTO
+    // shape sent to clients.
+    private async Task<List<ChatMessageDto>> ToDtosAsync(ChatDbContext db, List<ChatMessageEntity> rows, string me)
+    {
         var ids = rows.Select(r => r.Id).ToList();
         var reactionRows = await db.Reactions.Where(r => ids.Contains(r.MessageId)).ToListAsync();
         var reactionsByMessage = reactionRows
@@ -1110,7 +1144,7 @@ public class ChatHub : Hub
     }
 
     // -------------------------------------------------------
-    // Typing indicator
+    // Typing / recording indicators
     // -------------------------------------------------------
     public async Task Typing(string channelId, bool isTyping)
     {
@@ -1121,6 +1155,18 @@ public class ChatHub : Hub
             return;
 
         await Clients.OthersInGroup(channelId).SendAsync("Typing", channelId, DisplayNameOf(me), isTyping);
+    }
+
+    // Same idea as Typing, but for "recording a voice message" - a separate event so the client
+    // can show a distinct label instead of conflating it with plain text typing.
+    public async Task SetRecordingVoiceMessage(string channelId, bool isRecording)
+    {
+        var me = RequireUserId();
+
+        if (!TryConsumeRateLimit("recording", maxPerWindow: 10, window: TimeSpan.FromSeconds(2)))
+            return;
+
+        await Clients.OthersInGroup(channelId).SendAsync("RecordingVoiceMessage", channelId, DisplayNameOf(me), isRecording);
     }
 
     // -------------------------------------------------------
