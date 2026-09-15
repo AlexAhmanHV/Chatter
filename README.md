@@ -263,9 +263,13 @@ cd chatter
 
 ### Configure
 
-**JWT signing key (required — the server won't start without it)**
+**JWT signing key (nothing to do for local use — the server generates one itself)**
 
-Chatter is its own identity provider: `/auth/register` and `/auth/login` check the password (ASP.NET Core Identity, hashed in the same SQLite database as everything else) and hand back a JWT the server signs itself with this key, then validates on every hub connection. There's nothing external to configure — no third-party account, no API keys — but the key itself is a real secret and must never be committed:
+Chatter is its own identity provider: `/auth/register` and `/auth/login` check the password (ASP.NET Core Identity, hashed in the same SQLite database as everything else) and hand back a JWT the server signs itself with this key, then validates on every hub connection. There's nothing external to configure — no third-party account, no API keys.
+
+For a plain `dotnet run`/first clone, you don't need to do anything: if `Jwt:SigningKey` isn't set, the server generates a random one on first startup and saves it next to `chatter.db` (`Chatter.Server/jwt-signing-key.txt`, git-ignored) so it's reused - not regenerated - on every later run. A console line on first startup tells you it did this and where.
+
+**For any real deployment, set the key explicitly instead** via the `Jwt__SigningKey` environment variable (this is what `docker-compose.yml`'s template already requires) rather than relying on the auto-generated file:
 
 1. Generate a random secret, e.g.:
    ```bash
@@ -275,15 +279,12 @@ Chatter is its own identity provider: `/auth/register` and `/auth/login` check t
    ```powershell
    [Convert]::ToBase64String((1..48 | ForEach-Object { Get-Random -Minimum 0 -Maximum 256 }))
    ```
-2. Put it in `Chatter.Server/appsettings.Development.json` (already git-ignored) as:
+2. Set it as `Jwt__SigningKey` in your deployment's environment, or put it in `Chatter.Server/appsettings.Development.json` (already git-ignored) as:
    ```json
    { "Jwt": { "SigningKey": "<paste your generated secret here>" } }
    ```
-   For any real deployment, set it via the `Jwt__SigningKey` environment variable instead of a checked-in file.
 
-Without this, `dotnet run` throws immediately at startup with a clear error naming the missing config key — it never silently falls back to something insecure.
-
-Anyone who obtains this key can forge a valid login as any user, so treat it like a database password: never commit it, and rotate it (which invalidates every existing session) if it ever leaks.
+Anyone who obtains this key can forge a valid login as any user, so treat it like a database password: never commit it (auto-generated or not), and rotate it (which invalidates every existing session) if it ever leaks.
 
 **Chat data & accounts (SQLite)**
 
@@ -422,15 +423,15 @@ dotnet build -t:Run -f net9.0-maccatalyst
 
 **Android emulator can’t reach `localhost`**
 
-* `Chatter.Client/Services/ServerConfig.cs` already handles this — the Android emulator gets `http://10.0.2.2:5291` automatically. Running on a **physical** Android/iOS device instead needs your dev machine's real LAN IP: edit `DevMachineLanIp` in that file.
+* `Chatter.Client/Services/ServerConfig.cs` already handles this — the Android emulator gets `http://10.0.2.2:5291` automatically.
 
-**iOS simulator network**
+**Physical device (Android/iOS) can't reach the server**
 
-* The simulator uses the host’s network, so `localhost` works as-is (`ServerConfig.cs` uses it for the simulator). A physical iOS device needs `DevMachineLanIp` set the same way as Android above.
+* Open the app's login screen, tap "Server address ▼", and enter your dev machine's LAN IP (e.g. `http://192.168.1.42:5291`) - both devices need to be on the same network. This is a runtime setting (saved on-device via `Preferences`, see `ServerConfig.SetBaseUrl`), not a source-code edit - no rebuild needed, and it's remembered across app restarts.
 
 **Server won't start: "Missing configuration value 'Jwt:SigningKey'"**
 
-* See [Configure → JWT signing key](#configure) above — set `Jwt:SigningKey` in `Chatter.Server/appsettings.Development.json` (git-ignored) or the `Jwt__SigningKey` environment variable.
+* This should no longer happen — if `Jwt:SigningKey` isn't configured, the server now generates one itself and saves it next to `chatter.db` (see `Auth/JwtSigningKeyResolver.cs` and [Configure → JWT signing key](#configure)), logging where it wrote it. If you still see this error, something is failing before that fallback runs; check the file permissions on the server's working directory.
 
 **Hub connection fails with 401 Unauthorized**
 
