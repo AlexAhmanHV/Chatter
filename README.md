@@ -155,7 +155,26 @@ message" API, only "load older from the top" (`LoadMoreHistoryCommand`).
 Swipe a message and choose "Forward" to copy it (text and/or attachment) into any other chat
 you're a member of. A forward is a brand-new message sent as you, not the original sender -
 editing or deleting the original never touches the copy - and is labeled "Forwarded" in the UI
-(`ChatMessageEntity.IsForwarded`).
+(`ChatMessageEntity.IsForwarded`). A forward never carries a reply link either, even if the
+original was itself a reply - see Replies below.
+
+### Replies
+
+Swipe a message and choose "Reply" to attach it as a reply on your next message - a banner above
+the composer shows what you're replying to, with an "✕" to cancel. The reply preview shown in a
+bubble (`ReplyPreviewDto`) is resolved fresh on every fetch, not snapshotted at reply time: it
+reflects a later edit, and turns into "Original message deleted" if the original is later
+deleted. Tapping the preview jumps back to the original if it's already loaded (same "not loaded
+yet" limitation as jumping to a search result - see Message search above). Replying only works
+within the same chat as the original - `SendToChat`/`SendAttachment`/`SendVoiceMessage` all
+validate that server-side, since without it a client could reference a message id from a chat it
+has no access to and leak its snippet into a chat it does.
+
+### Multiple image attachments
+
+The 📎 button picks one or more images at once (`FilePicker.PickMultipleAsync`, not
+`MediaPicker` - MAUI's `MediaPicker.PickPhotoAsync` only ever returns a single photo) and sends
+each as its own message, sequentially. A pending reply is attached only to the first image sent.
 
 ### Delegated group admins & last seen
 
@@ -166,11 +185,17 @@ group automatically promotes another member rather than being left without one. 
 seen" (from the same menu, DMs only) shows when an offline user was last connected
 (`ApplicationUser.LastSeenUtc`, updated on disconnect); an online user has no last-seen entry.
 
+### Group read receipts
+
+A group chat's latest message from you shows "Seen by N/M" (`ChatHub.GetChatReadReceipts`
+bootstraps who's read what when a group is first opened; live updates arrive the same way the DM
+"Seen" marker does, via the `ReadReceipt` event) - the DM case stays a plain "Seen" checkmark
+since there's only ever one other person to seen-check against.
+
 ### Known simplifications
 
 A few deliberate scope cuts, worth knowing about if you extend this:
 
-* **Read receipts are DM-only** in the UI — the server tracks them for any chat, but only a DM's last message shows a "Seen" marker.
 * **Blocking only affects DMs** — it stops `CreateDm`/`SendToChat` between the two users, but doesn't remove either from a shared group or from seeing each other in the Lobby.
 * **Display names aren't unique** (a pre-existing, documented tradeoff) — `CreateGroupChat`/`CreateDm` resolve a name to whichever user currently holds it in the server's directory. If two people share a name, starting a chat "by name" can resolve to the wrong one; this doesn't affect access to a chat you already have, since that's always checked by user id, not name.
 * **No refresh tokens** — a login/register JWT is valid for 7 days flat (`Auth/JwtIssuer.cs`) with no rotation or revocation. Simple, but a compromised token stays valid until it expires, and there's no server-side "sign out everywhere" beyond changing the JWT signing key (which invalidates *every* session, not just one).
