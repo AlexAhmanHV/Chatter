@@ -100,6 +100,12 @@ public class ChatMessageEntity
     // Set when this message was created via ChatHub.ForwardMessage rather than typed/sent
     // directly - lets the client label it "Forwarded" without guessing from content.
     public bool IsForwarded { get; set; }
+
+    // Set when this message was sent as a reply to another one in the same chat (see
+    // ChatHub.BuildReplyPreviewAsync, which validates the two are in the same chat before this
+    // is ever written). A forward never carries this over - a forward is a fresh message, not
+    // part of the original's reply chain.
+    public long? ReplyToMessageId { get; set; }
 }
 
 public class MessageReactionEntity

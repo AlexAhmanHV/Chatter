@@ -13,6 +13,16 @@ public sealed record AttachmentMetaDto(
     int SizeBytes,
     int? DurationSeconds);
 
+// A lightweight preview of the message a reply points to - resolved fresh every time (not
+// snapshotted at reply time), so it reflects a later edit and turns into IsDeleted if the
+// original is later deleted. Snippet is truncated text, or a content-type label ("Photo", "Voice
+// message") for an attachment-only original.
+public sealed record ReplyPreviewDto(
+    long MessageId,
+    string Sender,
+    string Snippet,
+    bool IsDeleted);
+
 // A single persisted chat message, returned by ChatHub.GetChatHistory when a client
 // opens a chat and needs to backfill messages sent before it connected. Id is the message's
 // stable database key - used to target edits, deletes, and reactions at a specific message.
@@ -25,7 +35,8 @@ public sealed record ChatMessageDto(
     bool IsDeleted,
     IReadOnlyList<ReactionDto> Reactions,
     AttachmentMetaDto? Attachment,
-    bool IsForwarded);
+    bool IsForwarded,
+    ReplyPreviewDto? ReplyTo);
 
 // The actual bytes of a message's attachment, fetched lazily via ChatHub.GetAttachmentData.
 public sealed record AttachmentDataDto(string ContentType, byte[] Data);

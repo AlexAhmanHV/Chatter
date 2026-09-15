@@ -638,7 +638,7 @@ public class ChatHub : Hub
         }
     }
 
-    public async Task SendToChat(string chatId, string message)
+    public async Task SendToChat(string chatId, string message, long? replyToMessageId = null)
     {
         var me = RequireUserId();
         RequireMembership(chatId, me);
@@ -655,9 +655,22 @@ public class ChatHub : Hub
         var name = DisplayNameOf(me);
         var sentAt = DateTime.UtcNow;
 
-        var messageId = await PersistMessageAsync(chatId, me, name, message, sentAt);
+        await using var db = await _dbFactory.CreateDbContextAsync();
+        var replyTo = await BuildReplyPreviewAsync(db, chatId, replyToMessageId);
 
-        await BroadcastMessageAsync(chatId, messageId, name, message, sentAt, attachment: null, isForwarded: false);
+        var entity = new ChatMessageEntity
+        {
+            ChatId = chatId,
+            SenderUserId = me,
+            SenderDisplayName = name,
+            Body = message,
+            SentAtUtc = sentAt,
+            ReplyToMessageId = replyTo?.MessageId,
+        };
+        db.Messages.Add(entity);
+        await db.SaveChangesAsync();
+
+        await BroadcastMessageAsync(chatId, entity.Id, name, message, sentAt, attachment: null, isForwarded: false, replyTo);
     }
 
     // Shared by SendToChat/SendAttachment/SendVoiceMessage/ForwardMessage: deliver to everyone
@@ -665,10 +678,10 @@ public class ChatHub : Hub
     // haven't joined the group yet - e.g. a second tab/device that hasn't opened this conversation.
     private async Task BroadcastMessageAsync(
         string chatId, long messageId, string senderDisplayName, string body, DateTime sentAt,
-        AttachmentMetaDto? attachment, bool isForwarded)
+        AttachmentMetaDto? attachment, bool isForwarded, ReplyPreviewDto? replyTo)
     {
         await Clients.Group(chatId).SendAsync("ReceiveChatMessage",
-            chatId, messageId, senderDisplayName, body, sentAt, attachment, isForwarded);
+            chatId, messageId, senderDisplayName, body, sentAt, attachment, isForwarded, replyTo);
 
         if (!_dmParticipants.TryGetValue(chatId, out var pair)) return;
 
@@ -683,8 +696,40 @@ public class ChatHub : Hub
         foreach (var cid in notInGroup)
         {
             await Clients.Client(cid).SendAsync("DmNotify",
-                chatId, messageId, senderDisplayName, body, sentAt, attachment, isForwarded);
+                chatId, messageId, senderDisplayName, body, sentAt, attachment, isForwarded, replyTo);
         }
+    }
+
+    // Resolves a reply-to preview, validating the referenced message actually lives in the same
+    // chat being sent to - without that check, a caller could reference a message id from a
+    // completely different (private) chat and have its content leaked into this one via the
+    // preview. Returns null for a null replyToMessageId (the common "not a reply" case).
+    private async Task<ReplyPreviewDto?> BuildReplyPreviewAsync(ChatDbContext db, string chatId, long? replyToMessageId)
+    {
+        if (replyToMessageId is not { } id) return null;
+
+        var target = await db.Messages.FindAsync(id)
+            ?? throw new HubException("The message you're replying to no longer exists.");
+        if (!Ci.Equals(target.ChatId, chatId))
+            throw new HubException("Can't reply to a message from a different chat.");
+
+        return BuildReplyPreview(target);
+    }
+
+    private static ReplyPreviewDto BuildReplyPreview(ChatMessageEntity target)
+    {
+        if (target.IsDeleted)
+            return new ReplyPreviewDto(target.Id, target.SenderDisplayName, string.Empty, IsDeleted: true);
+
+        var snippet = target.AttachmentContentType switch
+        {
+            null => target.Body,
+            var ct when ct.StartsWith("audio/", StringComparison.OrdinalIgnoreCase) => "🎤 Voice message",
+            _ => "📷 Photo",
+        };
+        if (snippet.Length > 80) snippet = snippet[..80] + "…";
+
+        return new ReplyPreviewDto(target.Id, target.SenderDisplayName, snippet, IsDeleted: false);
     }
 
     // Common validation for anything that posts a binary attachment into a chat (image, voice
@@ -707,7 +752,7 @@ public class ChatHub : Hub
     // Shares an image in a chat, optionally with a text caption. Images only (see
     // AllowedImageContentTypes) and capped at MaxAttachmentBytes - this is "share a photo",
     // not general file transfer.
-    public async Task<long> SendAttachment(string chatId, string fileName, string contentType, byte[] data, string? caption)
+    public async Task<long> SendAttachment(string chatId, string fileName, string contentType, byte[] data, string? caption, long? replyToMessageId = null)
     {
         var me = RequireUserId();
         EnforceRateLimit("sendToChat", maxPerWindow: 10, window: TimeSpan.FromSeconds(10));
@@ -723,9 +768,11 @@ public class ChatHub : Hub
         var sentAt = DateTime.UtcNow;
 
         long messageId;
+        ReplyPreviewDto? replyTo;
         try
         {
             await using var db = await _dbFactory.CreateDbContextAsync();
+            replyTo = await BuildReplyPreviewAsync(db, chatId, replyToMessageId);
             var entity = new ChatMessageEntity
             {
                 ChatId = chatId,
@@ -737,18 +784,20 @@ public class ChatHub : Hub
                 AttachmentContentType = contentType,
                 AttachmentData = data,
                 AttachmentSizeBytes = data!.Length,
+                ReplyToMessageId = replyTo?.MessageId,
             };
             db.Messages.Add(entity);
             await db.SaveChangesAsync();
             messageId = entity.Id;
         }
+        catch (HubException) { throw; }
         catch (Exception ex)
         {
             throw new HubException("Failed to save the attachment. Please try again.", ex);
         }
 
         var meta = new AttachmentMetaDto(fileName, contentType, data.Length, DurationSeconds: null);
-        await BroadcastMessageAsync(chatId, messageId, name, body, sentAt, meta, isForwarded: false);
+        await BroadcastMessageAsync(chatId, messageId, name, body, sentAt, meta, isForwarded: false, replyTo);
         return messageId;
     }
 
@@ -756,7 +805,7 @@ public class ChatHub : Hub
     // SendAttachment/GetAttachmentData), just with an audio content-type allowlist, a smaller
     // size cap suited to ~2 minutes of compressed audio, and a client-reported duration purely
     // for display (not re-validated server-side - a wrong value only affects the shown label).
-    public async Task<long> SendVoiceMessage(string chatId, string contentType, byte[] data, int durationSeconds)
+    public async Task<long> SendVoiceMessage(string chatId, string contentType, byte[] data, int durationSeconds, long? replyToMessageId = null)
     {
         var me = RequireUserId();
         EnforceRateLimit("sendToChat", maxPerWindow: 10, window: TimeSpan.FromSeconds(10));
@@ -767,9 +816,11 @@ public class ChatHub : Hub
         var sentAt = DateTime.UtcNow;
 
         long messageId;
+        ReplyPreviewDto? replyTo;
         try
         {
             await using var db = await _dbFactory.CreateDbContextAsync();
+            replyTo = await BuildReplyPreviewAsync(db, chatId, replyToMessageId);
             var entity = new ChatMessageEntity
             {
                 ChatId = chatId,
@@ -782,18 +833,20 @@ public class ChatHub : Hub
                 AttachmentData = data,
                 AttachmentSizeBytes = data!.Length,
                 AttachmentDurationSeconds = durationSeconds,
+                ReplyToMessageId = replyTo?.MessageId,
             };
             db.Messages.Add(entity);
             await db.SaveChangesAsync();
             messageId = entity.Id;
         }
+        catch (HubException) { throw; }
         catch (Exception ex)
         {
             throw new HubException("Failed to save the voice message. Please try again.", ex);
         }
 
         var meta = new AttachmentMetaDto("Voice message", contentType, data.Length, durationSeconds);
-        await BroadcastMessageAsync(chatId, messageId, name, string.Empty, sentAt, meta, isForwarded: false);
+        await BroadcastMessageAsync(chatId, messageId, name, string.Empty, sentAt, meta, isForwarded: false, replyTo);
         return messageId;
     }
 
@@ -865,7 +918,7 @@ public class ChatHub : Hub
             : new AttachmentMetaDto(source.AttachmentFileName ?? "attachment", source.AttachmentContentType,
                 source.AttachmentSizeBytes ?? 0, source.AttachmentDurationSeconds);
 
-        await BroadcastMessageAsync(targetChatId, newMessageId, name, source.Body, sentAt, meta, isForwarded: true);
+        await BroadcastMessageAsync(targetChatId, newMessageId, name, source.Body, sentAt, meta, isForwarded: true, replyTo: null);
         return newMessageId;
     }
 
@@ -969,6 +1022,22 @@ public class ChatHub : Hub
 
         await db.SaveChangesAsync();
         await Clients.OthersInGroup(chatId).SendAsync("ReadReceipt", chatId, DisplayNameOf(me), lastReadMessageId);
+    }
+
+    // Bootstraps a client's view of who has read up to where in this chat - the live "ReadReceipt"
+    // event above only carries deltas going forward, so a client that just opened a group chat
+    // needs this to know what happened before it connected (used to compute "seen by N/M").
+    public async Task<Dictionary<string, long>> GetChatReadReceipts(string chatId)
+    {
+        var me = RequireUserId();
+        RequireMembership(chatId, me);
+
+        await using var db = await _dbFactory.CreateDbContextAsync();
+        var rows = await db.ReadReceipts.Where(r => r.ChatId == chatId).ToListAsync();
+
+        var result = new Dictionary<string, long>(Ci);
+        foreach (var r in rows) result[DisplayNameOf(r.UserId)] = r.LastReadMessageId;
+        return result;
     }
 
     // -------------------------------------------------------
@@ -1128,6 +1197,12 @@ public class ChatHub : Hub
                         eg.Select(r => DisplayNameOf(r.UserId)).ToList()))
                     .ToList());
 
+        var replyToIds = rows.Where(r => r.ReplyToMessageId is not null).Select(r => r.ReplyToMessageId!.Value).Distinct().ToList();
+        var replyTargets = replyToIds.Count == 0
+            ? new List<ChatMessageEntity>()
+            : await db.Messages.Where(m => replyToIds.Contains(m.Id)).ToListAsync();
+        var replyPreviewById = replyTargets.ToDictionary(m => m.Id, BuildReplyPreview);
+
         return rows.Select(m => new ChatMessageDto(
             m.Id,
             m.SenderDisplayName,
@@ -1139,7 +1214,8 @@ public class ChatHub : Hub
             m.AttachmentContentType is null ? null
                 : new AttachmentMetaDto(m.AttachmentFileName ?? "attachment", m.AttachmentContentType,
                     m.AttachmentSizeBytes ?? 0, m.AttachmentDurationSeconds),
-            m.IsForwarded
+            m.IsForwarded,
+            m.ReplyToMessageId is { } replyId && replyPreviewById.TryGetValue(replyId, out var preview) ? preview : null
         )).ToList();
     }
 
@@ -1351,32 +1427,6 @@ public class ChatHub : Hub
         {
             // Best-effort: in-memory state (already applied by the caller) still
             // works for the rest of this run even if the write fails.
-        }
-    }
-
-    // Returns the new row's id (needed so the live broadcast can carry an id clients can later
-    // use to edit/delete/react to this exact message), or 0 if persistence failed - the message
-    // still gets delivered live in that case, it just won't be editable/reactable this run.
-    private async Task<long> PersistMessageAsync(string chatId, string senderUserId, string senderDisplayName, string body, DateTime sentAtUtc)
-    {
-        try
-        {
-            await using var db = await _dbFactory.CreateDbContextAsync();
-            var entity = new ChatMessageEntity
-            {
-                ChatId = chatId,
-                SenderUserId = senderUserId,
-                SenderDisplayName = senderDisplayName,
-                Body = body,
-                SentAtUtc = sentAtUtc
-            };
-            db.Messages.Add(entity);
-            await db.SaveChangesAsync();
-            return entity.Id;
-        }
-        catch
-        {
-            return 0;
         }
     }
 
