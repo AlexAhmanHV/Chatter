@@ -106,10 +106,10 @@ Chatter.sln
 
 * **LoginPage** – Email/password login.
 * **RegisterPage** – Create an account (optional display name).
-* **ChatPage** – Chats list (Lobby/DMs/groups), messages with edit/delete/react/seen/attachments/
-  voice notes/forwarding, composer with image-attach and record buttons, typing indicator, people
-  panel with avatars, group admin management, "New group" toolbar action, "Load earlier messages"
-  paging.
+* **ChatPage** – Chats list (Lobby/DMs/groups), messages with edit history/delete/react/seen/
+  pinning/replies/attachments/voice notes/video/forwarding, in-chat search, composer with image/
+  video-attach and record buttons, typing indicator, people panel with avatars, group admin
+  management, "New group" toolbar action, "Load earlier messages" paging.
 * **SettingsPage** – Update display name and avatar.
 
 ### Attachments & avatars
@@ -191,6 +191,31 @@ A group chat's latest message from you shows "Seen by N/M" (`ChatHub.GetChatRead
 bootstraps who's read what when a group is first opened; live updates arrive the same way the DM
 "Seen" marker does, via the `ReadReceipt` event) - the DM case stays a plain "Seen" checkmark
 since there's only ever one other person to seen-check against.
+
+### Pinned messages
+
+Any current member can pin or unpin a message (swipe it, choose "Pin"/"Unpin" - same "no special
+permission gate" approach as reactions and forwarding, rather than restricting it to group
+admins). Pinned messages show in a horizontal strip under the chat header; tapping one scrolls to
+it if it's already loaded. Capped at 20 pinned messages per chat (`ChatHub.MaxPinnedPerChat`) -
+unpin something first once you hit it. Deleting a pinned message unpins it automatically.
+
+### Video clips
+
+The 🎥 composer button picks one video (`MediaPicker.PickVideoAsync`) and uploads it through
+`ChatHub.SendVideo` - same blob storage as an image or voice message, just with a video
+content-type allowlist and a 20 MB cap. Playback is external: tapping a received video fetches
+it, writes it to a cache file, and hands it to the OS's own video player via `Launcher.OpenAsync`,
+rather than pulling in a dedicated media-playback control for inline video. Duration isn't
+extracted client-side (no reliable cross-platform way to read it from a picked file without a
+media library) - videos just don't show a length, unlike voice messages.
+
+### Message edit history
+
+Every edit is recorded before it's overwritten (`MessageEditHistoryEntity`), not just the fact
+that an edit happened. Tapping the "(edited)" label on a message shows its previous versions with
+timestamps (`ChatHub.GetMessageEditHistory`). Editing to the exact same text doesn't add a history
+entry.
 
 ### Known simplifications
 
