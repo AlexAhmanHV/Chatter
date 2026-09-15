@@ -17,6 +17,10 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddOpenApi();
 builder.Services.AddSignalR();
 
+// Typed client so ChatHub can just take a LinkPreviewFetcher - tests construct one directly with
+// a plain HttpClient instead of going through IHttpClientFactory.
+builder.Services.AddHttpClient<Chatter.Server.Services.LinkPreviewFetcher>();
+
 // Chat history, display names, and (via Identity) accounts all live in SQLite instead of only
 // in memory, so a server restart no longer wipes every conversation or logs everyone out.
 var connectionString = builder.Configuration.GetConnectionString("Chatter") ?? "Data Source=chatter.db";
@@ -141,6 +145,9 @@ using (var scope = app.Services.CreateScope())
 
     var mutedChats = await db.MutedChats.ToListAsync();
     ChatHub.PreloadMutedChats(mutedChats);
+
+    var pinnedChats = await db.PinnedChats.ToListAsync();
+    ChatHub.PreloadPinnedChats(pinnedChats);
 }
 
 // Pipeline

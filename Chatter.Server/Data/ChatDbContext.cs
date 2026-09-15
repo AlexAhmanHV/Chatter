@@ -27,6 +27,7 @@ public class ChatDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<ReadReceiptEntity> ReadReceipts => Set<ReadReceiptEntity>();
     public DbSet<BlockedUserEntity> Blocks => Set<BlockedUserEntity>();
     public DbSet<MutedChatEntity> MutedChats => Set<MutedChatEntity>();
+    public DbSet<PinnedChatEntity> PinnedChats => Set<PinnedChatEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -77,6 +78,11 @@ public class ChatDbContext : IdentityDbContext<ApplicationUser>
         modelBuilder.Entity<MutedChatEntity>(e =>
         {
             e.HasKey(m => new { m.UserId, m.ChatId });
+        });
+
+        modelBuilder.Entity<PinnedChatEntity>(e =>
+        {
+            e.HasKey(p => new { p.UserId, p.ChatId });
         });
     }
 }
@@ -185,4 +191,14 @@ public class MutedChatEntity
     public required string UserId { get; set; }
     public required string ChatId { get; set; }
     public DateTime MutedAtUtc { get; set; }
+}
+
+// Per-user, per-chat pin: purely a client-side ordering preference (pinned chats sort to the top
+// of that user's own chat list, see ChatHub.BuildChatSummariesAsync) - it doesn't affect anyone
+// else's view of the chat, membership, or delivery.
+public class PinnedChatEntity
+{
+    public required string UserId { get; set; }
+    public required string ChatId { get; set; }
+    public DateTime PinnedAtUtc { get; set; }
 }

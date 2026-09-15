@@ -20,6 +20,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Chatter.Server.Data;
+using Chatter.Server.Services;
 using Chatter.Shared.Models;
 
 namespace Chatter.Server.Hubs;
@@ -29,7 +30,13 @@ public class ChatHub : Hub
 {
     private readonly IDbContextFactory<ChatDbContext> _dbFactory;
 
-    public ChatHub(IDbContextFactory<ChatDbContext> dbFactory) => _dbFactory = dbFactory;
+    private readonly LinkPreviewFetcher _linkPreviewFetcher;
+
+    public ChatHub(IDbContextFactory<ChatDbContext> dbFactory, LinkPreviewFetcher linkPreviewFetcher)
+    {
+        _dbFactory = dbFactory;
+        _linkPreviewFetcher = linkPreviewFetcher;
+    }
 
     private const string LobbyId = "Lobby";
     private static readonly StringComparer Ci = StringComparer.OrdinalIgnoreCase;
@@ -57,6 +64,17 @@ public class ChatHub : Hub
     private static readonly HashSet<string> AllowedVideoContentTypes = new(StringComparer.OrdinalIgnoreCase)
     {
         "video/mp4", "video/quicktime", "video/webm"
+    };
+
+    // Generic documents (PDF, Office files, plain text, zip, ...) - a content-type allowlist
+    // isn't practical here the way it is for images/audio/video (there are too many legitimate
+    // document MIME types, and clients don't always report them accurately), so this instead
+    // denylists file extensions that would make this "share a document" feature into a way to
+    // pass around executables. Same size cap as video.
+    private const int MaxDocumentBytes = MaxVideoBytes;
+    private static readonly HashSet<string> DisallowedDocumentExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".exe", ".dll", ".bat", ".cmd", ".com", ".msi", ".scr", ".ps1", ".vbs", ".js", ".jar", ".app", ".sh", ".apk"
     };
 
     // ===== Connection & identity indices (all keyed by the stable Identity user ID) =====
@@ -110,6 +128,10 @@ public class ChatHub : Hub
     // (userId, chatId) muted by that user - messages still arrive, this only suppresses their
     // own unread badge/notification. The other party is never told.
     private static readonly ConcurrentDictionary<(string UserId, string ChatId), byte> _mutedChats = new();
+
+    // (userId, chatId) pinned by that user - a pure per-user ordering preference (see
+    // BuildChatSummariesAsync), doesn't affect anyone else or delivery.
+    private static readonly ConcurrentDictionary<(string UserId, string ChatId), byte> _pinnedChats = new();
 
     // ===== Presence =====
     // userId -> explicit status ("online" | "away" | "busy" | "offline"). No connections -> effective offline.
@@ -734,7 +756,8 @@ public class ChatHub : Hub
             null => target.Body,
             var ct when ct.StartsWith("audio/", StringComparison.OrdinalIgnoreCase) => "🎤 Voice message",
             var ct when ct.StartsWith("video/", StringComparison.OrdinalIgnoreCase) => "🎥 Video",
-            _ => "📷 Photo",
+            var ct when ct.StartsWith("image/", StringComparison.OrdinalIgnoreCase) => "📷 Photo",
+            _ => $"📄 {target.AttachmentFileName ?? "File"}",
         };
         if (snippet.Length > 80) snippet = snippet[..80] + "…";
 
@@ -908,6 +931,68 @@ public class ChatHub : Hub
         }
 
         var meta = new AttachmentMetaDto(fileName, contentType, data.Length, duration);
+        await BroadcastMessageAsync(chatId, messageId, name, string.Empty, sentAt, meta, isForwarded: false, replyTo);
+        return messageId;
+    }
+
+    // Shares a generic document (PDF, Office file, zip, ...) - same storage/lazy-fetch model as
+    // everything else, but no content-type allowlist (see DisallowedDocumentExtensions above for
+    // why a denylist instead). The client opens it externally via the OS's own handler rather
+    // than rendering it inline, the same way it already does for a video.
+    public async Task<long> SendFile(string chatId, string fileName, string contentType, byte[] data, long? replyToMessageId = null)
+    {
+        var me = RequireUserId();
+        EnforceRateLimit("sendToChat", maxPerWindow: 10, window: TimeSpan.FromSeconds(10));
+        RequireMembership(chatId, me);
+
+        if (_dmParticipants.TryGetValue(chatId, out var dmPair) && IsBlockedEitherWay(dmPair.User1, dmPair.User2))
+            throw new HubException("You can't send messages in this chat.");
+
+        if (data is null || data.Length == 0)
+            throw new HubException("File is empty.");
+        if (data.Length > MaxDocumentBytes)
+            throw new HubException($"File too large (max {MaxDocumentBytes / 1024 / 1024} MB).");
+
+        fileName = string.IsNullOrWhiteSpace(fileName) ? "file" : fileName.Trim();
+        if (fileName.Length > 200) fileName = fileName[..200];
+        if (DisallowedDocumentExtensions.Contains(Path.GetExtension(fileName)))
+            throw new HubException("This file type isn't allowed for sharing.");
+
+        contentType = string.IsNullOrWhiteSpace(contentType) ? "application/octet-stream" : contentType;
+
+        var name = DisplayNameOf(me);
+        var sentAt = DateTime.UtcNow;
+
+        long messageId;
+        ReplyPreviewDto? replyTo;
+        try
+        {
+            await using var db = await _dbFactory.CreateDbContextAsync();
+            replyTo = await BuildReplyPreviewAsync(db, chatId, replyToMessageId);
+            var entity = new ChatMessageEntity
+            {
+                ChatId = chatId,
+                SenderUserId = me,
+                SenderDisplayName = name,
+                Body = string.Empty,
+                SentAtUtc = sentAt,
+                AttachmentFileName = fileName,
+                AttachmentContentType = contentType,
+                AttachmentData = data,
+                AttachmentSizeBytes = data.Length,
+                ReplyToMessageId = replyTo?.MessageId,
+            };
+            db.Messages.Add(entity);
+            await db.SaveChangesAsync();
+            messageId = entity.Id;
+        }
+        catch (HubException) { throw; }
+        catch (Exception ex)
+        {
+            throw new HubException("Failed to save the file. Please try again.", ex);
+        }
+
+        var meta = new AttachmentMetaDto(fileName, contentType, data.Length, DurationSeconds: null);
         await BroadcastMessageAsync(chatId, messageId, name, string.Empty, sentAt, meta, isForwarded: false, replyTo);
         return messageId;
     }
@@ -1280,6 +1365,35 @@ public class ChatHub : Hub
         catch { }
     }
 
+    // Purely a per-user ordering preference - pinned chats sort to the top of that user's own
+    // list (see BuildChatSummariesAsync); nobody else sees it and delivery is unaffected.
+    public async Task SetChatPinned(string chatId, bool pinned)
+    {
+        var me = RequireUserId();
+        RequireMembership(chatId, me);
+
+        var key = (me, chatId);
+        if (pinned) _pinnedChats[key] = 1;
+        else _pinnedChats.TryRemove(key, out _);
+
+        try
+        {
+            await using var db = await _dbFactory.CreateDbContextAsync();
+            var existing = await db.PinnedChats.FindAsync(me, chatId);
+            if (pinned && existing is null)
+            {
+                db.PinnedChats.Add(new PinnedChatEntity { UserId = me, ChatId = chatId, PinnedAtUtc = DateTime.UtcNow });
+                await db.SaveChangesAsync();
+            }
+            else if (!pinned && existing is not null)
+            {
+                db.PinnedChats.Remove(existing);
+                await db.SaveChangesAsync();
+            }
+        }
+        catch { }
+    }
+
     // Backfills a chat's message history for a client that just opened it (e.g. after
     // reconnecting, or opening the app fresh and everything else is in-memory-only).
     // Pass beforeMessageId (the oldest message id currently loaded) to page further back.
@@ -1325,6 +1439,16 @@ public class ChatHub : Hub
         rows.Reverse();
 
         return await ToDtosAsync(db, rows, me);
+    }
+
+    // Fetches title/description/image metadata for a URL found in a message body (see
+    // Services/LinkPreviewFetcher for the actual fetch + SSRF guard + caching). Just requires
+    // being authenticated, not chat membership - a preview isn't scoped to a particular chat, and
+    // the client only ever calls this for a URL it already legitimately saw in a message body.
+    public async Task<LinkPreviewDto?> GetLinkPreview(string url)
+    {
+        RequireUserId();
+        return await _linkPreviewFetcher.GetOrFetchAsync(url);
     }
 
     // Shared by GetChatHistory/SearchMessages: attaches each row's reactions and maps to the DTO
@@ -1395,6 +1519,78 @@ public class ChatHub : Hub
     }
 
     // -------------------------------------------------------
+    // Call signaling (1:1 DMs only - see README for why: mesh signaling for a group call is a
+    // meaningfully bigger problem, out of scope here)
+    // -------------------------------------------------------
+    //
+    // The server never looks at an SDP offer/answer or ICE candidate's contents - it's a dumb
+    // relay between exactly the two DM participants, identical in spirit to how a message is
+    // delivered. Media itself flows peer-to-peer once signaling completes; this app deliberately
+    // ships no STUN/TURN server, so a call between two peers behind restrictive NATs (common on
+    // mobile data, some home routers) may fail to connect - see README's "Known simplifications".
+    private string OtherDmParticipantOrThrow(string chatId, string me)
+    {
+        if (!_dmParticipants.TryGetValue(chatId, out var pair))
+            throw new HubException("Calls are only supported in direct messages.");
+        return Ci.Equals(pair.User1, me) ? pair.User2 : pair.User1;
+    }
+
+    public async Task CallInvite(string chatId, string kind, string sdpOffer)
+    {
+        var me = RequireUserId();
+        RequireMembership(chatId, me);
+        EnforceRateLimit("callInvite", maxPerWindow: 5, window: TimeSpan.FromSeconds(30));
+
+        var otherId = OtherDmParticipantOrThrow(chatId, me);
+        if (IsBlockedEitherWay(me, otherId))
+            throw new HubException("You can't call this user.");
+
+        var conns = ConnectionsFor(otherId).ToList();
+        if (conns.Count == 0)
+            throw new HubException($"{DisplayNameOf(otherId)} isn't online right now.");
+
+        await Clients.Clients(conns).SendAsync("IncomingCall", chatId, DisplayNameOf(me), kind, sdpOffer);
+    }
+
+    public async Task CallAnswer(string chatId, string sdpAnswer)
+    {
+        var me = RequireUserId();
+        RequireMembership(chatId, me);
+        var otherId = OtherDmParticipantOrThrow(chatId, me);
+        await Clients.Clients(ConnectionsFor(otherId)).SendAsync("CallAnswered", chatId, sdpAnswer);
+    }
+
+    public async Task CallDecline(string chatId)
+    {
+        var me = RequireUserId();
+        RequireMembership(chatId, me);
+        var otherId = OtherDmParticipantOrThrow(chatId, me);
+        await Clients.Clients(ConnectionsFor(otherId)).SendAsync("CallDeclined", chatId);
+    }
+
+    // Trickled ICE candidates can arrive dozens of times per call as both sides probe network
+    // paths - a much higher-frequency bucket than the other call methods, which each happen once
+    // or twice per call.
+    public async Task CallIceCandidate(string chatId, string candidateJson)
+    {
+        var me = RequireUserId();
+        RequireMembership(chatId, me);
+        if (!TryConsumeRateLimit("callIceCandidate", maxPerWindow: 40, window: TimeSpan.FromSeconds(5)))
+            return;
+
+        var otherId = OtherDmParticipantOrThrow(chatId, me);
+        await Clients.Clients(ConnectionsFor(otherId)).SendAsync("CallIceCandidate", chatId, candidateJson);
+    }
+
+    public async Task CallHangup(string chatId)
+    {
+        var me = RequireUserId();
+        RequireMembership(chatId, me);
+        var otherId = OtherDmParticipantOrThrow(chatId, me);
+        await Clients.Clients(ConnectionsFor(otherId)).SendAsync("CallEnded", chatId);
+    }
+
+    // -------------------------------------------------------
     // Roster & snapshots
     // -------------------------------------------------------
     public Task<IReadOnlyList<string>> GetOnlineUsers()
@@ -1446,13 +1642,21 @@ public class ChatHub : Hub
             await db.MutedChats.Where(m => m.UserId == userId && ids.Contains(m.ChatId)).Select(m => m.ChatId).ToListAsync(),
             Ci);
 
+        var pinnedIds = new HashSet<string>(
+            await db.PinnedChats.Where(p => p.UserId == userId && ids.Contains(p.ChatId)).Select(p => p.ChatId).ToListAsync(),
+            Ci);
+
         var list = new List<ChatSummary>();
         foreach (var id in ids)
         {
             var lastRead = lastReadByChat.TryGetValue(id, out var lr) ? lr : 0L;
             var unread = await db.Messages.CountAsync(m => m.ChatId == id && m.Id > lastRead && m.SenderUserId != userId);
-            list.Add(new ChatSummary(id, ComputeChatLabelForUser(id, userId), unread, mutedIds.Contains(id)));
+            list.Add(new ChatSummary(id, ComputeChatLabelForUser(id, userId), unread, mutedIds.Contains(id), pinnedIds.Contains(id)));
         }
+
+        // Stable sort: pinned chats float to the top (in their existing relative order), then
+        // Lobby is forced to the very top regardless - it's always-there, not a "chat" you pin.
+        list = list.OrderByDescending(c => c.IsPinned).ToList();
 
         var lobby = list.FirstOrDefault(c => Ci.Equals(c.Id, LobbyId));
         if (lobby is not null && list.IndexOf(lobby) != 0)
@@ -1517,6 +1721,12 @@ public class ChatHub : Hub
     {
         foreach (var m in muted)
             _mutedChats[(m.UserId, m.ChatId)] = 1;
+    }
+
+    public static void PreloadPinnedChats(IEnumerable<PinnedChatEntity> pinned)
+    {
+        foreach (var p in pinned)
+            _pinnedChats[(p.UserId, p.ChatId)] = 1;
     }
 
     private async Task PersistGroupChatAsync(string chatId, string name, string createdByUserId, IEnumerable<string> memberIds)

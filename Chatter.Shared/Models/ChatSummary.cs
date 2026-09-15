@@ -6,4 +6,4 @@ namespace Chatter.Shared.Models;
 // UnreadCount is derived from the caller's own persisted read receipt (see
 // ChatHub.MarkRead) vs. how many messages from other people exist past it, so an
 // unread badge survives an app restart instead of only reflecting the current session.
-public sealed record ChatSummary(string Id, string Label, int UnreadCount, bool IsMuted);
+public sealed record ChatSummary(string Id, string Label, int UnreadCount, bool IsMuted, bool IsPinned);

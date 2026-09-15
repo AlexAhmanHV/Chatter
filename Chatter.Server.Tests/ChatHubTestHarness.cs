@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Chatter.Server.Data;
 using Chatter.Server.Hubs;
+using Chatter.Server.Services;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
@@ -90,7 +91,7 @@ public static class ChatHubTestHarness
         groups.Setup(g => g.RemoveFromGroupAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
-        var hub = new ChatHub(new FakeDbContextFactory(dbName))
+        var hub = new ChatHub(new FakeDbContextFactory(dbName), new LinkPreviewFetcher(new HttpClient()))
         {
             Context = new FakeHubCallerContext(connectionId, userId),
             Clients = clients.Object,
