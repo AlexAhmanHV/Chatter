@@ -129,6 +129,34 @@ public partial class ChatPage : ContentPage
             vm.JumpToRepliedMessageCommand.Execute(item);
     }
 
+    private void OnTogglePinInvoked(object? sender, EventArgs e)
+    {
+        if (BindingContext is not ChatViewModel vm) return;
+        if (sender is Element { BindingContext: ChatMessageItem item })
+            vm.TogglePinCommand.Execute(item);
+    }
+
+    private void OnViewEditHistoryTapped(object? sender, EventArgs e)
+    {
+        if (BindingContext is not ChatViewModel vm) return;
+        if (sender is Element { BindingContext: ChatMessageItem item })
+            vm.ViewEditHistoryCommand.Execute(item);
+    }
+
+    private void OnPlayVideoTapped(object? sender, EventArgs e)
+    {
+        if (BindingContext is not ChatViewModel vm) return;
+        if (sender is Element { BindingContext: ChatMessageItem item })
+            vm.PlayVideoCommand.Execute(item);
+    }
+
+    private void OnPinnedMessageTapped(object? sender, EventArgs e)
+    {
+        if (BindingContext is not ChatViewModel vm) return;
+        if (sender is Element { BindingContext: ChatMessageItem item })
+            vm.JumpToMessageCommand.Execute(item);
+    }
+
     private void OnSearchResultTapped(object? sender, EventArgs e)
     {
         if (BindingContext is not ChatViewModel vm) return;

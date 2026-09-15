@@ -22,7 +22,7 @@ namespace Chatter.Client.Models;
 public partial class ChatMessageItem : ObservableObject
 {
     public ChatMessageItem(long id, string sender, string body, DateTime sentAtUtc, bool isMine, bool isSystem,
-        AttachmentMetaDto? attachment = null, bool isForwarded = false, ReplyPreviewDto? replyTo = null)
+        AttachmentMetaDto? attachment = null, bool isForwarded = false, ReplyPreviewDto? replyTo = null, bool isPinned = false)
     {
         Id = id;
         Sender = sender;
@@ -33,6 +33,7 @@ public partial class ChatMessageItem : ObservableObject
         Attachment = attachment;
         IsForwarded = isForwarded;
         ReplyTo = replyTo;
+        IsPinned = isPinned;
         PlaybackDurationSeconds = attachment?.DurationSeconds ?? 0;
     }
 
@@ -52,14 +53,19 @@ public partial class ChatMessageItem : ObservableObject
     // the server re-checks ownership independently, this just drives what the UI offers.
     public bool CanModify => IsMine && Id > 0 && !IsSystem;
 
-    // Forwarding, replying, and viewing an attachment all need a real persisted message id to
-    // reference server-side - never a synthetic system line.
+    // Forwarding, replying, pinning, and viewing an attachment all need a real persisted message
+    // id to reference server-side - never a synthetic system line.
     public bool CanForward => Id > 0 && !IsSystem;
     public bool CanReply => Id > 0 && !IsSystem;
+    public bool CanPin => Id > 0 && !IsSystem && !IsDeleted;
+    public bool CanViewEditHistory => Id > 0 && !IsSystem && IsEdited;
+
+    [ObservableProperty] public partial bool IsPinned { get; set; }
 
     [ObservableProperty] public partial string Body { get; set; } = string.Empty;
     [ObservableProperty] public partial DateTime? EditedAtUtc { get; set; }
     [ObservableProperty] public partial bool IsDeleted { get; set; }
+    partial void OnIsDeletedChanged(bool value) => OnPropertyChanged(nameof(CanPin));
 
     // DM-only "Seen" marker - exactly one other person, so a plain bool is enough there.
     [ObservableProperty] public partial bool SeenByOther { get; set; }
@@ -86,15 +92,24 @@ public partial class ChatMessageItem : ObservableObject
     public AttachmentMetaDto? Attachment { get; }
     public bool HasAttachment => Attachment is not null;
     public bool IsVoiceMessage => Attachment?.ContentType.StartsWith("audio/", StringComparison.OrdinalIgnoreCase) == true;
-    public bool IsImageAttachment => HasAttachment && !IsVoiceMessage;
+    public bool IsVideoAttachment => Attachment?.ContentType.StartsWith("video/", StringComparison.OrdinalIgnoreCase) == true;
+    public bool IsImageAttachment => HasAttachment && !IsVoiceMessage && !IsVideoAttachment;
     public string VoiceMessageDurationText => Attachment?.DurationSeconds is { } s
         ? TimeSpan.FromSeconds(s).ToString(s >= 3600 ? @"h\:mm\:ss" : @"m\:ss")
+        : string.Empty;
+    public string VideoDurationText => IsVideoAttachment && Attachment?.DurationSeconds is { } vs
+        ? TimeSpan.FromSeconds(vs).ToString(vs >= 3600 ? @"h\:mm\:ss" : @"m\:ss")
         : string.Empty;
 
     [ObservableProperty] public partial ImageSource? AttachmentImage { get; set; }
     [ObservableProperty] public partial bool IsAttachmentLoading { get; set; }
     [ObservableProperty] public partial byte[]? VoiceMessageData { get; set; }
     [ObservableProperty] public partial bool IsPlayingVoiceMessage { get; set; }
+
+    // Set once a video's bytes have been fetched and written to a cache file (see
+    // ChatViewModel.PlayVideoAsync), so tapping the same video again reopens it without
+    // re-downloading. Path, not bytes - it's handed straight to Launcher.OpenAsync.
+    [ObservableProperty] public partial string? VideoLocalPath { get; set; }
 
     // Playback progress for a voice message, updated on a short timer while playing (see
     // ChatViewModel.PlayVoiceMessageAsync) - PlaybackDurationSeconds defaults to the duration the

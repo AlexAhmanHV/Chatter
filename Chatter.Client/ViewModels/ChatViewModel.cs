@@ -24,6 +24,7 @@ using Chatter.Client.Models;
 using Chatter.Client.Services;
 using Chatter.Client.Views;
 using Microsoft.Maui.ApplicationModel;
+using Microsoft.Maui.ApplicationModel.DataTransfer;
 using Microsoft.Maui.Controls;
 using Microsoft.Maui.Media;
 using Microsoft.Maui.Storage;
@@ -114,6 +115,16 @@ public partial class ChatViewModel : ObservableObject
     public IRelayCommand<ChatMessageItem> ReplyToMessageCommand { get; }
     public IRelayCommand CancelReplyCommand { get; }
     public IAsyncRelayCommand<ChatMessageItem> JumpToRepliedMessageCommand { get; }
+    public IAsyncRelayCommand<ChatMessageItem> JumpToMessageCommand { get; }
+    public IAsyncRelayCommand<ChatMessageItem> TogglePinCommand { get; }
+    public IAsyncRelayCommand<ChatMessageItem> ViewEditHistoryCommand { get; }
+    public IAsyncRelayCommand PickAndSendVideoCommand { get; }
+    public IAsyncRelayCommand<ChatMessageItem> PlayVideoCommand { get; }
+
+    // Pinned messages for whichever chat is currently selected - refreshed on selection
+    // (LoadPinnedMessagesAsync) and kept current from live MessagePinned/MessageUnpinned events.
+    public ObservableCollection<ChatMessageItem> PinnedMessages { get; } = new();
+    public bool HasPinnedMessages => PinnedMessages.Count > 0;
     public IRelayCommand ToggleSearchCommand { get; }
 
     // The message the composer will attach as a reply when the next SendCommand/attachment/voice
@@ -315,6 +326,7 @@ public partial class ChatViewModel : ObservableObject
         _audio = audio;
 
         People.CollectionChanged += (_, __) => OnPropertyChanged(nameof(OfflineCount));
+        PinnedMessages.CollectionChanged += (_, __) => OnPropertyChanged(nameof(HasPinnedMessages));
         OnlineUsers.CollectionChanged += (_, __) => OnPropertyChanged(nameof(OfflineCount));
 
         _chat.TypingChanged += (_, e) =>
@@ -526,6 +538,29 @@ public partial class ChatViewModel : ObservableObject
                 if (msg is null) return;
                 msg.IsDeleted = true;
                 msg.Body = string.Empty;
+                PinnedMessages.Remove(msg); // server auto-unpins a deleted message too
+            });
+
+        _chat.MessagePinned += (chatId, messageId, pinnedBy) =>
+            MainThread.BeginInvokeOnMainThread(() =>
+            {
+                var msg = FindMessage(chatId, messageId);
+                if (msg is null) return;
+                msg.IsPinned = true;
+                if (SelectedChat?.Id == chatId && !PinnedMessages.Contains(msg))
+                    PinnedMessages.Add(msg);
+            });
+
+        _chat.MessageUnpinned += (chatId, messageId) =>
+            MainThread.BeginInvokeOnMainThread(() =>
+            {
+                var msg = FindMessage(chatId, messageId);
+                if (msg is not null) msg.IsPinned = false;
+                if (SelectedChat?.Id == chatId)
+                {
+                    var pinned = PinnedMessages.FirstOrDefault(m => m.Id == messageId);
+                    if (pinned is not null) PinnedMessages.Remove(pinned);
+                }
             });
 
         _chat.ReactionChanged += (chatId, messageId, emoji, count, added, byDisplayName) =>
@@ -657,6 +692,11 @@ public partial class ChatViewModel : ObservableObject
         ReplyToMessageCommand = new RelayCommand<ChatMessageItem>(item => { if (item?.CanReply == true) PendingReply = item; });
         CancelReplyCommand = new RelayCommand(() => PendingReply = null);
         JumpToRepliedMessageCommand = new AsyncRelayCommand<ChatMessageItem>(JumpToRepliedMessageAsync);
+        JumpToMessageCommand = new AsyncRelayCommand<ChatMessageItem>(JumpToMessageAsync);
+        TogglePinCommand = new AsyncRelayCommand<ChatMessageItem>(TogglePinAsync);
+        ViewEditHistoryCommand = new AsyncRelayCommand<ChatMessageItem>(ViewEditHistoryAsync);
+        PickAndSendVideoCommand = new AsyncRelayCommand(PickAndSendVideoAsync);
+        PlayVideoCommand = new AsyncRelayCommand<ChatMessageItem>(PlayVideoAsync);
         ToggleSearchCommand = new RelayCommand(ToggleSearch);
         JumpToSearchResultCommand = new AsyncRelayCommand<ChatMessageItem>(JumpToSearchResultAsync);
     }
@@ -1054,6 +1094,152 @@ public partial class ChatViewModel : ObservableObject
         }
     }
 
+    /* Pinning - any member can pin/unpin (see ChatHub.PinMessage); the live MessagePinned/
+       MessageUnpinned events (subscribed in the constructor) are what actually flip
+       item.IsPinned and update PinnedMessages, this just calls the server and surfaces errors
+       (e.g. hitting the per-chat cap). */
+    private async Task TogglePinAsync(ChatMessageItem? item)
+    {
+        if (item is null || !item.CanPin) return;
+
+        try
+        {
+            if (item.IsPinned) await _chat.UnpinMessageAsync(item.Id);
+            else await _chat.PinMessageAsync(item.Id);
+        }
+        catch (Exception ex)
+        {
+            await Ui.DisplayAlert("Couldn't update pin", ex.Message, "OK");
+        }
+    }
+
+    private async Task ViewEditHistoryAsync(ChatMessageItem? item)
+    {
+        if (item is null || !item.CanViewEditHistory) return;
+
+        try
+        {
+            var history = await _chat.GetMessageEditHistoryAsync(item.Id);
+            if (history.Count == 0)
+            {
+                await Ui.DisplayAlert("Edit history", "No earlier versions available.", "OK");
+                return;
+            }
+
+            var lines = history.Select(h => $"{h.EditedAtUtc.ToLocalTime():g}\n{h.PreviousBody}");
+            await Ui.DisplayAlert("Edit history", string.Join("\n\n", lines), "OK");
+        }
+        catch (Exception ex)
+        {
+            await Ui.DisplayAlert("Couldn't load edit history", ex.Message, "OK");
+        }
+    }
+
+    /* Video - picked with MediaPicker (single clip; MAUI has no multi-video picker), uploaded via
+       SendVideo, then played externally through the OS's own video player (Launcher.OpenAsync) -
+       simplest correct option without pulling in a dedicated media-playback control just for
+       this. Duration isn't extracted client-side (no reliable cross-platform API for a FileResult
+       without a media library), unlike a voice message where the recorder always knows it. */
+    private async Task PickAndSendVideoAsync()
+    {
+        if (SelectedChat is null)
+        {
+            await Ui.DisplayAlert("Pick a chat", "Select a chat before sending a video.", "OK");
+            return;
+        }
+        if (IsDraftId(SelectedChat.Id))
+        {
+            await Ui.DisplayAlert("Send a message first", "Send a text message to start this conversation before sharing a video.", "OK");
+            return;
+        }
+
+        FileResult? video;
+        try
+        {
+            video = await MediaPicker.Default.PickVideoAsync();
+        }
+        catch (Exception ex)
+        {
+            await Ui.DisplayAlert("Couldn't open picker", ex.Message, "OK");
+            return;
+        }
+        if (video is null) return; // user cancelled
+
+        byte[] bytes;
+        try
+        {
+            await using var stream = await video.OpenReadAsync();
+            using var ms = new MemoryStream();
+            await stream.CopyToAsync(ms);
+            bytes = ms.ToArray();
+        }
+        catch (Exception ex)
+        {
+            await Ui.DisplayAlert("Couldn't read video", ex.Message, "OK");
+            return;
+        }
+
+        var replyToId = PendingReply?.Id;
+        PendingReply = null;
+
+        try
+        {
+            await _chat.SendVideoAsync(SelectedChat.Id, video.FileName, GuessVideoContentType(video.FileName), bytes, durationSeconds: null, replyToId);
+        }
+        catch (Exception ex)
+        {
+            await Ui.DisplayAlert("Couldn't send video", ex.Message, "OK");
+        }
+    }
+
+    private static string GuessVideoContentType(string fileName) =>
+        Path.GetExtension(fileName).ToLowerInvariant() switch
+        {
+            ".mov" => "video/quicktime",
+            ".webm" => "video/webm",
+            _ => "video/mp4",
+        };
+
+    private async Task PlayVideoAsync(ChatMessageItem? item)
+    {
+        if (item is null || !item.IsVideoAttachment || item.Id <= 0) return;
+
+        if (item.VideoLocalPath is not null)
+        {
+            try { await Launcher.Default.OpenAsync(new OpenFileRequest("Video", new ReadOnlyFile(item.VideoLocalPath))); }
+            catch (Exception ex) { await Ui.DisplayAlert("Couldn't open video", ex.Message, "OK"); }
+            return;
+        }
+
+        if (item.IsAttachmentLoading) return;
+        item.IsAttachmentLoading = true;
+        try
+        {
+            var data = await _chat.GetAttachmentDataAsync(item.Id);
+            if (data is null) return;
+
+            var ext = data.ContentType switch
+            {
+                "video/quicktime" => ".mov",
+                "video/webm" => ".webm",
+                _ => ".mp4",
+            };
+            var path = Path.Combine(FileSystem.CacheDirectory, $"chatter-video-{item.Id}{ext}");
+            await File.WriteAllBytesAsync(path, data.Data);
+            item.VideoLocalPath = path;
+
+            await Launcher.Default.OpenAsync(new OpenFileRequest("Video", new ReadOnlyFile(path)));
+        }
+        catch (Exception ex)
+        {
+            await Ui.DisplayAlert("Couldn't play video", ex.Message, "OK");
+        }
+        finally
+        {
+            item.IsAttachmentLoading = false;
+        }
+    }
+
     /* In-chat search - debounced on SearchQuery changes (same idea as the typing debounce above),
        scoped to whichever chat is currently selected. */
     private void ToggleSearch()
@@ -1112,30 +1298,31 @@ public partial class ChatViewModel : ObservableObject
     // this id" API, only "load older from the top" (see LoadMoreHistoryCommand).
     private async Task JumpToSearchResultAsync(ChatMessageItem? item)
     {
-        if (item is null || SelectedChat is null) return;
+        if (item is null) return;
 
         IsSearching = false;
         SearchQuery = null;
         SearchResults.Clear();
 
-        var target = FindMessage(SelectedChat.Id, item.Id);
-        if (target is null)
-        {
-            await Ui.DisplayAlert("Message not loaded", "This message is older than what's currently loaded. Use \"Load earlier messages\" first.", "OK");
-            return;
-        }
-
-        WeakReferenceMessenger.Default.Send(new ScrollToMessageMessage(target));
+        await JumpToMessageIdAsync(item.Id);
     }
 
     // Tapping a reply preview inside a bubble scrolls to the original message it points to - same
-    // "only works if already loaded" limitation as JumpToSearchResultAsync above, for the same
-    // reason (no "load history around this id" API).
-    private async Task JumpToRepliedMessageAsync(ChatMessageItem? item)
-    {
-        if (item?.ReplyTo is not { } replyTo || SelectedChat is null) return;
+    // "only works if already loaded" limitation as everything else that jumps to a message id,
+    // for the same reason (no "load history around this id" API).
+    private Task JumpToRepliedMessageAsync(ChatMessageItem? item) =>
+        item?.ReplyTo is { } replyTo ? JumpToMessageIdAsync(replyTo.MessageId) : Task.CompletedTask;
 
-        var target = FindMessage(SelectedChat.Id, replyTo.MessageId);
+    // Tapping an entry in the pinned-messages bar scrolls to it directly - same idea, but the
+    // item passed in (from PinnedMessages) is usually already the live instance itself.
+    private Task JumpToMessageAsync(ChatMessageItem? item) =>
+        item is not null ? JumpToMessageIdAsync(item.Id) : Task.CompletedTask;
+
+    private async Task JumpToMessageIdAsync(long messageId)
+    {
+        if (SelectedChat is null) return;
+
+        var target = FindMessage(SelectedChat.Id, messageId);
         if (target is null)
         {
             await Ui.DisplayAlert("Message not loaded", "This message is older than what's currently loaded. Use \"Load earlier messages\" first.", "OK");
@@ -1375,14 +1562,38 @@ public partial class ChatViewModel : ObservableObject
         OnPropertyChanged(nameof(CanSend));
         CanLoadMoreHistory = false;
         PendingReply = null; // a reply to a message in the chat we're leaving wouldn't make sense here
+        PinnedMessages.Clear();
 
         if (value is not null && !value.Id.StartsWith("draft:", StringComparison.OrdinalIgnoreCase))
         {
             _ = _chat.JoinChatAsync(value.Id);
             _ = LoadHistoryIfNeededAsync(value.Id);
+            _ = LoadPinnedMessagesAsync(value.Id);
 
             if (value.Id.StartsWith("group:", StringComparison.OrdinalIgnoreCase))
                 _ = LoadGroupSeenStateAsync(value.Id);
+        }
+    }
+
+    private async Task LoadPinnedMessagesAsync(string chatId)
+    {
+        try
+        {
+            var pinned = await _chat.GetPinnedMessagesAsync(chatId);
+            if (SelectedChat?.Id != chatId) return; // the user already moved on to another chat
+
+            PinnedMessages.Clear();
+            foreach (var dto in pinned)
+            {
+                // Prefer the live, already-mutable instance from this chat's message list (if
+                // loaded) so pin/unpin/edit/delete on it stay in sync with what's shown below.
+                var existing = FindMessage(chatId, dto.Id);
+                PinnedMessages.Add(existing ?? ToItem(dto));
+            }
+        }
+        catch
+        {
+            // Best-effort - worst case the pinned bar just doesn't show for this chat.
         }
     }
 
@@ -1428,7 +1639,7 @@ public partial class ChatViewModel : ObservableObject
     {
         var item = new ChatMessageItem(dto.Id, dto.Sender, dto.Body, dto.SentAtUtc,
             isMine: Ci.Equals(dto.Sender, User), isSystem: false,
-            dto.Attachment, dto.IsForwarded, dto.ReplyTo)
+            dto.Attachment, dto.IsForwarded, dto.ReplyTo, dto.IsPinned)
         {
             EditedAtUtc = dto.EditedAtUtc,
             IsDeleted = dto.IsDeleted,

@@ -59,6 +59,10 @@ public class ChatService
     public event Action<string, long, string, int, bool, string>? ReactionChanged; // chatId, messageId, emoji, count, added, byDisplayName
     public event Action<string, string, long>? ReadReceipt;                  // chatId, fromDisplayName, lastReadMessageId
 
+    // Pinning
+    public event Action<string, long, string>? MessagePinned;   // chatId, messageId, pinnedByDisplayName
+    public event Action<string, long>? MessageUnpinned;         // chatId, messageId
+
     // Group admin (add/remove member, rename)
     public event Action<string>? RemovedFromChat;               // chatId - you were kicked or the group no longer includes you
     public event Action<string, string>? ChatRenamed;           // chatId, newLabel
@@ -172,6 +176,12 @@ public class ChatService
 
         _conn.On<string, long>("MessageDeleted", (chatId, messageId) =>
             MessageDeleted?.Invoke(chatId, messageId));
+
+        _conn.On<string, long, string>("MessagePinned", (chatId, messageId, pinnedBy) =>
+            MessagePinned?.Invoke(chatId, messageId, pinnedBy));
+
+        _conn.On<string, long>("MessageUnpinned", (chatId, messageId) =>
+            MessageUnpinned?.Invoke(chatId, messageId));
 
         _conn.On<string, long, string, int, bool, string>("ReactionChanged",
             (chatId, messageId, emoji, count, added, byDisplayName) =>
@@ -306,8 +316,28 @@ public class ChatService
     public Task EditMessageAsync(long messageId, string newBody) =>
         _conn?.SendAsync("EditMessage", messageId, newBody) ?? Task.CompletedTask;
 
+    public async Task<IReadOnlyList<MessageEditHistoryDto>> GetMessageEditHistoryAsync(long messageId)
+    {
+        if (_conn is null) return Array.Empty<MessageEditHistoryDto>();
+        var list = await _conn.InvokeAsync<List<MessageEditHistoryDto>>("GetMessageEditHistory", messageId);
+        return (list ?? new()).AsReadOnly();
+    }
+
     public Task DeleteMessageAsync(long messageId) =>
         _conn?.SendAsync("DeleteMessage", messageId) ?? Task.CompletedTask;
+
+    public Task PinMessageAsync(long messageId) =>
+        _conn?.SendAsync("PinMessage", messageId) ?? Task.CompletedTask;
+
+    public Task UnpinMessageAsync(long messageId) =>
+        _conn?.SendAsync("UnpinMessage", messageId) ?? Task.CompletedTask;
+
+    public async Task<IReadOnlyList<ChatMessageDto>> GetPinnedMessagesAsync(string chatId)
+    {
+        if (_conn is null) return Array.Empty<ChatMessageDto>();
+        var list = await _conn.InvokeAsync<List<ChatMessageDto>>("GetPinnedMessages", chatId);
+        return (list ?? new()).AsReadOnly();
+    }
 
     public Task ToggleReactionAsync(long messageId, string emoji) =>
         _conn?.SendAsync("ToggleReaction", messageId, emoji) ?? Task.CompletedTask;
@@ -388,7 +418,7 @@ public class ChatService
     public Task SendToChatAsync(string chatId, string message, long? replyToMessageId = null) =>
         _conn?.SendAsync("SendToChat", chatId, message, replyToMessageId) ?? Task.CompletedTask;
 
-    /* Attachments (images) and voice messages */
+    /* Attachments (images, video) and voice messages */
     public Task<long> SendAttachmentAsync(string chatId, string fileName, string contentType, byte[] data, string? caption, long? replyToMessageId = null) =>
         _conn is null
             ? Task.FromResult(0L)
@@ -398,6 +428,11 @@ public class ChatService
         _conn is null
             ? Task.FromResult(0L)
             : _conn.InvokeAsync<long>("SendVoiceMessage", chatId, contentType, data, durationSeconds, replyToMessageId);
+
+    public Task<long> SendVideoAsync(string chatId, string fileName, string contentType, byte[] data, int? durationSeconds = null, long? replyToMessageId = null) =>
+        _conn is null
+            ? Task.FromResult(0L)
+            : _conn.InvokeAsync<long>("SendVideo", chatId, fileName, contentType, data, durationSeconds, replyToMessageId);
 
     public async Task<AttachmentDataDto?> GetAttachmentDataAsync(long messageId)
     {

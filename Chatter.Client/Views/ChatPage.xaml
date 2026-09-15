@@ -53,6 +53,7 @@ What this does:
       <conv:AttachmentStatusTextConverter x:Key="AttachmentStatusText" />
       <conv:RecordButtonTextConverter x:Key="RecordButtonText" />
       <conv:RecordButtonBackgroundConverter x:Key="RecordButtonBackground" />
+      <conv:PinSwipeItemTextConverter x:Key="PinSwipeItemText" />
       <Color x:Key="PrimaryStart">#6EE7F9</Color>
       <Color x:Key="PrimaryEnd">#8B5CF6</Color>
       <Color x:Key="CardBg">#101827</Color>
@@ -312,6 +313,29 @@ What this does:
                     BackgroundColor="#1F2937" TextColor="{StaticResource TextPrimary}" CornerRadius="20" />
           </Grid>
 
+          <CollectionView IsVisible="{Binding HasPinnedMessages}"
+                          ItemsSource="{Binding PinnedMessages}" HeightRequest="40"
+                          ItemsLayout="HorizontalList">
+            <CollectionView.ItemTemplate>
+              <DataTemplate x:DataType="models:ChatMessageItem">
+                <Border Padding="8,4" Margin="0,0,6,0" StrokeThickness="1"
+                        Stroke="{StaticResource StrokeIdle}" BackgroundColor="{StaticResource PanelBg}">
+                  <Border.StrokeShape><RoundRectangle CornerRadius="8" /></Border.StrokeShape>
+                  <Border.GestureRecognizers>
+                    <TapGestureRecognizer Tapped="OnPinnedMessageTapped" />
+                  </Border.GestureRecognizers>
+                  <HorizontalStackLayout Spacing="6">
+                    <Label Text="📌" FontSize="11" VerticalOptions="Center" />
+                    <Label Text="{Binding Sender}" FontSize="11" FontAttributes="Bold"
+                           TextColor="{StaticResource PrimaryStart}" VerticalOptions="Center" />
+                    <Label Text="{Binding Body}" FontSize="11" LineBreakMode="TailTruncation" MaxLines="1"
+                           WidthRequest="140" TextColor="{StaticResource TextSecondary}" VerticalOptions="Center" />
+                  </HorizontalStackLayout>
+                </Border>
+              </DataTemplate>
+            </CollectionView.ItemTemplate>
+          </CollectionView>
+
           <Grid IsVisible="{Binding IsSearching}" ColumnDefinitions="*,Auto" ColumnSpacing="8">
             <Border Grid.Column="0" Style="{StaticResource FieldBorder}">
               <Entry Placeholder="Search this chat…"
@@ -385,6 +409,10 @@ What this does:
                                    BackgroundColor="#059669"
                                    IsVisible="{Binding CanReply}"
                                    Invoked="OnReplyToMessageInvoked" />
+                        <SwipeItem Text="{Binding IsPinned, Converter={StaticResource PinSwipeItemText}}"
+                                   BackgroundColor="#B45309"
+                                   IsVisible="{Binding CanPin}"
+                                   Invoked="OnTogglePinInvoked" />
                       </SwipeItems>
                     </SwipeView.RightItems>
 
@@ -416,7 +444,12 @@ What this does:
                                  FontSize="11" TextColor="{StaticResource TextSecondary}" VerticalOptions="Center" />
                           <Label Text="(edited)" FontSize="11" FontAttributes="Italic"
                                  TextColor="{StaticResource TextSecondary}" IsVisible="{Binding IsEdited}"
-                                 VerticalOptions="Center" />
+                                 VerticalOptions="Center">
+                            <Label.GestureRecognizers>
+                              <TapGestureRecognizer Tapped="OnViewEditHistoryTapped" />
+                            </Label.GestureRecognizers>
+                          </Label>
+                          <Label Text="📌" FontSize="11" IsVisible="{Binding IsPinned}" VerticalOptions="Center" />
                         </HorizontalStackLayout>
 
                         <Border IsVisible="{Binding HasReplyPreview}"
@@ -520,6 +553,26 @@ What this does:
                           </VerticalStackLayout>
                         </Border>
 
+                        <Border IsVisible="{Binding IsVideoAttachment}"
+                                Padding="10,8" StrokeThickness="1"
+                                Stroke="{StaticResource StrokeIdle}" BackgroundColor="{StaticResource PanelBg}">
+                          <Border.StrokeShape>
+                            <RoundRectangle CornerRadius="10" />
+                          </Border.StrokeShape>
+                          <Border.GestureRecognizers>
+                            <TapGestureRecognizer Tapped="OnPlayVideoTapped" />
+                          </Border.GestureRecognizers>
+                          <HorizontalStackLayout Spacing="8">
+                            <Label Text="🎥" FontSize="16" VerticalOptions="Center" />
+                            <Label Text="Video - tap to play" FontSize="12" TextColor="{StaticResource TextPrimary}" VerticalOptions="Center" />
+                            <Label Text="{Binding VideoDurationText}" FontSize="11"
+                                   TextColor="{StaticResource TextSecondary}" VerticalOptions="Center" />
+                            <Label Text="{Binding IsAttachmentLoading, Converter={StaticResource AttachmentStatusText}}"
+                                   FontSize="11" TextColor="{StaticResource TextSecondary}"
+                                   IsVisible="{Binding IsAttachmentLoading}" VerticalOptions="Center" />
+                          </HorizontalStackLayout>
+                        </Border>
+
                         <HorizontalStackLayout Spacing="8">
                           <FlexLayout Wrap="Wrap" BindableLayout.ItemsSource="{Binding Reactions}">
                             <BindableLayout.ItemTemplate>
@@ -584,9 +637,10 @@ What this does:
             <ColumnDefinition Width="Auto" />
             <ColumnDefinition Width="Auto" />
             <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="Auto" />
           </Grid.ColumnDefinitions>
 
-          <Border Grid.Row="0" Grid.ColumnSpan="5" IsVisible="{Binding IsReplying}"
+          <Border Grid.Row="0" Grid.ColumnSpan="6" IsVisible="{Binding IsReplying}"
                   Padding="10,6" StrokeThickness="0" BackgroundColor="{StaticResource PanelBg}">
             <Border.StrokeShape>
               <RoundRectangle CornerRadius="8" />
@@ -637,6 +691,15 @@ What this does:
                   CornerRadius="12" />
 
           <Button Grid.Row="1" Grid.Column="3"
+                  Text="🎥"
+                  Command="{Binding PickAndSendVideoCommand}"
+                  WidthRequest="44"
+                  HeightRequest="48"
+                  BackgroundColor="#1F2937"
+                  TextColor="#E5E7EB"
+                  CornerRadius="12" />
+
+          <Button Grid.Row="1" Grid.Column="4"
                   Text="😊"
                   Command="{Binding ShowEmojiPickerCommand}"
                   WidthRequest="44"
@@ -645,14 +708,14 @@ What this does:
                   TextColor="#E5E7EB"
                   CornerRadius="12" />
 
-          <Button Grid.Row="1" Grid.Column="4"
+          <Button Grid.Row="1" Grid.Column="5"
                   Text="Send"
                   Command="{Binding SendCommand}"
                   IsEnabled="{Binding CanSend}"
                   Style="{StaticResource PrimaryBtn}"
                   WidthRequest="110" />
 
-          <Label Grid.Row="2" Grid.ColumnSpan="5"
+          <Label Grid.Row="2" Grid.ColumnSpan="6"
                   Text="{Binding CharacterCounterText}"
                   HorizontalOptions="End"
                   FontSize="12"
@@ -660,7 +723,7 @@ What this does:
                   FontAttributes="Italic"
                   TextColor="{DynamicResource TextSecondary}" />
 
-          <Label Grid.Row="2" Grid.ColumnSpan="5"
+          <Label Grid.Row="2" Grid.ColumnSpan="6"
                  Text="{Binding TypingUser, StringFormat='{0} is typing…'}"
                  IsVisible="{Binding IsPeerTyping}"
                  FontAttributes="Italic"
@@ -668,7 +731,7 @@ What this does:
                  TextColor="{StaticResource TextSecondary}"
                  Margin="6,6,0,0" />
 
-          <Label Grid.Row="2" Grid.ColumnSpan="5"
+          <Label Grid.Row="2" Grid.ColumnSpan="6"
                  Text="{Binding RecordingUser, StringFormat='🎤 {0} is recording a voice message…'}"
                  IsVisible="{Binding IsPeerRecordingVoiceMessage}"
                  FontAttributes="Italic"
