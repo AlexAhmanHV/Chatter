@@ -51,6 +51,14 @@ public class ChatHub : Hub
         "audio/mp4", "audio/aac", "audio/wav", "audio/webm", "audio/ogg"
     };
 
+    // A short video clip, not a general video-file uploader - capped well above an image but
+    // still small enough not to turn the SQLite file into a video store.
+    private const int MaxVideoBytes = 20 * 1024 * 1024; // 20 MB
+    private static readonly HashSet<string> AllowedVideoContentTypes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "video/mp4", "video/quicktime", "video/webm"
+    };
+
     // ===== Connection & identity indices (all keyed by the stable Identity user ID) =====
     // connectionId -> userId
     private static readonly ConcurrentDictionary<string, string> _connToUserId = new();
@@ -725,6 +733,7 @@ public class ChatHub : Hub
         {
             null => target.Body,
             var ct when ct.StartsWith("audio/", StringComparison.OrdinalIgnoreCase) => "🎤 Voice message",
+            var ct when ct.StartsWith("video/", StringComparison.OrdinalIgnoreCase) => "🎥 Video",
             _ => "📷 Photo",
         };
         if (snippet.Length > 80) snippet = snippet[..80] + "…";
@@ -850,6 +859,59 @@ public class ChatHub : Hub
         return messageId;
     }
 
+    // Shares a short video clip - same storage/lazy-fetch model as an image or voice attachment,
+    // just with a video content-type allowlist and a larger size cap. DurationSeconds is
+    // optional and purely for display (the client has no reliable way to read a picked video's
+    // duration without a dedicated media library, so it's often just omitted) - unlike a voice
+    // message, where the recorder always knows exactly how long it ran.
+    public async Task<long> SendVideo(string chatId, string fileName, string contentType, byte[] data, int? durationSeconds = null, long? replyToMessageId = null)
+    {
+        var me = RequireUserId();
+        EnforceRateLimit("sendToChat", maxPerWindow: 10, window: TimeSpan.FromSeconds(10));
+        ValidateAttachmentPost(chatId, me, data?.Length ?? 0, MaxVideoBytes, contentType, AllowedVideoContentTypes, "Video");
+
+        fileName = string.IsNullOrWhiteSpace(fileName) ? "video" : fileName.Trim();
+        if (fileName.Length > 200) fileName = fileName[..200];
+        var duration = durationSeconds is { } d ? Math.Max(0, d) : (int?)null;
+
+        var name = DisplayNameOf(me);
+        var sentAt = DateTime.UtcNow;
+
+        long messageId;
+        ReplyPreviewDto? replyTo;
+        try
+        {
+            await using var db = await _dbFactory.CreateDbContextAsync();
+            replyTo = await BuildReplyPreviewAsync(db, chatId, replyToMessageId);
+            var entity = new ChatMessageEntity
+            {
+                ChatId = chatId,
+                SenderUserId = me,
+                SenderDisplayName = name,
+                Body = string.Empty,
+                SentAtUtc = sentAt,
+                AttachmentFileName = fileName,
+                AttachmentContentType = contentType,
+                AttachmentData = data,
+                AttachmentSizeBytes = data!.Length,
+                AttachmentDurationSeconds = duration,
+                ReplyToMessageId = replyTo?.MessageId,
+            };
+            db.Messages.Add(entity);
+            await db.SaveChangesAsync();
+            messageId = entity.Id;
+        }
+        catch (HubException) { throw; }
+        catch (Exception ex)
+        {
+            throw new HubException("Failed to save the video. Please try again.", ex);
+        }
+
+        var meta = new AttachmentMetaDto(fileName, contentType, data.Length, duration);
+        await BroadcastMessageAsync(chatId, messageId, name, string.Empty, sentAt, meta, isForwarded: false, replyTo);
+        return messageId;
+    }
+
     // Fetches an attachment's bytes on demand - GetChatHistory/live broadcasts only ever carry
     // metadata (filename/content type/size/duration), so opening a chat with a long history of
     // images/voice notes doesn't mean downloading every one of them up front.
@@ -935,11 +997,40 @@ public class ChatHub : Hub
         if (newBody.Length == 0) throw new HubException("Message can't be empty.");
         if (newBody.Length > MaxMessageLength) newBody = newBody[..MaxMessageLength];
 
+        if (!Ci.Equals(msg.Body, newBody))
+        {
+            db.MessageEditHistory.Add(new MessageEditHistoryEntity
+            {
+                MessageId = msg.Id,
+                PreviousBody = msg.Body,
+                EditedAtUtc = DateTime.UtcNow,
+            });
+        }
+
         msg.Body = newBody;
         msg.EditedAtUtc = DateTime.UtcNow;
         await db.SaveChangesAsync();
 
         await Clients.Group(msg.ChatId).SendAsync("MessageEdited", msg.ChatId, msg.Id, newBody, msg.EditedAtUtc);
+    }
+
+    // Full history of what a message used to say, oldest first, ending just before its current
+    // body (which the client already has). Membership-checked against the message's chat, same
+    // as GetAttachmentData.
+    public async Task<List<MessageEditHistoryDto>> GetMessageEditHistory(long messageId)
+    {
+        var me = RequireUserId();
+
+        await using var db = await _dbFactory.CreateDbContextAsync();
+        var msg = await db.Messages.FindAsync(messageId) ?? throw new HubException("Message not found.");
+        RequireMembership(msg.ChatId, me);
+
+        var rows = await db.MessageEditHistory
+            .Where(h => h.MessageId == messageId)
+            .OrderBy(h => h.EditedAtUtc)
+            .ToListAsync();
+
+        return rows.Select(h => new MessageEditHistoryDto(h.PreviousBody, h.EditedAtUtc)).ToList();
     }
 
     public async Task DeleteMessage(long messageId)
@@ -952,9 +1043,66 @@ public class ChatHub : Hub
 
         msg.IsDeleted = true;
         msg.Body = string.Empty;
+        var wasPinned = msg.IsPinned;
+        msg.IsPinned = false; // a deleted message can't stay in the pinned list
         await db.SaveChangesAsync();
 
         await Clients.Group(msg.ChatId).SendAsync("MessageDeleted", msg.ChatId, msg.Id);
+        if (wasPinned)
+            await Clients.Group(msg.ChatId).SendAsync("MessageUnpinned", msg.ChatId, msg.Id);
+    }
+
+    // Any current member can pin/unpin - same "no special permission gate" philosophy as
+    // reactions/forwarding, rather than restricting it to group admins.
+    private const int MaxPinnedPerChat = 20;
+
+    public async Task PinMessage(long messageId)
+    {
+        var me = RequireUserId();
+
+        await using var db = await _dbFactory.CreateDbContextAsync();
+        var msg = await db.Messages.FindAsync(messageId) ?? throw new HubException("Message not found.");
+        RequireMembership(msg.ChatId, me);
+        if (msg.IsDeleted) throw new HubException("Can't pin a deleted message.");
+        if (msg.IsPinned) return;
+
+        var pinnedCount = await db.Messages.CountAsync(m => m.ChatId == msg.ChatId && m.IsPinned);
+        if (pinnedCount >= MaxPinnedPerChat)
+            throw new HubException($"This chat already has the maximum of {MaxPinnedPerChat} pinned messages - unpin one first.");
+
+        msg.IsPinned = true;
+        await db.SaveChangesAsync();
+
+        await Clients.Group(msg.ChatId).SendAsync("MessagePinned", msg.ChatId, msg.Id, DisplayNameOf(me));
+    }
+
+    public async Task UnpinMessage(long messageId)
+    {
+        var me = RequireUserId();
+
+        await using var db = await _dbFactory.CreateDbContextAsync();
+        var msg = await db.Messages.FindAsync(messageId) ?? throw new HubException("Message not found.");
+        RequireMembership(msg.ChatId, me);
+        if (!msg.IsPinned) return;
+
+        msg.IsPinned = false;
+        await db.SaveChangesAsync();
+
+        await Clients.Group(msg.ChatId).SendAsync("MessageUnpinned", msg.ChatId, msg.Id);
+    }
+
+    public async Task<List<ChatMessageDto>> GetPinnedMessages(string chatId)
+    {
+        var me = RequireUserId();
+        RequireMembership(chatId, me);
+
+        await using var db = await _dbFactory.CreateDbContextAsync();
+        var rows = await db.Messages
+            .Where(m => m.ChatId == chatId && m.IsPinned)
+            .OrderBy(m => m.SentAtUtc)
+            .ToListAsync();
+
+        return await ToDtosAsync(db, rows, me);
     }
 
     // Toggle: reacting again with the same emoji removes it. One reaction per (user, emoji) per
@@ -1215,7 +1363,8 @@ public class ChatHub : Hub
                 : new AttachmentMetaDto(m.AttachmentFileName ?? "attachment", m.AttachmentContentType,
                     m.AttachmentSizeBytes ?? 0, m.AttachmentDurationSeconds),
             m.IsForwarded,
-            m.ReplyToMessageId is { } replyId && replyPreviewById.TryGetValue(replyId, out var preview) ? preview : null
+            m.ReplyToMessageId is { } replyId && replyPreviewById.TryGetValue(replyId, out var preview) ? preview : null,
+            m.IsPinned
         )).ToList();
     }
 

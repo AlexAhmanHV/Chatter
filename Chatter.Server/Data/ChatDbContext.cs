@@ -21,6 +21,7 @@ public class ChatDbContext : IdentityDbContext<ApplicationUser>
 
     public DbSet<ChatMessageEntity> Messages => Set<ChatMessageEntity>();
     public DbSet<MessageReactionEntity> Reactions => Set<MessageReactionEntity>();
+    public DbSet<MessageEditHistoryEntity> MessageEditHistory => Set<MessageEditHistoryEntity>();
     public DbSet<ChatEntity> Chats => Set<ChatEntity>();
     public DbSet<ChatMemberEntity> ChatMembers => Set<ChatMemberEntity>();
     public DbSet<ReadReceiptEntity> ReadReceipts => Set<ReadReceiptEntity>();
@@ -45,6 +46,12 @@ public class ChatDbContext : IdentityDbContext<ApplicationUser>
         {
             e.HasKey(r => r.Id);
             e.HasIndex(r => new { r.MessageId, r.UserId, r.Emoji }).IsUnique();
+        });
+
+        modelBuilder.Entity<MessageEditHistoryEntity>(e =>
+        {
+            e.HasKey(h => h.Id);
+            e.HasIndex(h => h.MessageId);
         });
 
         modelBuilder.Entity<ChatEntity>(e =>
@@ -106,6 +113,21 @@ public class ChatMessageEntity
     // is ever written). A forward never carries this over - a forward is a fresh message, not
     // part of the original's reply chain.
     public long? ReplyToMessageId { get; set; }
+
+    // Any current member can pin/unpin (same "no special permission gate" philosophy as
+    // reactions/forwarding - see ChatHub.PinMessage) - capped per chat, see MaxPinnedPerChat.
+    public bool IsPinned { get; set; }
+}
+
+// One row per edit, capturing the body *before* the edit (see ChatHub.EditMessage) - the current
+// body always lives on ChatMessageEntity itself. Lets GetMessageEditHistory show a full history
+// of what a message used to say, not just that it was edited.
+public class MessageEditHistoryEntity
+{
+    public long Id { get; set; }
+    public long MessageId { get; set; }
+    public required string PreviousBody { get; set; }
+    public DateTime EditedAtUtc { get; set; }
 }
 
 public class MessageReactionEntity

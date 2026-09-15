@@ -36,7 +36,11 @@ public sealed record ChatMessageDto(
     IReadOnlyList<ReactionDto> Reactions,
     AttachmentMetaDto? Attachment,
     bool IsForwarded,
-    ReplyPreviewDto? ReplyTo);
+    ReplyPreviewDto? ReplyTo,
+    bool IsPinned);
 
 // The actual bytes of a message's attachment, fetched lazily via ChatHub.GetAttachmentData.
 public sealed record AttachmentDataDto(string ContentType, byte[] Data);
+
+// One entry in a message's edit history, oldest first - see ChatHub.GetMessageEditHistory.
+public sealed record MessageEditHistoryDto(string PreviousBody, DateTime EditedAtUtc);
