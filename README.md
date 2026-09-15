@@ -134,10 +134,21 @@ storage dependency to configure. A few consequences worth knowing:
 Recorded client-side with [Plugin.Maui.Audio](https://github.com/jfversluis/Plugin.Maui.Audio)
 and uploaded through `ChatHub.SendVoiceMessage` - same blob storage and lazy-fetch model as an
 image attachment, just with an audio content-type allowlist and a smaller size cap (~2 minutes of
-compressed audio). The 🎤 composer button toggles recording; tapping a received voice message
-fetches and plays it. Requires microphone permission (`RECORD_AUDIO` on Android,
+compressed audio). The 🎤 composer button toggles recording; while recording, everyone else in
+that chat sees a "🎤 X is recording a voice message…" indicator (`ChatHub.SetRecordingVoiceMessage`,
+the same mechanism as the typing indicator but its own event). Tapping a received voice message
+fetches and plays it, with a live progress bar and position (polled from the player - Plugin.Maui.Audio
+doesn't push position updates itself). Requires microphone permission (`RECORD_AUDIO` on Android,
 `NSMicrophoneUsageDescription` on iOS/macOS, the `microphone` capability on Windows) - the app
 prompts for it on first use.
+
+### Message search
+
+The 🔍 button in the chat header searches the currently open chat's history
+(`ChatHub.SearchMessages`) with a debounced, case-insensitive substring match; deleted messages
+are excluded. Tapping a result jumps to it if it's already loaded into the visible message list,
+or asks you to load earlier history first if it isn't - there's no "load history around this
+message" API, only "load older from the top" (`LoadMoreHistoryCommand`).
 
 ### Message forwarding
 
@@ -165,6 +176,7 @@ A few deliberate scope cuts, worth knowing about if you extend this:
 * **No refresh tokens** — a login/register JWT is valid for 7 days flat (`Auth/JwtIssuer.cs`) with no rotation or revocation. Simple, but a compromised token stays valid until it expires, and there's no server-side "sign out everywhere" beyond changing the JWT signing key (which invalidates *every* session, not just one).
 * **Attachments/avatars/voice messages as SQLite blobs** — see [Attachments & avatars](#attachments--avatars) above. Fine at this scale; a high-traffic deployment would want a real object store instead of growing the database file with binary data.
 * **Forwarding doesn't cross a block** — forwarding into a DM still goes through the same block check as sending normally, but there's no separate "this content came from someone you've blocked" warning; it's just refused the same way a direct message would be.
+* **Search is per-chat, not global** — `SearchMessages` only looks within one chat at a time; there's no "search across all my chats" view.
 
 ## Project structure
 
