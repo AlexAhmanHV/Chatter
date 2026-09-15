@@ -9,8 +9,21 @@
 
 ---
 
+## Quick start (Windows, no coding required)
+
+1. Download the latest Windows build from **[Releases](../../releases/latest)** - grab the `Chatter-Windows-*.zip` file under "Assets".
+2. Unzip it anywhere and run `Chatter.Client.exe`. It's self-contained - no .NET install needed.
+3. Windows SmartScreen will likely warn "Windows protected your PC" the first time, since this build isn't code-signed - click **More info** → **Run anyway**.
+4. On the login screen, tap **Server address** and enter the address of a running Chatter server (e.g. `http://192.168.1.42:5291`) - either your own ([Configure](#configure) + [Run the backend](#run-the-backend-aspnet-core) below) or one someone else is already hosting for you.
+5. Register an account and start chatting.
+
+This covers the Windows client only. The server, and every other platform (Android/iOS/macOS), still need to be built from source - see [Getting started](#getting-started) below.
+
+---
+
 ## Table of contents
 
+* [Quick start (Windows, no coding required)](#quick-start-windows-no-coding-required)
 * [Overview](#overview)
 * [Why it’s useful](#why-its-useful)
 * [Architecture](#architecture)
@@ -351,12 +364,10 @@ docker run -p 8080:8080 -v chatter-data:/app/data chatter-server
 
 ### Run the client (MAUI)
 
-**Windows: pre-built download, no SDK needed** — [GitHub Releases](../../releases) has a
-self-contained `.exe` build published by `.github/workflows/release-windows.yml` (triggered on
-a version tag, or manually via the Actions tab). Unzip and run `Chatter.Client.exe` - it's
-unsigned, so Windows SmartScreen will warn once ("Windows protected your PC" → "More info" →
-"Run anyway"). On first launch, tap "Server address" on the login screen and point it at your
-server (see [Configure](#configure) to run one).
+Just want to run the Windows app without building it? See [Quick start](#quick-start-windows-no-coding-required)
+at the top of this README - it's a pre-built download from
+[GitHub Releases](../../releases/latest), published by `.github/workflows/release-windows.yml`
+(triggered on a version tag, or manually via the Actions tab).
 
 Everything below is for building from source instead (any other platform, or if you want to
 change the code):
