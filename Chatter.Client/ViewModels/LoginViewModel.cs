@@ -27,6 +27,13 @@ public partial class LoginViewModel : ObservableObject
     [ObservableProperty] public partial string? Password { get; set; }
     [ObservableProperty] public partial bool IsBusy { get; set; }
 
+    // Editable server address - collapsed behind ShowServerSettings by default so it doesn't
+    // clutter the login screen for the common case (same machine, or an emulator, where the
+    // guessed default already works). Persisted via ServerConfig as soon as it's changed, so a
+    // physical device can be pointed at a real server without editing source code and rebuilding.
+    [ObservableProperty] public partial string? ServerUrl { get; set; }
+    [ObservableProperty] public partial bool ShowServerSettings { get; set; }
+
     private readonly ApiAuthService _auth;
 
     // Computed: enables the login button only when inputs are present and not busy.
@@ -35,17 +42,21 @@ public partial class LoginViewModel : ObservableObject
         !string.IsNullOrWhiteSpace(Password) &&
         !IsBusy;
 
-    // Outputs / events (navigation trigger on success) 
+    // Outputs / events (navigation trigger on success)
     public event Action<string>? LoginSucceeded;
 
 
     public IAsyncRelayCommand LoginCommand { get; }
+    public IRelayCommand ToggleServerSettingsCommand { get; }
 
     public LoginViewModel(ApiAuthService auth)
     {
         _auth = auth;
+        ServerUrl = ServerConfig.BaseUrl;
+        ShowServerSettings = ServerConfig.HasCustomBaseUrl;
 
         LoginCommand = new AsyncRelayCommand(LoginAsync, () => CanLogin);
+        ToggleServerSettingsCommand = new RelayCommand(() => ShowServerSettings = !ShowServerSettings);
 
         PropertyChanged += (_, e) =>
         {
@@ -58,6 +69,10 @@ public partial class LoginViewModel : ObservableObject
     partial void OnUsernameChanged(string? value) => OnPropertyChanged(nameof(CanLogin));
     partial void OnPasswordChanged(string? value) => OnPropertyChanged(nameof(CanLogin));
     partial void OnIsBusyChanged(bool value)      => OnPropertyChanged(nameof(CanLogin));
+
+    // Persists on every keystroke rather than only on save/login - simple, and the value is only
+    // ever used for the next network call anyway, so there's no "unsaved changes" state to track.
+    partial void OnServerUrlChanged(string? value) => ServerConfig.SetBaseUrl(value);
 
     private static Page? GetRootPage() => Application.Current?.Windows?.FirstOrDefault()?.Page;
 

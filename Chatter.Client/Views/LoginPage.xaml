@@ -295,6 +295,43 @@ What this does:
                                 Text="Create account"
                                 Style="{StaticResource PrimaryBtn}" />
 
+                        <!-- Server address: collapsed by default (the guessed default works for
+                             most local/emulator setups); a physical device pointed at a real
+                             server needs this instead of a source-code edit and rebuild. -->
+                        <Label Style="{StaticResource Subtle}"
+                               HorizontalOptions="Center"
+                               Margin="0,4,0,0">
+                            <Label.Triggers>
+                                <DataTrigger TargetType="Label" Binding="{Binding ShowServerSettings}" Value="True">
+                                    <Setter Property="Text" Value="Server address ▲" />
+                                </DataTrigger>
+                                <DataTrigger TargetType="Label" Binding="{Binding ShowServerSettings}" Value="False">
+                                    <Setter Property="Text" Value="Server address ▼" />
+                                </DataTrigger>
+                            </Label.Triggers>
+                            <Label.GestureRecognizers>
+                                <TapGestureRecognizer Command="{Binding ToggleServerSettingsCommand}" />
+                            </Label.GestureRecognizers>
+                        </Label>
+
+                        <VerticalStackLayout Spacing="8" IsVisible="{Binding ShowServerSettings}">
+                            <Border Style="{StaticResource FieldBorder}">
+                                <Grid ColumnDefinitions="24,*" ColumnSpacing="10" VerticalOptions="Center">
+                                    <Label Grid.Column="0" Text="🌐" FontSize="16" VerticalOptions="Center" />
+                                    <Entry Grid.Column="1"
+                                           Placeholder="http://192.168.1.42:5291"
+                                           Text="{Binding ServerUrl}"
+                                           Keyboard="Url"
+                                           TextColor="{StaticResource TextPrimary}"
+                                           PlaceholderColor="{StaticResource TextSecondary}"
+                                           BackgroundColor="Transparent" />
+                                </Grid>
+                            </Border>
+                            <Label Text="Only needed if the app isn't running on the same computer as the server - point it at your server's address, e.g. its LAN IP."
+                                   Style="{StaticResource Subtle}"
+                                   FontSize="11" />
+                        </VerticalStackLayout>
+
                     </VerticalStackLayout>
                 </Border>
 

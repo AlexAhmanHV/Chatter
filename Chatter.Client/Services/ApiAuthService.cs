@@ -4,7 +4,9 @@ File: ApiAuthService.cs
 What this does:
 - Purpose: Talks to this app's own /auth/register and /auth/login endpoints (no external identity
   provider), and exposes the resulting access token + display name for the lifetime of the app run.
-- How: Plain HttpClient POSTs against ServerConfig.BaseUrl.
+- How: Plain HttpClient POSTs against ServerConfig.BaseUrl, re-read on every call (not cached at
+  construction) so a server address the user changes on the login screen takes effect on the very
+  next attempt without needing an app restart.
 - Where used: Injected into ChatService (as the SignalR access-token source) and the Login/Register/
   Settings view models.
 */
@@ -24,12 +26,12 @@ public class ApiAuthService
 
     public ApiAuthService()
     {
-        _http = new HttpClient { BaseAddress = new Uri(ServerConfig.BaseUrl) };
+        _http = new HttpClient();
     }
 
     public async Task<string> SignInAsync(string email, string password)
     {
-        var resp = await _http.PostAsJsonAsync("/auth/login", new LoginRequest(email, password));
+        var resp = await _http.PostAsJsonAsync($"{ServerConfig.BaseUrl}/auth/login", new LoginRequest(email, password));
         if (!resp.IsSuccessStatusCode)
             throw new InvalidOperationException(await ExtractErrorAsync(resp));
 
@@ -43,7 +45,7 @@ public class ApiAuthService
 
     public async Task<string> SignUpAsync(string email, string password, string? displayName)
     {
-        var resp = await _http.PostAsJsonAsync("/auth/register", new RegisterRequest(email, password, displayName));
+        var resp = await _http.PostAsJsonAsync($"{ServerConfig.BaseUrl}/auth/register", new RegisterRequest(email, password, displayName));
         if (!resp.IsSuccessStatusCode)
             throw new InvalidOperationException(await ExtractErrorAsync(resp));
 
