@@ -53,11 +53,16 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="CommunityToolkit.Maui" Version="12.3.0" />
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
     <PackageReference Include="Microsoft.AspNetCore.SignalR.Client" Version="9.0.10" />
-    <PackageReference Include="Microsoft.Maui.Controls" Version="$(MauiVersion)" />
+    <!-- Pinned above $(MauiVersion)'s workload-bundled build: CommunityToolkit.Maui/UraniumUI both require >= 9.0.120 -->
+    <PackageReference Include="Microsoft.Maui.Controls" Version="9.0.120" />
     <PackageReference Include="Microsoft.Extensions.Logging.Debug" Version="9.0.8" />
     <PackageReference Include="Plugin.Maui.Audio" Version="4.0.0" />
+    <PackageReference Include="UraniumUI" Version="2.16.0" />
+    <PackageReference Include="UraniumUI.Material" Version="2.16.0" />
+    <PackageReference Include="UraniumUI.Icons.MaterialSymbols" Version="2.16.0" />
   </ItemGroup>
 
   <ItemGroup>
