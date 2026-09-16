@@ -77,7 +77,6 @@ public partial class RegisterViewModel : ObservableObject
 
             await _auth.SignUpAsync(email: email, password: password, displayName: DisplayName);
 
-            await ShowAlertAsync("Welcome!", "Account created.", "OK");
             RegistrationSucceeded?.Invoke();
         }
         catch (System.Net.Http.HttpRequestException)

@@ -180,5 +180,18 @@ What this does:
                 BackgroundColor="{StaticResource ColorSurfaceVariant}" TextColor="{StaticResource ColorOnSurface}"
                 CornerRadius="20"
                 HorizontalOptions="Start" VerticalOptions="Start" Margin="20,20,0,0" />
+
+        <Grid x:Name="SuccessOverlay" IsVisible="False" BackgroundColor="#B3000000">
+            <Border Style="{StaticResource CardBorder}" WidthRequest="300" Padding="28,32"
+                    HorizontalOptions="Center" VerticalOptions="Center">
+                <VerticalStackLayout Spacing="10" HorizontalOptions="Center">
+                    <Label Text="{x:Static symbols:MaterialOutlined.Check_circle}"
+                           FontFamily="MaterialSymbolsOutlined" FontSize="48"
+                           TextColor="{StaticResource ColorSuccess}" HorizontalOptions="Center" />
+                    <Label Text="Account created!" Style="{StaticResource TypeTitle}" HorizontalOptions="Center" />
+                    <Label Text="Taking you to log in…" Style="{StaticResource TypeCaption}" HorizontalOptions="Center" />
+                </VerticalStackLayout>
+            </Border>
+        </Grid>
     </Grid>
 </ContentPage>

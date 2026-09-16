@@ -8,15 +8,24 @@ What this does:
   When either event fires, it calls Navigation.PopAsync() to return to the previous page.
 */
 
-using Chatter.Client.ViewModels; 
+using System.Threading.Tasks;
+using Chatter.Client.ViewModels;
 
-namespace Chatter.Client.Views; 
+namespace Chatter.Client.Views;
 public partial class RegisterPage : ContentPage
-{ 
+{
     public RegisterPage(RegisterViewModel vm)
     {
       InitializeComponent(); BindingContext = vm;
-      vm.RegistrationSucceeded += OnNavigateBack;
+      vm.RegistrationSucceeded += OnRegistrationSucceeded;
       vm.NavigateToLoginRequested += OnNavigateBack;
-    } 
+    }
+
+    private async void OnRegistrationSucceeded()
+    {
+        SuccessOverlay.IsVisible = true;
+        await Task.Delay(1200);
+        await Navigation.PopAsync();
+    }
+
     private void OnNavigateBack() => _ = Navigation.PopAsync(); }
