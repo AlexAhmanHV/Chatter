@@ -1,16 +1,24 @@
 <?xml version = "1.0" encoding = "UTF-8" ?>
 <Application xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
-             xmlns:material="http://schemas.enisn-projects.io/dotnet/maui/uraniumui/material"
              xmlns:local="clr-namespace:Chatter.Client"
              x:Class="Chatter.Client.App">
+    <!--
+    Theme.xaml (the app's Material color/type/shape tokens) is deliberately NOT merged here.
+    Referencing an Application-level resource from a page's StaticResource causes an immediate
+    native crash (0xc000027b in Microsoft.UI.Xaml.dll) on this project's exact MAUI/Windows build -
+    confirmed by exhaustive bisection, reproducible even with a single extra StaticResource lookup
+    added to an otherwise untouched, working page, independent of UraniumUI or any specific key.
+    Every page instead merges Theme.xaml into its own ContentPage.Resources - see any page's XAML
+    for the pattern. Colors.xaml/Styles.xaml stay merged here because that path (Styles.xaml's own
+    implicit control styles referencing Colors.xaml keys, all at the Application level) was already
+    working before this redesign and isn't the crashing path.
+    -->
     <Application.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
-                <ResourceDictionary x:Name="appColors" Source="Resources/Styles/Colors.xaml" />
-                <ResourceDictionary x:Name="appStyles" Source="Resources/Styles/Styles.xaml" />
-                <ResourceDictionary Source="Resources/Styles/Theme.xaml" />
-                <material:StyleResource ColorsOverride="{x:Reference appColors}" BasedOn="{x:Reference appStyles}" />
+                <ResourceDictionary Source="Resources/Styles/Colors.xaml" />
+                <ResourceDictionary Source="Resources/Styles/Styles.xaml" />
             </ResourceDictionary.MergedDictionaries>
         </ResourceDictionary>
     </Application.Resources>

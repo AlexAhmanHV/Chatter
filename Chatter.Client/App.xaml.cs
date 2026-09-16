@@ -13,6 +13,11 @@ public partial class App : Application
     {
         InitializeComponent();
         _loginPage = loginPage;
+
+        // Chatter is a dark-only design - force it regardless of the OS theme setting, so the
+        // NavigationPage bar/title (and any other AppThemeBinding-driven chrome) never flashes
+        // the default template's light colors, only ever the dark palette in Colors.xaml/Styles.xaml.
+        UserAppTheme = AppTheme.Dark;
     }
 
     // .NET MAUI (net8+/net9): prefer overriding CreateWindow instead of setting MainPage
