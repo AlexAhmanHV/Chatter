@@ -56,6 +56,11 @@ Chatter is a small but complete chat application that showcases a modern .NET st
 * **Name aliases/renames**: Seamless display‑name updates.
 * **Edit & delete your own messages**: With an "(edited)" marker; deleted messages show a placeholder instead of disappearing from the timeline.
 * **Reactions**: Tap 👍/❤️/😂/🎉/😮/😢 on any message; tap an existing reaction to toggle it off, hover/long-press one to see who reacted.
+* **Voice messages with waveforms**: Record and play voice notes with a real per-message amplitude waveform, not a generic progress bar.
+* **Video clips & documents**: Send several video clips or documents (PDF, Office, txt, zip) in one go.
+* **Link previews**: Paste a URL into a message and it renders as a rich preview card (title, description, image).
+* **Pin a chat**: Pin any chat to the top of the chat list, alongside the existing mute/block options.
+* **Audio/video calls**: Call another DM participant, audio- or video-only, over WebRTC (STUN only, no TURN relay).
 * **Read receipts**: A "Seen" marker appears under your last DM message once the other person has viewed it.
 * **Paginated history**: Only the most recent messages load at first — a "Load earlier messages" button pages further back.
 * **Persisted history**: Messages, edits, reactions, read receipts, group membership, accounts, and unread counts all survive a server restart (SQLite via EF Core migrations).
@@ -82,20 +87,25 @@ High‑level flow: the client registers or signs in against this app's own `/aut
 ```
 Chatter.sln
 ├─ Chatter.Client/                      # .NET MAUI app (Android/iOS/MacCatalyst/Windows)
-│  ├─ Views/                            # Pages (Login, Chat, Settings)
-│  ├─ ViewModels/                       # VM layer (Login, Register, Chat, Settings)
-│  ├─ Converters/                       # EmojiDisplayConverter, InvertedBoolConverter
+│  ├─ Views/                            # Pages (Login, Chat, Settings, Call)
+│  ├─ ViewModels/                       # VM layer (Login, Register, Chat, Settings, Call)
+│  ├─ Controls/                         # WaveformView (voice message amplitude rendering)
+│  ├─ Converters/                       # EmojiDisplayConverter, InvertedBoolConverter, CallButtonConverters
 │  ├─ Messages/                         # DisplayNameChangedMessage
 │  ├─ Services/                         # ChatService client, ApiAuthService (calls /auth/*),
 │  │  │                                 # ServerConfig (per-platform backend URL), EmojiCatalog
 │  │  └─ Models/                        # ChatItem, ChatMessageItem, PresenceStatus, UserPresenceItem
 │  ├─ Helpers/                          # UI helpers, etc.
-│  └─ Resources/                        # Styles, images
+│  └─ Resources/
+│     ├─ Raw/wwwroot/                   # call.html - the WebRTC page hosted in CallPage's HybridWebView
+│     └─ ...                            # Styles, images
 ├─ Chatter.Server/                      # ASP.NET Core backend + SignalR hub
-│  ├─ Hubs/                             # ChatHub — [Authorize]'d, identity from the JWT's "sub" claim
+│  ├─ Hubs/                             # ChatHub — [Authorize]'d, identity from the JWT's "sub" claim,
+│  │                                    # incl. call signaling (CallInvite/Answer/Decline/IceCandidate/Hangup)
 │  ├─ Auth/                             # JwtIssuer — signs the JWTs /auth/register and /auth/login return
+│  ├─ Services/                         # LinkPreviewFetcher (SSRF-guarded URL metadata fetch + cache)
 │  ├─ Data/                             # ChatDbContext (EF Core + SQLite + Identity): accounts, messages,
-│  │  │                                 # reactions, group chats, blocks, mutes, read receipts
+│  │  │                                 # reactions, group chats, blocks, mutes, pinned chats, read receipts
 │  │  └─ Migrations/
 │  ├─ Program.cs                        # Kestrel endpoints, Identity, JWT bearer auth, /auth/* endpoints
 │  ├─ appsettings*.json                 # Jwt:SigningKey/Issuer/Audience, ConnectionStrings:Chatter
@@ -104,9 +114,11 @@ Chatter.sln
 ├─ Chatter.Server.Tests/                # ChatHub authorization/persistence/rate-limit tests,
 │                                        # plus Identity/JwtIssuer tests (AuthTests.cs)
 ├─ Chatter.Client.Tests/                # Unit tests
-│  └─ ChatTextParserTests
+│  ├─ ChatTextParserTests
+│  └─ WavWaveformExtractorTests
 ├─ Chatter.Core/
-│  └─ Services/                         # ChatTextParser (emoji shortcode parsing)
+│  └─ Services/                         # ChatTextParser (emoji shortcode parsing),
+│                                        # WavWaveformExtractor (voice message waveform amplitudes)
 ├─ Chatter.Shared/
 │  ├─ Helpers/                          # ServiceHelper
 │  └─ Models/                           # ChatSummary, ChatMessageDto, ReactionDto,
@@ -151,10 +163,18 @@ image attachment, just with an audio content-type allowlist and a smaller size c
 compressed audio). The 🎤 composer button toggles recording; while recording, everyone else in
 that chat sees a "🎤 X is recording a voice message…" indicator (`ChatHub.SetRecordingVoiceMessage`,
 the same mechanism as the typing indicator but its own event). Tapping a received voice message
-fetches and plays it, with a live progress bar and position (polled from the player - Plugin.Maui.Audio
-doesn't push position updates itself). Requires microphone permission (`RECORD_AUDIO` on Android,
-`NSMicrophoneUsageDescription` on iOS/macOS, the `microphone` capability on Windows) - the app
-prompts for it on first use.
+fetches and plays it, showing a real waveform and playback position (polled from the player -
+Plugin.Maui.Audio doesn't push position updates itself). Requires microphone permission
+(`RECORD_AUDIO` on Android, `NSMicrophoneUsageDescription` on iOS/macOS, the `microphone`
+capability on Windows) - the app prompts for it on first use.
+
+Playback renders a per-message amplitude waveform (`WaveformView`, a `GraphicsView`-backed
+control) instead of a plain progress bar: amplitudes are extracted client-side from the recorded
+WAV's 16-bit PCM samples once the audio is fetched (`Chatter.Core.Services.WavWaveformExtractor`,
+one peak amplitude per bar, normalized so the loudest bar is full height), then rendered with
+played/unplayed bars colored differently as playback advances. Extraction is pure C# with no
+external decoding library, and falls back to a flat placeholder waveform if the audio isn't
+16-bit PCM or fails to parse.
 
 ### Message search
 
@@ -214,14 +234,21 @@ admins). Pinned messages show in a horizontal strip under the chat header; tappi
 it if it's already loaded. Capped at 20 pinned messages per chat (`ChatHub.MaxPinnedPerChat`) -
 unpin something first once you hit it. Deleting a pinned message unpins it automatically.
 
-### Video clips
+### Video clips & documents
 
-The 🎥 composer button picks one video (`MediaPicker.PickVideoAsync`) and uploads it through
-`ChatHub.SendVideo` - same blob storage as an image or voice message, just with a video
-content-type allowlist and a 20 MB cap. Playback is external: tapping a received video fetches
-it, writes it to a cache file, and hands it to the OS's own video player via `Launcher.OpenAsync`,
-rather than pulling in a dedicated media-playback control for inline video. Duration isn't
-extracted client-side (no reliable cross-platform way to read it from a picked file without a
+The 🎥 composer button picks one or more videos or documents at once
+(`FilePicker.PickMultipleAsync` with a combined video+document file-type filter - `MediaPicker`
+has no multi-select and no document support at all) and sends each as its own message,
+sequentially, dispatched to `ChatHub.SendVideo` or `ChatHub.SendFile` based on the picked file's
+guessed content type. A pending reply is attached only to the first file sent. Videos and
+documents both use the same blob storage as an image or voice message - videos with a video
+content-type allowlist, documents with an executable-extension denylist instead (`.exe`, `.dll`,
+`.bat`, `.ps1`, etc.) - and a 20 MB cap either way.
+
+Playback/opening is external either way: tapping a received video or document fetches it, writes
+it to a cache file, and hands it to the OS's own handler via `Launcher.OpenAsync`, rather than
+pulling in a dedicated media-playback control or document viewer. Duration isn't extracted
+client-side for video (no reliable cross-platform way to read it from a picked file without a
 media library) - videos just don't show a length, unlike voice messages.
 
 ### Message edit history
@@ -230,6 +257,42 @@ Every edit is recorded before it's overwritten (`MessageEditHistoryEntity`), not
 that an edit happened. Tapping the "(edited)" label on a message shows its previous versions with
 timestamps (`ChatHub.GetMessageEditHistory`). Editing to the exact same text doesn't add a history
 entry.
+
+### Link previews
+
+Pasting a URL into a message shows a rich preview card (title, description, image) once it's
+sent. The server fetches and parses the page (`Chatter.Server.Services.LinkPreviewFetcher`, plain
+regex extraction of `<title>`/Open Graph meta tags, capped at 200 KB of HTML) rather than the
+client doing it directly, both to keep the fetch off arbitrary client network paths and to cache
+the result (in-memory, 1 hour) across everyone who links the same URL. The fetcher guards against
+SSRF by resolving the URL's DNS and rejecting loopback/private/link-local addresses before
+requesting it, so a message can't be used to probe the server's own internal network. A preview
+that fails to fetch or parse (unreachable host, no metadata, blocked address) just doesn't show a
+card - no error surfaces in the chat.
+
+### Pinned chats
+
+Pin any chat (Lobby, a DM, or a group) from its "⋮" menu to float it to the top of the chat list,
+above everything except the Lobby, which always stays first regardless of pin state
+(`ChatHub.SetChatPinned`, mirroring how muting a chat already works). This is a separate feature
+from pinning a *message* within a chat - see [Pinned messages](#pinned-messages) above.
+
+### Audio/video calls
+
+Start an audio or video call with the 📞 button in a DM's header (calls are DM-only, not
+available in group chats or the Lobby) - the other person sees an incoming-call alert with
+Accept/Decline. Signaling (invite, answer, decline, ICE candidates, hangup) travels over the
+existing SignalR hub connection as its own set of methods/events, rate-limited the same way as
+other hub actions; the actual audio/video itself is a direct WebRTC peer connection negotiated
+inside a `HybridWebView` page (`Resources/Raw/wwwroot/call.html`), using only a public STUN
+server (`stun:stun.l.google.com:19302`) - no TURN relay.
+
+This is the simplest option to start with, at a real cost: STUN alone can't establish a direct
+connection through every kind of NAT/firewall (some mobile carriers and locked-down corporate
+networks in particular), so some caller/callee pairs won't be able to connect at all - a known
+limitation, not a bug, if a specific pair can't connect. A TURN relay server fixes that but needs
+its own infrastructure (self-hosted, e.g. coturn, or a paid service) - a reasonable next step if
+calls need to work reliably for everyone.
 
 ### Known simplifications
 
@@ -241,6 +304,7 @@ A few deliberate scope cuts, worth knowing about if you extend this:
 * **Attachments/avatars/voice messages as SQLite blobs** — see [Attachments & avatars](#attachments--avatars) above. Fine at this scale; a high-traffic deployment would want a real object store instead of growing the database file with binary data.
 * **Forwarding doesn't cross a block** — forwarding into a DM still goes through the same block check as sending normally, but there's no separate "this content came from someone you've blocked" warning; it's just refused the same way a direct message would be.
 * **Search is per-chat, not global** — `SearchMessages` only looks within one chat at a time; there's no "search across all my chats" view.
+* **Calls are STUN-only, no TURN relay** — see [Audio/video calls](#audiovideo-calls) above; some caller/callee pairs behind restrictive NATs won't be able to connect at all.
 
 ## Project structure
 
@@ -493,6 +557,7 @@ dotnet build -t:Run -f net9.0-maccatalyst
 **Hub connection fails with 401 Unauthorized**
 
 * The server requires a valid JWT (from `/auth/login` or `/auth/register`) for every `/hub/chat` connection. Make sure you're actually signed in (LoginPage) before the app tries to connect, and that the client's `ServerConfig.BaseUrl` points at the same server instance you registered against - a token from one server run won't validate against another that started with a different `Jwt:SigningKey`.
+* In Development, `Program.cs` deliberately skips `UseHttpsRedirection()` - redirecting the client's plain-HTTP negotiate call to the HTTPS port strips the `Authorization` header on that cross-origin redirect, which used to cause exactly this 401 out of the box. If you've re-enabled the redirect in Development, that's almost certainly why.
 
 **Login/register returns 503 Service Unavailable**
 
