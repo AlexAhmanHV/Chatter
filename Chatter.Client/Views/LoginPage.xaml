@@ -5,7 +5,9 @@ File: LoginPage.xaml
 What this does:
 - Purpose: Welcome/Login screen for signing into Chatter with email + password.
 - How: Binds to LoginViewModel (Username, Password, IsBusy, CanLogin, LoginCommand) using compiled bindings (x:DataType).
-       Uses themed resources for gradients, cards, field borders, and primary/secondary buttons. CreateAccountBtn is
+       Styled with the app's shared Material theme (Resources/Styles/Theme.xaml, merged locally below - see the
+       comment on ContentPage.Resources for why it's not merged at the App level) and UraniumUI.Material's TextField
+       for real Material floating-label inputs, instead of a page-local hand-rolled palette. CreateAccountBtn is
        exposed by x:Name for code-behind to wire a “Create account” navigation.
 - Where used: Entry point after app launch or when a session expires; navigates to Register or the main Chat page.
 -->
@@ -14,178 +16,39 @@ What this does:
     xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
     xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
     xmlns:vm="clr-namespace:Chatter.Client.ViewModels"
+    xmlns:material="clr-namespace:UraniumUI.Material.Controls;assembly=UraniumUI.Material"
+    xmlns:symbols="clr-namespace:UraniumUI.Icons.MaterialSymbols;assembly=UraniumUI.Icons.MaterialSymbols"
     x:Class="Chatter.Client.Views.LoginPage"
     x:ClassModifier="public"
     x:DataType="vm:LoginViewModel"
     Title="Welcome"
-    BackgroundColor="#0B1220">
+    BackgroundColor="{StaticResource ColorBackground}">
 
-    <!-- ===== Page Resources / Theme Tokens ===== -->
+    <!-- Merged here, not in App.xaml: an Application-level StaticResource crashes natively on
+         this MAUI/Windows build when read from a page (see App.xaml's comment) - every page
+         merges Theme.xaml itself instead, which is proven safe and still gives one shared file. -->
     <ContentPage.Resources>
         <ResourceDictionary>
-            <Color x:Key="PrimaryStart">#6EE7F9</Color>
-            <Color x:Key="PrimaryEnd">#8B5CF6</Color>
-            <Color x:Key="CardBg">#101827</Color>
-            <Color x:Key="TextPrimary">#E5E7EB</Color>
-            <Color x:Key="TextSecondary">#9CA3AF</Color>
-            <Color x:Key="StrokeIdle">#1F2937</Color>
-            <Color x:Key="StrokeFocus">#8B5CF6</Color>
-            <Color x:Key="FieldBg">#0D1524</Color>
-
-            <x:Double x:Key="RadiusLg">20</x:Double>
-            <x:Double x:Key="RadiusMd">14</x:Double>
-
-            <!-- Typography -->
-            <Style TargetType="Label" x:Key="H1">
-                <Setter Property="FontSize" Value="36" />
-                <Setter Property="FontAttributes" Value="Bold" />
-                <Setter Property="TextColor" Value="{StaticResource TextPrimary}" />
-                <Setter Property="HorizontalOptions" Value="Center" />
-            </Style>
-
-            <Style TargetType="Label" x:Key="Subtle">
-                <Setter Property="FontSize" Value="13" />
-                <Setter Property="TextColor" Value="{StaticResource TextSecondary}" />
-            </Style>
-
-            <!-- Field container -->
-            <Style TargetType="Border" x:Key="FieldBorder">
-                <Setter Property="Stroke" Value="{StaticResource StrokeIdle}" />
-                <Setter Property="StrokeThickness" Value="1.5" />
-                <Setter Property="BackgroundColor" Value="{StaticResource FieldBg}" />
-                <Setter Property="Padding" Value="14,12" />
-                <Setter Property="StrokeShape">
-                    <Setter.Value>
-                        <RoundRectangle CornerRadius="{StaticResource RadiusMd}" />
-                    </Setter.Value>
-                </Setter>
-                <Setter Property="Shadow">
-                    <Setter.Value>
-                        <Shadow Opacity="0.25" Radius="12" Offset="0,6" />
-                    </Setter.Value>
-                </Setter>
-                <Setter Property="VisualStateManager.VisualStateGroups">
-                    <Setter.Value>
-                        <VisualStateGroupList>
-                            <VisualStateGroup>
-                                <VisualState x:Name="Normal" />
-                                <VisualState x:Name="Focused">
-                                    <VisualState.Setters>
-                                        <Setter Property="Stroke" Value="{StaticResource StrokeFocus}" />
-                                        <Setter Property="StrokeThickness" Value="2" />
-                                    </VisualState.Setters>
-                                </VisualState>
-                            </VisualStateGroup>
-                        </VisualStateGroupList>
-                    </Setter.Value>
-                </Setter>
-            </Style>
-
-            <!-- Primary gradient button -->
-            <Style TargetType="Button" x:Key="PrimaryBtn">
-                <Setter Property="TextColor" Value="White" />
-                <Setter Property="FontSize" Value="16" />
-                <Setter Property="FontAttributes" Value="Bold" />
-                <Setter Property="CornerRadius" Value="16" />
-                <Setter Property="Padding" Value="0,16" />
-                <Setter Property="Background">
-                    <Setter.Value>
-                        <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
-                            <GradientStop Color="{StaticResource PrimaryStart}" Offset="0.0" />
-                            <GradientStop Color="{StaticResource PrimaryEnd}" Offset="1.0" />
-                        </LinearGradientBrush>
-                    </Setter.Value>
-                </Setter>
-                <Setter Property="Shadow">
-                    <Setter.Value>
-                        <Shadow Opacity="0.35" Radius="16" Offset="0,6" />
-                    </Setter.Value>
-                </Setter>
-                <Setter Property="VisualStateManager.VisualStateGroups">
-                    <Setter.Value>
-                        <VisualStateGroupList>
-                            <VisualStateGroup>
-                                <VisualState x:Name="Normal" />
-                                <VisualState x:Name="Pressed">
-                                    <VisualState.Setters>
-                                        <Setter Property="Opacity" Value="0.85" />
-                                    </VisualState.Setters>
-                                </VisualState>
-                                <VisualState x:Name="Disabled">
-                                    <VisualState.Setters>
-                                        <Setter Property="Opacity" Value="0.6" />
-                                    </VisualState.Setters>
-                                </VisualState>
-                            </VisualStateGroup>
-                        </VisualStateGroupList>
-                    </Setter.Value>
-                </Setter>
-            </Style>
-
-            <!-- Accent for Create Account -->
-            <Color x:Key="SecondaryStart">#60A5FA</Color>
-            <Color x:Key="SecondaryEnd">#22D3EE</Color>
-
-            <Style TargetType="Button" x:Key="EmphasisSecondaryBtn">
-                <Setter Property="TextColor" Value="White" />
-                <Setter Property="FontSize" Value="16" />
-                <Setter Property="FontAttributes" Value="Bold" />
-                <Setter Property="CornerRadius" Value="16" />
-                <Setter Property="Padding" Value="0,16" />
-                <Setter Property="Background">
-                    <Setter.Value>
-                        <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
-                            <GradientStop Color="{StaticResource SecondaryStart}" Offset="0.0" />
-                            <GradientStop Color="{StaticResource SecondaryEnd}" Offset="1.0" />
-                        </LinearGradientBrush>
-                    </Setter.Value>
-                </Setter>
-                <Setter Property="BorderColor" Value="#99FFFFFF" />
-                <Setter Property="BorderWidth" Value="1" />
-                <Setter Property="Shadow">
-                    <Setter.Value>
-                        <Shadow Opacity="0.35" Radius="16" Offset="0,6" />
-                    </Setter.Value>
-                </Setter>
-                <Setter Property="VisualStateManager.VisualStateGroups">
-                    <Setter.Value>
-                        <VisualStateGroupList>
-                            <VisualStateGroup>
-                                <VisualState x:Name="Normal" />
-                                <VisualState x:Name="Pressed">
-                                    <VisualState.Setters>
-                                        <Setter Property="Opacity" Value="0.9" />
-                                    </VisualState.Setters>
-                                </VisualState>
-                                <VisualState x:Name="Disabled">
-                                    <VisualState.Setters>
-                                        <Setter Property="Opacity" Value="0.6" />
-                                    </VisualState.Setters>
-                                </VisualState>
-                            </VisualStateGroup>
-                        </VisualStateGroupList>
-                    </Setter.Value>
-                </Setter>
-            </Style>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="/Resources/Styles/Theme.xaml" />
+            </ResourceDictionary.MergedDictionaries>
         </ResourceDictionary>
     </ContentPage.Resources>
 
-    <!-- ===== Layout ===== -->
     <Grid>
         <Grid.Background>
             <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
-                <GradientStop Color="#0B1220" Offset="0.0" />
-                <GradientStop Color="#0B1220" Offset="0.35" />
+                <GradientStop Color="{StaticResource ColorBackground}" Offset="0.0" />
+                <GradientStop Color="{StaticResource ColorBackground}" Offset="0.35" />
                 <GradientStop Color="#0A0F1A" Offset="1.0" />
             </LinearGradientBrush>
         </Grid.Background>
 
-        <!-- Decorative gradient blobs -->
         <Ellipse WidthRequest="280" HeightRequest="280" Opacity="0.28"
                  HorizontalOptions="Start" VerticalOptions="Start" TranslationX="-120" TranslationY="-100">
             <Ellipse.Fill>
                 <RadialGradientBrush Radius="0.9" Center="0.7,0.4">
-                    <GradientStop Color="{StaticResource PrimaryStart}" Offset="0" />
+                    <GradientStop Color="{StaticResource ColorPrimaryVariant}" Offset="0" />
                     <GradientStop Color="#00000000" Offset="1" />
                 </RadialGradientBrush>
             </Ellipse.Fill>
@@ -195,7 +58,7 @@ What this does:
                  HorizontalOptions="End" VerticalOptions="End" TranslationX="80" TranslationY="120">
             <Ellipse.Fill>
                 <RadialGradientBrush Radius="1.0" Center="0.3,0.6">
-                    <GradientStop Color="{StaticResource PrimaryEnd}" Offset="0" />
+                    <GradientStop Color="{StaticResource ColorPrimary}" Offset="0" />
                     <GradientStop Color="#00000000" Offset="1" />
                 </RadialGradientBrush>
             </Ellipse.Fill>
@@ -204,77 +67,49 @@ What this does:
         <ScrollView>
             <VerticalStackLayout Padding="28,56" Spacing="24" VerticalOptions="Center">
 
-                <!-- Brand -->
                 <VerticalStackLayout Spacing="8" Margin="0,0,0,4">
-                    <Label Text="💬" FontSize="56" HorizontalOptions="Center" />
-                    <Label Text="Chatter" Style="{StaticResource H1}" />
+                    <Label Text="{x:Static symbols:MaterialOutlined.Forum}"
+                           Style="{StaticResource IconGlyph}"
+                           FontSize="56"
+                           TextColor="{StaticResource ColorPrimary}" />
+                    <Label Text="Chatter" Style="{StaticResource TypeDisplay}" HorizontalOptions="Center" HorizontalTextAlignment="Center" />
                     <Label Text="Connect with friends and family"
+                           Style="{StaticResource TypeCaption}"
                            HorizontalOptions="Center"
-                           TextColor="{StaticResource TextSecondary}"
                            Opacity="0.95" />
                 </VerticalStackLayout>
 
-                <!-- Card -->
-                <Border Padding="24,28"
-                        BackgroundColor="{StaticResource CardBg}"
-                        StrokeThickness="1"
-                        Stroke="{StaticResource StrokeIdle}"
-                        Margin="0,8,0,0">
-                    <Border.StrokeShape>
-                        <RoundRectangle CornerRadius="{StaticResource RadiusLg}" />
-                    </Border.StrokeShape>
-                    <Border.Shadow>
-                        <Shadow Opacity="0.35" Radius="24" Offset="0,14" />
-                    </Border.Shadow>
-
+                <Border Style="{StaticResource CardBorder}" Padding="24,28" Margin="0,8,0,0">
                     <VerticalStackLayout Spacing="18">
 
-                        <!-- Email -->
-                        <VerticalStackLayout Spacing="8">
-                            <Label Text="Email" Style="{StaticResource Subtle}" FontAttributes="Bold" />
-                            <Border Style="{StaticResource FieldBorder}">
-                                <Grid ColumnDefinitions="24,*,Auto" ColumnSpacing="10" VerticalOptions="Center">
-                                    <Label Grid.Column="0" Text="📧" FontSize="16" VerticalOptions="Center" />
-                                    <Entry Grid.Column="1"
-                                           x:Name="EmailEntry"
-                                           Placeholder="you@example.com"
-                                           Text="{Binding Username}"
-                                           ReturnType="Next"
-                                           Keyboard="Email"
-                                           TextColor="{StaticResource TextPrimary}"
-                                           PlaceholderColor="{StaticResource TextSecondary}"
-                                           BackgroundColor="Transparent" />
-                                    <ActivityIndicator Grid.Column="2"
-                                                       IsVisible="{Binding IsBusy}"
-                                                       IsRunning="{Binding IsBusy}" />
-                                </Grid>
-                            </Border>
-                        </VerticalStackLayout>
+                        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+                            <Label Grid.Column="0" Text="{x:Static symbols:MaterialOutlined.Mail}" Style="{StaticResource IconGlyph}" />
+                            <material:TextField Grid.Column="1"
+                                   x:Name="EmailEntry"
+                                   Title="Email"
+                                   Text="{Binding Username}"
+                                   ReturnType="Next"
+                                   Keyboard="Email" />
+                            <ActivityIndicator Grid.Column="2"
+                                               IsVisible="{Binding IsBusy}"
+                                               IsRunning="{Binding IsBusy}"
+                                               Color="{StaticResource ColorPrimary}" />
+                        </Grid>
 
-                        <!-- Password -->
-                        <VerticalStackLayout Spacing="8">
-                            <Label Text="Password" Style="{StaticResource Subtle}" FontAttributes="Bold" />
-                            <Border Style="{StaticResource FieldBorder}">
-                                <Grid ColumnDefinitions="24,*,Auto" ColumnSpacing="10" VerticalOptions="Center">
-                                    <Label Grid.Column="0" Text="🔒" FontSize="16" VerticalOptions="Center" />
-                                    <Entry Grid.Column="1"
-                                           x:Name="PasswordEntry"
-                                           Placeholder="Enter your password"
-                                           Text="{Binding Password}"
-                                           IsPassword="True"
-                                           ReturnType="Go"
-                                           TextColor="{StaticResource TextPrimary}"
-                                           PlaceholderColor="{StaticResource TextSecondary}"
-                                           BackgroundColor="Transparent" />
-                                </Grid>
-                            </Border>
-                        </VerticalStackLayout>
+                        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+                            <Label Grid.Column="0" Text="{x:Static symbols:MaterialOutlined.Lock}" Style="{StaticResource IconGlyph}" />
+                            <material:TextField Grid.Column="1"
+                                   x:Name="PasswordEntry"
+                                   Title="Password"
+                                   Text="{Binding Password}"
+                                   IsPassword="True"
+                                   ReturnType="Go" />
+                        </Grid>
 
-                        <!-- Log in -->
                         <Button Text="Log in"
                                 Command="{Binding LoginCommand}"
                                 IsEnabled="{Binding CanLogin}"
-                                Style="{StaticResource EmphasisSecondaryBtn}">
+                                Style="{StaticResource PrimaryButton}">
                             <Button.Triggers>
                                 <DataTrigger TargetType="Button" Binding="{Binding IsBusy}" Value="True">
                                     <Setter Property="IsEnabled" Value="False" />
@@ -283,22 +118,17 @@ What this does:
                             </Button.Triggers>
                         </Button>
 
-                        <!-- Divider -->
                         <Grid ColumnDefinitions="*,Auto,*" Margin="0,6,0,0" ColumnSpacing="12">
-                            <BoxView Grid.Column="0" HeightRequest="1" BackgroundColor="{StaticResource StrokeIdle}" VerticalOptions="Center" />
-                            <Label Grid.Column="1" Text="or" Style="{StaticResource Subtle}" VerticalOptions="Center" />
-                            <BoxView Grid.Column="2" HeightRequest="1" BackgroundColor="{StaticResource StrokeIdle}" VerticalOptions="Center" />
+                            <BoxView Grid.Column="0" HeightRequest="1" BackgroundColor="{StaticResource ColorOutline}" VerticalOptions="Center" />
+                            <Label Grid.Column="1" Text="or" Style="{StaticResource TypeCaption}" VerticalOptions="Center" />
+                            <BoxView Grid.Column="2" HeightRequest="1" BackgroundColor="{StaticResource ColorOutline}" VerticalOptions="Center" />
                         </Grid>
 
-                        <!-- Create account -->
                         <Button x:Name="CreateAccountBtn"
                                 Text="Create account"
-                                Style="{StaticResource PrimaryBtn}" />
+                                Style="{StaticResource SecondaryButton}" />
 
-                        <!-- Server address: collapsed by default (the guessed default works for
-                             most local/emulator setups); a physical device pointed at a real
-                             server needs this instead of a source-code edit and rebuild. -->
-                        <Label Style="{StaticResource Subtle}"
+                        <Label Style="{StaticResource TypeCaption}"
                                HorizontalOptions="Center"
                                Margin="0,4,0,0">
                             <Label.Triggers>
@@ -315,33 +145,26 @@ What this does:
                         </Label>
 
                         <VerticalStackLayout Spacing="8" IsVisible="{Binding ShowServerSettings}">
-                            <Border Style="{StaticResource FieldBorder}">
-                                <Grid ColumnDefinitions="24,*" ColumnSpacing="10" VerticalOptions="Center">
-                                    <Label Grid.Column="0" Text="🌐" FontSize="16" VerticalOptions="Center" />
-                                    <Entry Grid.Column="1"
-                                           Placeholder="http://192.168.1.42:5291"
-                                           Text="{Binding ServerUrl}"
-                                           Keyboard="Url"
-                                           TextColor="{StaticResource TextPrimary}"
-                                           PlaceholderColor="{StaticResource TextSecondary}"
-                                           BackgroundColor="Transparent" />
-                                </Grid>
-                            </Border>
+                            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+                                <Label Grid.Column="0" Text="{x:Static symbols:MaterialOutlined.Public}" Style="{StaticResource IconGlyph}" />
+                                <material:TextField Grid.Column="1"
+                                       Title="Server address"
+                                       Text="{Binding ServerUrl}"
+                                       Keyboard="Url" />
+                            </Grid>
                             <Label Text="Only needed if the app isn't running on the same computer as the server - point it at your server's address, e.g. its LAN IP."
-                                   Style="{StaticResource Subtle}"
+                                   Style="{StaticResource TypeCaption}"
                                    FontSize="11" />
                         </VerticalStackLayout>
 
                     </VerticalStackLayout>
                 </Border>
 
-                <!-- Terms -->
                 <Label
                     Text="By continuing, you agree to our Terms of Service and Privacy Policy"
+                    Style="{StaticResource TypeCaption}"
                     HorizontalOptions="Center"
                     HorizontalTextAlignment="Center"
-                    TextColor="{StaticResource TextSecondary}"
-                    FontSize="12"
                     Margin="6,2,6,24" />
 
             </VerticalStackLayout>
