@@ -20,6 +20,7 @@ What this does:
     x:Class="Chatter.Client.Views.RegisterPage"
     x:DataType="vm:RegisterViewModel"
     Title="Create account"
+    NavigationPage.HasNavigationBar="False"
     BackgroundColor="{StaticResource ColorBackground}">
 
     <ContentPage.Resources>
@@ -171,5 +172,13 @@ What this does:
 
             </VerticalStackLayout>
         </ScrollView>
+
+        <Button Text="{x:Static symbols:MaterialOutlined.Arrow_back}"
+                FontFamily="MaterialSymbolsOutlined"
+                Command="{Binding NavigateToLoginCommand}"
+                WidthRequest="40" HeightRequest="40" FontSize="20" Padding="0"
+                BackgroundColor="{StaticResource ColorSurfaceVariant}" TextColor="{StaticResource ColorOnSurface}"
+                CornerRadius="20"
+                HorizontalOptions="Start" VerticalOptions="Start" Margin="20,20,0,0" />
     </Grid>
 </ContentPage>

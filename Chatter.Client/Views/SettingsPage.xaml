@@ -21,6 +21,7 @@ What this does:
     x:ClassModifier="public"
     x:DataType="vm:SettingsViewModel"
     Title="User settings"
+    NavigationPage.HasNavigationBar="False"
     BackgroundColor="{StaticResource ColorBackground}">
 
   <ContentPage.Resources>
@@ -177,5 +178,13 @@ What this does:
 
       </VerticalStackLayout>
     </ScrollView>
+
+    <Button Text="{x:Static symbols:MaterialOutlined.Arrow_back}"
+            FontFamily="MaterialSymbolsOutlined"
+            Clicked="OnBackClicked"
+            WidthRequest="40" HeightRequest="40" FontSize="20" Padding="0"
+            BackgroundColor="{StaticResource ColorSurfaceVariant}" TextColor="{StaticResource ColorOnSurface}"
+            CornerRadius="20"
+            HorizontalOptions="Start" VerticalOptions="Start" />
   </Grid>
 </ContentPage>

@@ -46,9 +46,6 @@ public partial class ChatPage : ContentPage
         if (PeopleList is not null)
             PeopleList.SelectionChanged += OnOnlineUserSelected;
 
-        if (SettingsItem is not null)
-            SettingsItem.Clicked += OnSettingsClicked;
-
         WeakReferenceMessenger.Default.Register<ScrollToMessageMessage>(this, (_, msg) =>
             MessagesList?.ScrollTo(msg.Value, position: ScrollToPosition.Center, animate: true));
     }

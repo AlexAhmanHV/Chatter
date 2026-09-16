@@ -21,7 +21,7 @@ What this does:
     x:DataType="vm:CallViewModel"
     Title="Call"
     BackgroundColor="{StaticResource ColorBackground}"
-    Shell.NavBarIsVisible="False">
+    NavigationPage.HasNavigationBar="False">
 
   <ContentPage.Resources>
     <ResourceDictionary>

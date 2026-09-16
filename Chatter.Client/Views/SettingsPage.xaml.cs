@@ -7,6 +7,7 @@ What this does:
 - How: Uses constructor injection (from your DI container) and calls InitializeComponent() before assigning the ViewModel.
 */
 
+using System;
 using Chatter.Client.ViewModels;
 
 namespace Chatter.Client.Views;
@@ -18,4 +19,6 @@ public partial class SettingsPage : ContentPage
         InitializeComponent();
         BindingContext = vm;
     }
+
+    private void OnBackClicked(object? sender, EventArgs e) => _ = Navigation.PopAsync();
 }

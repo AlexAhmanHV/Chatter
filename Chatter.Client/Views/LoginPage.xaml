@@ -22,6 +22,7 @@ What this does:
     x:ClassModifier="public"
     x:DataType="vm:LoginViewModel"
     Title="Welcome"
+    NavigationPage.HasNavigationBar="False"
     BackgroundColor="{StaticResource ColorBackground}">
 
     <!-- Merged here, not in App.xaml: an Application-level StaticResource crashes natively on

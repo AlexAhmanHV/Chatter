@@ -24,29 +24,7 @@ What this does:
     x:DataType="vm:ChatViewModel"
     Title="Chat"
     BackgroundColor="{StaticResource ColorBackground}"
-    NavigationPage.HasNavigationBar="True"
-    NavigationPage.BarBackgroundColor="{StaticResource ColorBackground}"
-    NavigationPage.BarTextColor="{StaticResource ColorOnSurface}">
-
-  <!-- Toolbar -->
-  <ContentPage.ToolbarItems>
-    <ToolbarItem Text="New group"
-                 Order="Primary"
-                 Priority="0"
-                 Command="{Binding CreateGroupChatCommand}">
-      <ToolbarItem.IconImageSource>
-        <FontImageSource FontFamily="MaterialSymbolsOutlined" Glyph="{x:Static symbols:MaterialOutlined.Group_add}" Size="20" Color="#E5E7EB" />
-      </ToolbarItem.IconImageSource>
-    </ToolbarItem>
-    <ToolbarItem x:Name="SettingsItem"
-                 Text="Settings"
-                 Order="Secondary"
-                 Priority="0">
-      <ToolbarItem.IconImageSource>
-        <FontImageSource FontFamily="MaterialSymbolsOutlined" Glyph="{x:Static symbols:MaterialOutlined.Settings}" Size="22" Color="#E5E7EB" />
-      </ToolbarItem.IconImageSource>
-    </ToolbarItem>
-  </ContentPage.ToolbarItems>
+    NavigationPage.HasNavigationBar="False">
 
   <!-- Resources -->
   <ContentPage.Resources>
@@ -129,13 +107,22 @@ What this does:
     <Border Grid.Column="0" Style="{StaticResource CardBorder}" Margin="0,0,12,0">
       <VerticalStackLayout Spacing="0">
         <Border Padding="20,22" StrokeThickness="0" Background="{StaticResource HeaderBrush}">
-          <VerticalStackLayout Spacing="6">
-            <HorizontalStackLayout Spacing="8">
-              <Label Text="{x:Static symbols:MaterialOutlined.Forum}" FontFamily="MaterialSymbolsOutlined" FontSize="20" TextColor="White" VerticalOptions="Center" />
-              <Label Text="Messages" FontSize="20" FontAttributes="Bold" TextColor="White" VerticalOptions="Center" />
-            </HorizontalStackLayout>
-            <Label Text="Your conversations" FontSize="12" TextColor="White" Opacity="0.85" />
-          </VerticalStackLayout>
+          <Grid ColumnDefinitions="*,Auto">
+            <VerticalStackLayout Grid.Column="0" Spacing="6">
+              <HorizontalStackLayout Spacing="8">
+                <Label Text="{x:Static symbols:MaterialOutlined.Forum}" FontFamily="MaterialSymbolsOutlined" FontSize="20" TextColor="White" VerticalOptions="Center" />
+                <Label Text="Messages" FontSize="20" FontAttributes="Bold" TextColor="White" VerticalOptions="Center" />
+              </HorizontalStackLayout>
+              <Label Text="Your conversations" FontSize="12" TextColor="White" Opacity="0.85" />
+            </VerticalStackLayout>
+            <Button Grid.Column="1" Text="{x:Static symbols:MaterialOutlined.Group_add}"
+                    FontFamily="MaterialSymbolsOutlined"
+                    Command="{Binding CreateGroupChatCommand}"
+                    ToolTipProperties.Text="New group"
+                    WidthRequest="36" HeightRequest="36" FontSize="18" Padding="0"
+                    BackgroundColor="#22FFFFFF" TextColor="White" CornerRadius="18"
+                    VerticalOptions="Start" />
+          </Grid>
         </Border>
 
         <ScrollView Padding="12,14">
@@ -759,10 +746,19 @@ What this does:
       <VerticalStackLayout Spacing="0">
         <Border Padding="20,22" StrokeThickness="0" Background="{StaticResource HeaderBrush}">
           <VerticalStackLayout Spacing="14">
-            <HorizontalStackLayout Spacing="8">
-              <Label Text="{x:Static symbols:MaterialOutlined.Person}" FontFamily="MaterialSymbolsOutlined" FontSize="16" TextColor="White" VerticalOptions="Center" />
-              <Label Text="{Binding User}" FontSize="16" FontAttributes="Bold" TextColor="White" VerticalOptions="Center" />
-            </HorizontalStackLayout>
+            <Grid ColumnDefinitions="*,Auto">
+              <HorizontalStackLayout Grid.Column="0" Spacing="8">
+                <Label Text="{x:Static symbols:MaterialOutlined.Person}" FontFamily="MaterialSymbolsOutlined" FontSize="16" TextColor="White" VerticalOptions="Center" />
+                <Label Text="{Binding User}" FontSize="16" FontAttributes="Bold" TextColor="White" VerticalOptions="Center" />
+              </HorizontalStackLayout>
+              <Button Grid.Column="1" Text="{x:Static symbols:MaterialOutlined.Settings}"
+                      FontFamily="MaterialSymbolsOutlined"
+                      Clicked="OnSettingsClicked"
+                      ToolTipProperties.Text="Settings"
+                      WidthRequest="32" HeightRequest="32" FontSize="16" Padding="0"
+                      BackgroundColor="#22FFFFFF" TextColor="White" CornerRadius="16"
+                      VerticalOptions="Center" />
+            </Grid>
             <Border BackgroundColor="White" Padding="10,8" StrokeThickness="0">
               <Border.StrokeShape>
                 <RoundRectangle CornerRadius="10" />
