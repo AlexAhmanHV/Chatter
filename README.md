@@ -64,7 +64,8 @@ Chatter is a small but complete chat application that showcases a modern .NET st
 * **Read receipts**: A "Seen" marker appears under your last DM message once the other person has viewed it.
 * **Paginated history**: Only the most recent messages load at first — a "Load earlier messages" button pages further back.
 * **Persisted history**: Messages, edits, reactions, read receipts, group membership, accounts, and unread counts all survive a server restart (SQLite via EF Core migrations).
-* **Self-contained accounts**: Email/password sign-up and login are handled entirely by the server itself (ASP.NET Core Identity + a JWT it issues and validates) — no external identity provider to configure.
+* **Self-contained accounts**: Email/password sign-up and login are handled entirely by the server itself (ASP.NET Core Identity + a JWT it issues and validates) — no external identity provider to configure. Accounts lock out for 15 minutes after 5 wrong passwords, and registration never reveals whether an email is already taken.
+* **Log out**: Settings has a Log out action (with confirmation) that clears the session and returns to the Login page.
 * **Cross‑platform UI**: .NET MAUI app for Android, iOS, macOS (MacCatalyst), and Windows.
 
 ## Why it’s useful
@@ -136,7 +137,7 @@ Chatter.sln
   pinning/replies/attachments/voice notes/video/forwarding, in-chat search, composer with image/
   video-attach and record buttons, typing indicator, people panel with avatars, group admin
   management, "New group" toolbar action, "Load earlier messages" paging.
-* **SettingsPage** – Update display name and avatar.
+* **SettingsPage** – Update display name and avatar, log out.
 
 ### Attachments & avatars
 
@@ -148,11 +149,12 @@ storage dependency to configure. A few consequences worth knowing:
 * **Size caps**: attachments up to 5 MB, avatars up to 512 KB. Larger uploads are rejected.
 * **Lazy loading** — attachment bytes are only fetched when a message's placeholder is tapped
   (`ChatHub.GetAttachmentData`), not eagerly with chat history, to keep scrolling cheap.
-* **Avatars are served from a public, unauthenticated endpoint** (`GET /avatars/{userId}`) so
-  `<Image>` controls can load them directly by URL. This is deliberate — avatars aren't sensitive —
-  but it does mean anyone with a user id can fetch that user's avatar without logging in. The
-  client never learns a raw user id itself; it only ever sees `/avatars/{id}` URLs resolved
-  server-side from display names (`ChatHub.GetAvatarUrls`).
+* **Avatars are served behind a signed, expiring link** (`GET /avatars/{userId}?exp=...&sig=...`)
+  rather than a bare, forever-valid URL — a plain `<Image>` control can't attach an Authorization
+  header, so instead the link itself only exists because an already-authenticated hub caller
+  minted it (`ChatHub.GetAvatarUrls`, HMAC-signed via `Auth/AvatarUrlSigner`, reusing
+  `Jwt:SigningKey`), and it stops working an hour after that. The client never learns a raw user id
+  itself either way; it only ever sees the resolved URL.
 * **No thumbnailing/resizing** — the original uploaded bytes are stored and served as-is.
 
 ### Voice messages
@@ -300,7 +302,7 @@ A few deliberate scope cuts, worth knowing about if you extend this:
 
 * **Blocking only affects DMs** — it stops `CreateDm`/`SendToChat` between the two users, but doesn't remove either from a shared group or from seeing each other in the Lobby.
 * **Display names aren't unique** (a pre-existing, documented tradeoff) — `CreateGroupChat`/`CreateDm` resolve a name to whichever user currently holds it in the server's directory. If two people share a name, starting a chat "by name" can resolve to the wrong one; this doesn't affect access to a chat you already have, since that's always checked by user id, not name.
-* **No refresh tokens** — a login/register JWT is valid for 7 days flat (`Auth/JwtIssuer.cs`) with no rotation or revocation. Simple, but a compromised token stays valid until it expires, and there's no server-side "sign out everywhere" beyond changing the JWT signing key (which invalidates *every* session, not just one).
+* **No refresh tokens** — a login/register JWT is valid for 7 days flat (`Auth/JwtIssuer.cs`) with no rotation or revocation. Logging out (Settings) clears the token client-side, but the server has no notion of a "session" to revoke - a compromised token stays valid until it expires, and there's no server-side "sign out everywhere" beyond changing the JWT signing key (which invalidates *every* session, not just one).
 * **Attachments/avatars/voice messages as SQLite blobs** — see [Attachments & avatars](#attachments--avatars) above. Fine at this scale; a high-traffic deployment would want a real object store instead of growing the database file with binary data.
 * **Forwarding doesn't cross a block** — forwarding into a DM still goes through the same block check as sending normally, but there's no separate "this content came from someone you've blocked" warning; it's just refused the same way a direct message would be.
 * **Search is per-chat, not global** — `SearchMessages` only looks within one chat at a time; there's no "search across all my chats" view.
@@ -562,6 +564,14 @@ dotnet build -t:Run -f net9.0-maccatalyst
 **Login/register returns 503 Service Unavailable**
 
 * You've hit the per-IP rate limit on `/auth/*` (5 requests/minute, see `Program.cs`) - wait a minute and try again. This is deliberate brute-force protection, not a bug.
+
+**Login/register asks "Continue anyway?" about an unencrypted connection**
+
+* The client warns before submitting credentials to a `Server address` that's plain `http://` and isn't localhost/a LAN address (`ServerConfig.IsCurrentServerInsecure`) - that's the case where email/password would actually cross a real network in cleartext. Use `https://` for anything beyond your own machine/LAN (a [tunnel](#expose-your-server-to-the-internet-optional) already gives you one); the warning doesn't appear for the local-dev default.
+
+**"Too many failed attempts" when logging in**
+
+* The account is locked out for 15 minutes after 5 wrong passwords in a row (`Program.cs`'s `/auth/login`, independent of the per-IP rate limit above) - wait it out, or reset `chatter.db` in development.
 
 **Windows app fails to deploy**
 
