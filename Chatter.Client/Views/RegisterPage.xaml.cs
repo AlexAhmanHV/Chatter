@@ -9,10 +9,11 @@ What this does:
 */
 
 using System.Threading.Tasks;
+using Chatter.Client.Helpers;
 using Chatter.Client.ViewModels;
 
 namespace Chatter.Client.Views;
-public partial class RegisterPage : ContentPage
+public partial class RegisterPage : ContentPage, IAlertHost
 {
     public RegisterPage(RegisterViewModel vm)
     {
@@ -28,4 +29,11 @@ public partial class RegisterPage : ContentPage
         await Navigation.PopAsync();
     }
 
-    private void OnNavigateBack() => _ = Navigation.PopAsync(); }
+    private void OnNavigateBack() => _ = Navigation.PopAsync();
+
+    public Task ShowAlertAsync(string title, string message, string accept = "OK") =>
+        AlertOverlay.ShowAlertAsync(title, message, accept);
+
+    public Task<bool> ShowConfirmAsync(string title, string message, string accept, string cancel) =>
+        AlertOverlay.ShowConfirmAsync(title, message, accept, cancel);
+}

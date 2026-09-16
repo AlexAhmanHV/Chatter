@@ -14,6 +14,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Maui.Controls;
 using Microsoft.Maui.ApplicationModel;
+using Chatter.Client.Helpers;
 using Chatter.Client.Services;
 
 namespace Chatter.Client.ViewModels;
@@ -43,15 +44,8 @@ public partial class RegisterViewModel : ObservableObject
         NavigateToLoginCommand = new RelayCommand(() => NavigateToLoginRequested?.Invoke());
     }
 
-    // Window-aware root page (avoids obsolete Application.MainPage)
-    private static Page? GetRootPage() => Application.Current?.Windows?.FirstOrDefault()?.Page;
-
-    private static Task ShowAlertAsync(string title, string message, string cancel = "OK")
-    {
-        var page = GetRootPage();
-        if (page is null) return Task.CompletedTask;
-        return MainThread.InvokeOnMainThreadAsync(() => page.DisplayAlert(title, message, cancel));
-    }
+    private static Task ShowAlertAsync(string title, string message, string cancel = "OK") =>
+        MainThread.InvokeOnMainThreadAsync(() => Ui.DisplayAlert(title, message, cancel));
 
     private async Task RegisterAsync()
     {

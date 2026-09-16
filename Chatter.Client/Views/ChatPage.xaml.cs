@@ -11,6 +11,7 @@ What this does:
 
 using System;
 using System.Linq;
+using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.Messaging;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Maui.Controls;
@@ -21,7 +22,7 @@ using Chatter.Client.ViewModels;
 
 namespace Chatter.Client.Views;
 
-public partial class ChatPage : ContentPage
+public partial class ChatPage : ContentPage, IAlertHost
 {
     private readonly IServiceProvider _services;
 
@@ -241,4 +242,10 @@ public partial class ChatPage : ContentPage
 
         await vm.SetMyStatusCommand.ExecuteAsync(sel);
     }
+
+    public Task ShowAlertAsync(string title, string message, string accept = "OK") =>
+        AlertOverlay.ShowAlertAsync(title, message, accept);
+
+    public Task<bool> ShowConfirmAsync(string title, string message, string accept, string cancel) =>
+        AlertOverlay.ShowConfirmAsync(title, message, accept, cancel);
 }

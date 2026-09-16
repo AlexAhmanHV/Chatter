@@ -18,6 +18,7 @@ What this does:
     xmlns:vm="clr-namespace:Chatter.Client.ViewModels"
     xmlns:material="clr-namespace:UraniumUI.Material.Controls;assembly=UraniumUI.Material"
     xmlns:symbols="clr-namespace:UraniumUI.Icons.MaterialSymbols;assembly=UraniumUI.Icons.MaterialSymbols"
+    xmlns:controls="clr-namespace:Chatter.Client.Controls"
     x:Class="Chatter.Client.Views.LoginPage"
     x:ClassModifier="public"
     x:DataType="vm:LoginViewModel"
@@ -170,5 +171,7 @@ What this does:
 
             </VerticalStackLayout>
         </ScrollView>
+
+        <controls:ThemedAlertOverlay x:Name="AlertOverlay" />
     </Grid>
 </ContentPage>

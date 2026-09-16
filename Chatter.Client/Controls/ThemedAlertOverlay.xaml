@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!--
+File: ThemedAlertOverlay.xaml
+
+What this does:
+- Purpose: A dark, Material-styled stand-in for the native DisplayAlert/DisplayAlert(accept/cancel)
+  dialogs, which render as unstyled white OS dialogs that clash with the rest of the redesign.
+- How: Each page that wants themed alerts embeds one of these as the LAST child of its root layout
+  (so it's topmost in z-order - see the earlier back-button z-order bug this same rule fixed) with
+  IsVisible="False". ShowAlertAsync/ShowConfirmAsync flip it visible and await a TaskCompletionSource
+  that a button Clicked handler completes.
+-->
+<ContentView xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="Chatter.Client.Controls.ThemedAlertOverlay"
+             x:Name="Root"
+             IsVisible="False"
+             InputTransparent="False">
+
+  <!-- Merged here, not inherited from the host page: a StaticResource that resolves by walking up
+       to an ancestor's resources (rather than the element's own local ones) crashes natively on
+       this exact MAUI/Windows build - the same 0xc000027b bug documented in App.xaml, just one
+       level deeper (control -> page instead of page -> app). Every control merges Theme.xaml
+       itself, same as every page does. -->
+  <ContentView.Resources>
+    <ResourceDictionary>
+      <ResourceDictionary.MergedDictionaries>
+        <ResourceDictionary Source="/Resources/Styles/Theme.xaml" />
+      </ResourceDictionary.MergedDictionaries>
+    </ResourceDictionary>
+  </ContentView.Resources>
+
+  <Grid BackgroundColor="#B3000000">
+    <Border Style="{StaticResource CardBorder}" WidthRequest="340" Padding="24,26"
+            HorizontalOptions="Center" VerticalOptions="Center">
+      <VerticalStackLayout Spacing="18">
+        <VerticalStackLayout Spacing="8">
+          <Label x:Name="TitleLabel" Style="{StaticResource TypeTitle}" />
+          <Label x:Name="MessageLabel" Style="{StaticResource TypeBody}" />
+        </VerticalStackLayout>
+        <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
+          <Button x:Name="CancelButton" Grid.Column="0" Style="{StaticResource SecondaryButton}"
+                  IsVisible="False" Clicked="OnCancelClicked" />
+          <Button x:Name="AcceptButton" Grid.Column="1" Style="{StaticResource PrimaryButton}"
+                  Text="OK" Clicked="OnAcceptClicked" />
+        </Grid>
+      </VerticalStackLayout>
+    </Border>
+  </Grid>
+</ContentView>

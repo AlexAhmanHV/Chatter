@@ -895,5 +895,7 @@ What this does:
         </VerticalStackLayout>
       </VerticalStackLayout>
     </Border>
+
+    <controls:ThemedAlertOverlay x:Name="AlertOverlay" Grid.ColumnSpan="3" />
   </Grid>
 </ContentPage>

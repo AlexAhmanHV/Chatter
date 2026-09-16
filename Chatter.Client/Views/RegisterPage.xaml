@@ -17,6 +17,7 @@ What this does:
     xmlns:vm="clr-namespace:Chatter.Client.ViewModels"
     xmlns:material="clr-namespace:UraniumUI.Material.Controls;assembly=UraniumUI.Material"
     xmlns:symbols="clr-namespace:UraniumUI.Icons.MaterialSymbols;assembly=UraniumUI.Icons.MaterialSymbols"
+    xmlns:controls="clr-namespace:Chatter.Client.Controls"
     x:Class="Chatter.Client.Views.RegisterPage"
     x:DataType="vm:RegisterViewModel"
     Title="Create account"
@@ -193,5 +194,7 @@ What this does:
                 </VerticalStackLayout>
             </Border>
         </Grid>
+
+        <controls:ThemedAlertOverlay x:Name="AlertOverlay" />
     </Grid>
 </ContentPage>

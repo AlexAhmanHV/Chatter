@@ -11,6 +11,7 @@ What this does:
 */
 
 using System;
+using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Maui.Controls;
 using Chatter.Client.ViewModels;
@@ -18,7 +19,7 @@ using Chatter.Client.Helpers;
 
 namespace Chatter.Client.Views;
 
-public partial class LoginPage : ContentPage
+public partial class LoginPage : ContentPage, IAlertHost
 {
     private readonly IServiceProvider _services;
 
@@ -80,4 +81,10 @@ public partial class LoginPage : ContentPage
         base.OnAppearing();
         EmailEntry?.Focus();
     }
+
+    public Task ShowAlertAsync(string title, string message, string accept = "OK") =>
+        AlertOverlay.ShowAlertAsync(title, message, accept);
+
+    public Task<bool> ShowConfirmAsync(string title, string message, string accept, string cancel) =>
+        AlertOverlay.ShowConfirmAsync(title, message, accept, cancel);
 }

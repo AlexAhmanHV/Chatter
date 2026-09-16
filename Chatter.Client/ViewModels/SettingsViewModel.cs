@@ -21,6 +21,7 @@ using Microsoft.Maui.Controls;
 using Microsoft.Maui.ApplicationModel;
 using Microsoft.Maui.Media;
 using Microsoft.Maui.Storage;
+using Chatter.Client.Helpers;
 using Chatter.Client.Services;
 using Chatter.Client.Messages;
 
@@ -54,12 +55,8 @@ public partial class SettingsViewModel : ObservableObject
 
     private static Page? GetRootPage() => Application.Current?.Windows?.FirstOrDefault()?.Page;
 
-    private static Task ShowAlertAsync(string title, string message, string cancel = "OK")
-    {
-        var page = GetRootPage();
-        if (page is null) return Task.CompletedTask;
-        return MainThread.InvokeOnMainThreadAsync(() => page.DisplayAlert(title, message, cancel));
-    }
+    private static Task ShowAlertAsync(string title, string message, string cancel = "OK") =>
+        MainThread.InvokeOnMainThreadAsync(() => Ui.DisplayAlert(title, message, cancel));
 
     private static Task NavigateBackAsync()
     {

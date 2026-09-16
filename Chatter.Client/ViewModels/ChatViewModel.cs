@@ -548,7 +548,7 @@ public partial class ChatViewModel : ObservableObject
                 if (page is null) return;
 
                 var kindLabel = Ci.Equals(kind, "video") ? "video call" : "audio call";
-                var accept = await page.DisplayAlert("Incoming call", $"{fromDisplayName} is calling ({kindLabel})", "Accept", "Decline");
+                var accept = await Ui.DisplayAlert("Incoming call", $"{fromDisplayName} is calling ({kindLabel})", "Accept", "Decline");
                 if (!accept)
                 {
                     await _chat.CallDeclineAsync(chatId);
@@ -735,7 +735,7 @@ public partial class ChatViewModel : ObservableObject
         var page = GetRootPage();
         if (page is null) return;
 
-        var confirmed = await page.DisplayAlert("Delete message", "This can't be undone.", "Delete", "Cancel");
+        var confirmed = await Ui.DisplayAlert("Delete message", "This can't be undone.", "Delete", "Cancel");
         if (!confirmed) return;
 
         try { await _chat.DeleteMessageAsync(item.Id); }
