@@ -17,14 +17,16 @@ What this does:
     xmlns:models="clr-namespace:Chatter.Client.Models"
     xmlns:conv="clr-namespace:Chatter.Client.Converters"
     xmlns:controls="clr-namespace:Chatter.Client.Controls"
+    xmlns:material="clr-namespace:UraniumUI.Material.Controls;assembly=UraniumUI.Material"
+    xmlns:symbols="clr-namespace:UraniumUI.Icons.MaterialSymbols;assembly=UraniumUI.Icons.MaterialSymbols"
     x:Class="Chatter.Client.Views.ChatPage"
     x:Name="ChatPageRoot"
     x:DataType="vm:ChatViewModel"
     Title="Chat"
-    BackgroundColor="#0B1220"
+    BackgroundColor="{StaticResource ColorBackground}"
     NavigationPage.HasNavigationBar="True"
-    NavigationPage.BarBackgroundColor="#0B1220"
-    NavigationPage.BarTextColor="#E5E7EB">
+    NavigationPage.BarBackgroundColor="{StaticResource ColorBackground}"
+    NavigationPage.BarTextColor="{StaticResource ColorOnSurface}">
 
   <!-- Toolbar -->
   <ContentPage.ToolbarItems>
@@ -33,7 +35,7 @@ What this does:
                  Priority="0"
                  Command="{Binding CreateGroupChatCommand}">
       <ToolbarItem.IconImageSource>
-        <FontImageSource Glyph="👥" Size="20" Color="#E5E7EB" />
+        <FontImageSource FontFamily="MaterialSymbolsOutlined" Glyph="{x:Static symbols:MaterialOutlined.Group_add}" Size="20" Color="#E5E7EB" />
       </ToolbarItem.IconImageSource>
     </ToolbarItem>
     <ToolbarItem x:Name="SettingsItem"
@@ -41,7 +43,7 @@ What this does:
                  Order="Secondary"
                  Priority="0">
       <ToolbarItem.IconImageSource>
-        <FontImageSource Glyph="⚙" Size="22" Color="#E5E7EB" />
+        <FontImageSource FontFamily="MaterialSymbolsOutlined" Glyph="{x:Static symbols:MaterialOutlined.Settings}" Size="22" Color="#E5E7EB" />
       </ToolbarItem.IconImageSource>
     </ToolbarItem>
   </ContentPage.ToolbarItems>
@@ -49,101 +51,39 @@ What this does:
   <!-- Resources -->
   <ContentPage.Resources>
     <ResourceDictionary>
+      <!-- Merged here, not in App.xaml: an Application-level StaticResource crashes natively on
+           this MAUI/Windows build when read from a page (see App.xaml's comment) - every page
+           merges Theme.xaml itself instead. -->
+      <ResourceDictionary.MergedDictionaries>
+        <ResourceDictionary Source="/Resources/Styles/Theme.xaml" />
+      </ResourceDictionary.MergedDictionaries>
+
       <conv:EmojiDisplayConverter x:Key="EmojiDisplay" />
       <conv:InvertedBoolConverter x:Key="InvertBool" />
       <conv:AttachmentStatusTextConverter x:Key="AttachmentStatusText" />
       <conv:RecordButtonTextConverter x:Key="RecordButtonText" />
       <conv:RecordButtonBackgroundConverter x:Key="RecordButtonBackground" />
       <conv:PinSwipeItemTextConverter x:Key="PinSwipeItemText" />
-      <Color x:Key="PrimaryStart">#6EE7F9</Color>
-      <Color x:Key="PrimaryEnd">#8B5CF6</Color>
-      <Color x:Key="CardBg">#101827</Color>
-      <Color x:Key="PanelBg">#0D1524</Color>
-      <Color x:Key="StrokeIdle">#1F2937</Color>
-      <Color x:Key="StrokeFocus">#8B5CF6</Color>
-      <Color x:Key="TextPrimary">#E5E7EB</Color>
-      <Color x:Key="TextSecondary">#9CA3AF</Color>
+
+      <!-- Message-bubble background: distinct enough from CardBorder's surface tone to be worth
+           its own token, but specific to this page so it stays local rather than in Theme.xaml. -->
       <Color x:Key="BubbleBg">#0F1B2E</Color>
-      <x:Double x:Key="RadiusLg">20</x:Double>
-      <x:Double x:Key="RadiusMd">14</x:Double>
 
+      <!-- Panel-header accent gradient - page-specific chrome, kept as a decorative touch the
+           same way Login/Register keep their gradient blobs; unaffected by the flat-button
+           decision since it's not a button. -->
       <LinearGradientBrush x:Key="HeaderBrush" StartPoint="0,0" EndPoint="1,0">
-        <GradientStop Color="{StaticResource PrimaryStart}" Offset="0.0" />
-        <GradientStop Color="{StaticResource PrimaryEnd}" Offset="1.0" />
+        <GradientStop Color="{StaticResource ColorPrimaryVariant}" Offset="0.0" />
+        <GradientStop Color="{StaticResource ColorPrimary}" Offset="1.0" />
       </LinearGradientBrush>
-
-      <Style TargetType="Button" x:Key="PrimaryBtn">
-        <Setter Property="TextColor" Value="White" />
-        <Setter Property="FontSize" Value="15" />
-        <Setter Property="FontAttributes" Value="Bold" />
-        <Setter Property="CornerRadius" Value="14" />
-        <Setter Property="HeightRequest" Value="48" />
-        <Setter Property="Background">
-          <Setter.Value>
-            <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
-              <GradientStop Color="{StaticResource PrimaryStart}" Offset="0.0" />
-              <GradientStop Color="{StaticResource PrimaryEnd}" Offset="1.0" />
-            </LinearGradientBrush>
-          </Setter.Value>
-        </Setter>
-        <Setter Property="Shadow">
-          <Setter.Value>
-            <Shadow Opacity="0.35" Radius="14" Offset="0,6" />
-          </Setter.Value>
-        </Setter>
-      </Style>
-
-      <Style TargetType="Border" x:Key="FieldBorder">
-        <Setter Property="Stroke" Value="{StaticResource StrokeIdle}" />
-        <Setter Property="StrokeThickness" Value="1.5" />
-        <Setter Property="BackgroundColor" Value="{StaticResource PanelBg}" />
-        <Setter Property="Padding" Value="14,12" />
-        <Setter Property="StrokeShape">
-          <Setter.Value>
-            <RoundRectangle CornerRadius="{StaticResource RadiusMd}" />
-          </Setter.Value>
-        </Setter>
-        <Setter Property="VisualStateManager.VisualStateGroups">
-          <Setter.Value>
-            <VisualStateGroupList>
-              <VisualStateGroup>
-                <VisualState x:Name="Normal" />
-                <VisualState x:Name="Focused">
-                  <VisualState.Setters>
-                    <Setter Property="Stroke" Value="{StaticResource StrokeFocus}" />
-                    <Setter Property="StrokeThickness" Value="2" />
-                  </VisualState.Setters>
-                </VisualState>
-              </VisualStateGroup>
-            </VisualStateGroupList>
-          </Setter.Value>
-        </Setter>
-      </Style>
-
-      <Style TargetType="Border" x:Key="Card">
-        <Setter Property="BackgroundColor" Value="{StaticResource CardBg}" />
-        <Setter Property="Stroke" Value="{StaticResource StrokeIdle}" />
-        <Setter Property="StrokeThickness" Value="1" />
-        <Setter Property="Padding" Value="0" />
-        <Setter Property="StrokeShape">
-          <Setter.Value>
-            <RoundRectangle CornerRadius="{StaticResource RadiusLg}" />
-          </Setter.Value>
-        </Setter>
-        <Setter Property="Shadow">
-          <Setter.Value>
-            <Shadow Opacity="0.25" Radius="18" Offset="0,10" />
-          </Setter.Value>
-        </Setter>
-      </Style>
 
       <Style TargetType="Border" x:Key="Pill">
         <Setter Property="Padding" Value="10,4" />
         <Setter Property="Background">
           <Setter.Value>
             <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
-              <GradientStop Color="{StaticResource PrimaryStart}" Offset="0.0" />
-              <GradientStop Color="{StaticResource PrimaryEnd}" Offset="1.0" />
+              <GradientStop Color="{StaticResource ColorPrimaryVariant}" Offset="0.0" />
+              <GradientStop Color="{StaticResource ColorPrimary}" Offset="1.0" />
             </LinearGradientBrush>
           </Setter.Value>
         </Setter>
@@ -170,7 +110,7 @@ What this does:
              HorizontalOptions="Start" VerticalOptions="Start" TranslationX="-120" TranslationY="-120">
       <Ellipse.Fill>
         <RadialGradientBrush Radius="0.9" Center="0.7,0.4">
-          <GradientStop Color="{StaticResource PrimaryStart}" Offset="0" />
+          <GradientStop Color="{StaticResource ColorPrimaryVariant}" Offset="0" />
           <GradientStop Color="#00000000" Offset="1" />
         </RadialGradientBrush>
       </Ellipse.Fill>
@@ -179,18 +119,21 @@ What this does:
              HorizontalOptions="End" VerticalOptions="End" TranslationX="80" TranslationY="100">
       <Ellipse.Fill>
         <RadialGradientBrush Radius="1.0" Center="0.3,0.6">
-          <GradientStop Color="{StaticResource PrimaryEnd}" Offset="0" />
+          <GradientStop Color="{StaticResource ColorPrimary}" Offset="0" />
           <GradientStop Color="#00000000" Offset="1" />
         </RadialGradientBrush>
       </Ellipse.Fill>
     </Ellipse>
 
     <!-- LEFT: Chats -->
-    <Border Grid.Column="0" Style="{StaticResource Card}" Margin="0,0,12,0">
+    <Border Grid.Column="0" Style="{StaticResource CardBorder}" Margin="0,0,12,0">
       <VerticalStackLayout Spacing="0">
         <Border Padding="20,22" StrokeThickness="0" Background="{StaticResource HeaderBrush}">
           <VerticalStackLayout Spacing="6">
-            <Label Text="💬 Messages" FontSize="20" FontAttributes="Bold" TextColor="White" />
+            <HorizontalStackLayout Spacing="8">
+              <Label Text="{x:Static symbols:MaterialOutlined.Forum}" FontFamily="MaterialSymbolsOutlined" FontSize="20" TextColor="White" VerticalOptions="Center" />
+              <Label Text="Messages" FontSize="20" FontAttributes="Bold" TextColor="White" VerticalOptions="Center" />
+            </HorizontalStackLayout>
             <Label Text="Your conversations" FontSize="12" TextColor="White" Opacity="0.85" />
           </VerticalStackLayout>
         </Border>
@@ -202,9 +145,9 @@ What this does:
                           SelectedItem="{Binding SelectedChat, Mode=TwoWay}">
             <CollectionView.ItemTemplate>
               <DataTemplate x:DataType="models:ChatItem">
-                <Border BackgroundColor="{StaticResource PanelBg}"
+                <Border BackgroundColor="{StaticResource ColorSurfaceVariant}"
                         Padding="12" Margin="0,0,0,10"
-                        StrokeThickness="1" Stroke="{StaticResource StrokeIdle}">
+                        StrokeThickness="1" Stroke="{StaticResource ColorOutline}">
                   <!-- Double-tap to delete: handled in code-behind to avoid any BindingContext paths -->
                   <Border.GestureRecognizers>
                     <TapGestureRecognizer NumberOfTapsRequired="2"
@@ -227,7 +170,7 @@ What this does:
                       <Border.StrokeShape>
                         <RoundRectangle CornerRadius="16" />
                       </Border.StrokeShape>
-                      <Label Text="✕" FontSize="16" TextColor="#F87171"
+                      <Label Text="{x:Static symbols:MaterialOutlined.Close}" FontFamily="MaterialSymbolsOutlined" FontSize="16" TextColor="#F87171"
                              HorizontalOptions="Center" VerticalOptions="Center"
                              HorizontalTextAlignment="Center" VerticalTextAlignment="Center">
                         <Label.Triggers>
@@ -241,17 +184,17 @@ What this does:
                     <!-- Chat info -->
                     <VerticalStackLayout Grid.Column="1" Spacing="2" VerticalOptions="Center">
                       <HorizontalStackLayout Spacing="4">
-                        <Label Text="{Binding Label}" FontSize="14" FontAttributes="Bold" TextColor="{StaticResource TextPrimary}" LineBreakMode="TailTruncation">
+                        <Label Text="{Binding Label}" FontSize="14" FontAttributes="Bold" TextColor="{StaticResource ColorOnSurface}" LineBreakMode="TailTruncation">
                           <Label.Triggers>
                             <DataTrigger TargetType="Label" Binding="{Binding Id}" Value="Lobby">
-                              <Setter Property="TextColor" Value="{StaticResource PrimaryStart}" />
+                              <Setter Property="TextColor" Value="{StaticResource ColorPrimaryVariant}" />
                             </DataTrigger>
                           </Label.Triggers>
                         </Label>
-                        <Label Text="🔇" FontSize="11" IsVisible="{Binding IsMuted}" VerticalOptions="Center" />
-                        <Label Text="📌" FontSize="11" IsVisible="{Binding IsPinned}" VerticalOptions="Center" />
+                        <Label Text="{x:Static symbols:MaterialOutlined.Notifications_off}" FontFamily="MaterialSymbolsOutlined" FontSize="11" IsVisible="{Binding IsMuted}" VerticalOptions="Center" />
+                        <Label Text="{x:Static symbols:MaterialOutlined.Push_pin}" FontFamily="MaterialSymbolsOutlined" FontSize="11" IsVisible="{Binding IsPinned}" VerticalOptions="Center" />
                       </HorizontalStackLayout>
-                      <Label Text="Tap to open" FontSize="11" TextColor="{StaticResource TextSecondary}" />
+                      <Label Text="Tap to open" FontSize="11" TextColor="{StaticResource ColorOnSurfaceVariant}" />
                     </VerticalStackLayout>
 
                     <!-- Unread -->
@@ -280,44 +223,47 @@ What this does:
         <RowDefinition Height="Auto" />
       </Grid.RowDefinitions>
 
-      <Border Grid.Row="0" Style="{StaticResource Card}" Padding="20,16" Margin="0,0,12,12">
+      <Border Grid.Row="0" Style="{StaticResource CardBorder}" Padding="20,16" Margin="0,0,12,12">
         <VerticalStackLayout Spacing="10">
           <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto" ColumnSpacing="12">
             <Border Grid.Column="0" WidthRequest="40" HeightRequest="40" StrokeThickness="0" Background="{StaticResource HeaderBrush}">
               <Border.StrokeShape>
                 <RoundRectangle CornerRadius="20" />
               </Border.StrokeShape>
-              <Label Text="💬" FontSize="18" HorizontalOptions="Center" VerticalOptions="Center"
+              <Label Text="{x:Static symbols:MaterialOutlined.Forum}" FontFamily="MaterialSymbolsOutlined" FontSize="18" TextColor="White" HorizontalOptions="Center" VerticalOptions="Center"
                      HorizontalTextAlignment="Center" VerticalTextAlignment="Center" />
             </Border>
             <VerticalStackLayout Grid.Column="1" Spacing="2" VerticalOptions="Center">
               <HorizontalStackLayout Spacing="6">
                 <Label Text="{Binding SelectedChat.Label, FallbackValue='Select a chat'}"
-                       FontSize="16" FontAttributes="Bold" TextColor="{StaticResource TextPrimary}" />
-                <Label Text="🔇" FontSize="13" IsVisible="{Binding SelectedChat.IsMuted, FallbackValue=False}" VerticalOptions="Center" />
+                       FontSize="16" FontAttributes="Bold" TextColor="{StaticResource ColorOnSurface}" />
+                <Label Text="{x:Static symbols:MaterialOutlined.Notifications_off}" FontFamily="MaterialSymbolsOutlined" FontSize="13" IsVisible="{Binding SelectedChat.IsMuted, FallbackValue=False}" VerticalOptions="Center" />
               </HorizontalStackLayout>
               <HorizontalStackLayout Spacing="8">
-                <Label Text="Messages" FontSize="12" TextColor="{StaticResource TextSecondary}" />
+                <Label Text="Messages" FontSize="12" TextColor="{StaticResource ColorOnSurfaceVariant}" />
                 <Border Style="{StaticResource Pill}" Padding="8,2" VerticalOptions="Center">
                   <Label Text="{Binding CurrentChatMessages.Count, StringFormat='{0}'}"
                          FontSize="11" FontAttributes="Bold" TextColor="White" />
                 </Border>
               </HorizontalStackLayout>
             </VerticalStackLayout>
-            <Button Grid.Column="2" Text="📞"
+            <Button Grid.Column="2" Text="{x:Static symbols:MaterialOutlined.Call}"
+                    FontFamily="MaterialSymbolsOutlined"
                     Command="{Binding StartCallCommand}"
                     IsVisible="{Binding IsSelectedChatDm}"
-                    WidthRequest="40" HeightRequest="40" FontSize="16" Padding="0"
-                    BackgroundColor="#1F2937" TextColor="{StaticResource TextPrimary}" CornerRadius="20" />
-            <Button Grid.Column="3" Text="🔍"
+                    WidthRequest="40" HeightRequest="40" FontSize="18" Padding="0"
+                    BackgroundColor="{StaticResource ColorSurfaceVariant}" TextColor="{StaticResource ColorOnSurface}" CornerRadius="20" />
+            <Button Grid.Column="3" Text="{x:Static symbols:MaterialOutlined.Search}"
+                    FontFamily="MaterialSymbolsOutlined"
                     Command="{Binding ToggleSearchCommand}"
-                    WidthRequest="40" HeightRequest="40" FontSize="16" Padding="0"
-                    BackgroundColor="#1F2937" TextColor="{StaticResource TextPrimary}" CornerRadius="20" />
+                    WidthRequest="40" HeightRequest="40" FontSize="18" Padding="0"
+                    BackgroundColor="{StaticResource ColorSurfaceVariant}" TextColor="{StaticResource ColorOnSurface}" CornerRadius="20" />
             <!-- ManageChatCommand no-ops for Lobby/drafts/no selection, so this can always be visible. -->
-            <Button Grid.Column="4" Text="⋮"
+            <Button Grid.Column="4" Text="{x:Static symbols:MaterialOutlined.More_vert}"
+                    FontFamily="MaterialSymbolsOutlined"
                     Command="{Binding ManageChatCommand}"
                     WidthRequest="40" HeightRequest="40" FontSize="18" Padding="0"
-                    BackgroundColor="#1F2937" TextColor="{StaticResource TextPrimary}" CornerRadius="20" />
+                    BackgroundColor="{StaticResource ColorSurfaceVariant}" TextColor="{StaticResource ColorOnSurface}" CornerRadius="20" />
           </Grid>
 
           <CollectionView IsVisible="{Binding HasPinnedMessages}"
@@ -326,17 +272,17 @@ What this does:
             <CollectionView.ItemTemplate>
               <DataTemplate x:DataType="models:ChatMessageItem">
                 <Border Padding="8,4" Margin="0,0,6,0" StrokeThickness="1"
-                        Stroke="{StaticResource StrokeIdle}" BackgroundColor="{StaticResource PanelBg}">
+                        Stroke="{StaticResource ColorOutline}" BackgroundColor="{StaticResource ColorSurfaceVariant}">
                   <Border.StrokeShape><RoundRectangle CornerRadius="8" /></Border.StrokeShape>
                   <Border.GestureRecognizers>
                     <TapGestureRecognizer Tapped="OnPinnedMessageTapped" />
                   </Border.GestureRecognizers>
                   <HorizontalStackLayout Spacing="6">
-                    <Label Text="📌" FontSize="11" VerticalOptions="Center" />
+                    <Label Text="{x:Static symbols:MaterialOutlined.Push_pin}" FontFamily="MaterialSymbolsOutlined" FontSize="11" VerticalOptions="Center" />
                     <Label Text="{Binding Sender}" FontSize="11" FontAttributes="Bold"
-                           TextColor="{StaticResource PrimaryStart}" VerticalOptions="Center" />
+                           TextColor="{StaticResource ColorPrimaryVariant}" VerticalOptions="Center" />
                     <Label Text="{Binding Body}" FontSize="11" LineBreakMode="TailTruncation" MaxLines="1"
-                           WidthRequest="140" TextColor="{StaticResource TextSecondary}" VerticalOptions="Center" />
+                           WidthRequest="140" TextColor="{StaticResource ColorOnSurfaceVariant}" VerticalOptions="Center" />
                   </HorizontalStackLayout>
                 </Border>
               </DataTemplate>
@@ -344,32 +290,29 @@ What this does:
           </CollectionView>
 
           <Grid IsVisible="{Binding IsSearching}" ColumnDefinitions="*,Auto" ColumnSpacing="8">
-            <Border Grid.Column="0" Style="{StaticResource FieldBorder}">
-              <Entry Placeholder="Search this chat…"
-                     Text="{Binding SearchQuery}"
-                     TextColor="{StaticResource TextPrimary}"
-                     PlaceholderColor="{StaticResource TextSecondary}"
-                     BackgroundColor="Transparent" />
-            </Border>
-            <Label Grid.Column="1" Text="…" FontSize="20" VerticalOptions="Center"
-                   TextColor="{StaticResource TextSecondary}" IsVisible="{Binding IsSearchRunning}" />
+            <material:TextField Grid.Column="0"
+                   Title="Search this chat"
+                   Text="{Binding SearchQuery}" />
+            <ActivityIndicator Grid.Column="1" IsRunning="{Binding IsSearchRunning}"
+                   IsVisible="{Binding IsSearchRunning}"
+                   Color="{StaticResource ColorPrimary}" VerticalOptions="Center" />
           </Grid>
 
           <CollectionView IsVisible="{Binding IsSearching}" ItemsSource="{Binding SearchResults}" MaximumHeightRequest="260">
             <CollectionView.ItemTemplate>
               <DataTemplate x:DataType="models:ChatMessageItem">
                 <Border Padding="10,8" Margin="0,0,0,6" StrokeThickness="1"
-                        Stroke="{StaticResource StrokeIdle}" BackgroundColor="{StaticResource PanelBg}">
+                        Stroke="{StaticResource ColorOutline}" BackgroundColor="{StaticResource ColorSurfaceVariant}">
                   <Border.StrokeShape><RoundRectangle CornerRadius="10" /></Border.StrokeShape>
                   <Border.GestureRecognizers>
                     <TapGestureRecognizer Tapped="OnSearchResultTapped" />
                   </Border.GestureRecognizers>
                   <VerticalStackLayout Spacing="2">
                     <HorizontalStackLayout Spacing="6">
-                      <Label Text="{Binding Sender}" FontSize="12" FontAttributes="Bold" TextColor="{StaticResource PrimaryStart}" />
-                      <Label Text="{Binding SentAtUtc, StringFormat='{0:g}'}" FontSize="11" TextColor="{StaticResource TextSecondary}" />
+                      <Label Text="{Binding Sender}" FontSize="12" FontAttributes="Bold" TextColor="{StaticResource ColorPrimaryVariant}" />
+                      <Label Text="{Binding SentAtUtc, StringFormat='{0:g}'}" FontSize="11" TextColor="{StaticResource ColorOnSurfaceVariant}" />
                     </HorizontalStackLayout>
-                    <Label Text="{Binding Body}" FontSize="13" LineBreakMode="TailTruncation" MaxLines="2" TextColor="{StaticResource TextPrimary}" />
+                    <Label Text="{Binding Body}" FontSize="13" LineBreakMode="TailTruncation" MaxLines="2" TextColor="{StaticResource ColorOnSurface}" />
                   </VerticalStackLayout>
                 </Border>
               </DataTemplate>
@@ -378,14 +321,14 @@ What this does:
         </VerticalStackLayout>
       </Border>
 
-      <Border Grid.Row="1" Style="{StaticResource Card}" Padding="16,12" Margin="0,0,12,12">
+      <Border Grid.Row="1" Style="{StaticResource CardBorder}" Padding="16,12" Margin="0,0,12,12">
         <ScrollView>
           <VerticalStackLayout Spacing="10">
             <Button Text="Load earlier messages"
                     Command="{Binding LoadMoreHistoryCommand}"
                     IsVisible="{Binding CanLoadMoreHistory}"
                     BackgroundColor="#1F2937"
-                    TextColor="{StaticResource TextSecondary}"
+                    TextColor="{StaticResource ColorOnSurfaceVariant}"
                     FontSize="12"
                     HeightRequest="36"
                     CornerRadius="10"
@@ -403,23 +346,43 @@ What this does:
                         <SwipeItem Text="Edit"
                                    BackgroundColor="#374151"
                                    IsVisible="{Binding CanModify}"
-                                   Invoked="OnEditMessageInvoked" />
+                                   Invoked="OnEditMessageInvoked">
+                          <SwipeItem.IconImageSource>
+                            <FontImageSource FontFamily="MaterialSymbolsOutlined" Glyph="{x:Static symbols:MaterialOutlined.Edit}" Color="White" Size="18" />
+                          </SwipeItem.IconImageSource>
+                        </SwipeItem>
                         <SwipeItem Text="Delete"
                                    BackgroundColor="#DC2626"
                                    IsVisible="{Binding CanModify}"
-                                   Invoked="OnDeleteMessageInvoked" />
+                                   Invoked="OnDeleteMessageInvoked">
+                          <SwipeItem.IconImageSource>
+                            <FontImageSource FontFamily="MaterialSymbolsOutlined" Glyph="{x:Static symbols:MaterialOutlined.Delete}" Color="White" Size="18" />
+                          </SwipeItem.IconImageSource>
+                        </SwipeItem>
                         <SwipeItem Text="Forward"
                                    BackgroundColor="#2563EB"
                                    IsVisible="{Binding CanForward}"
-                                   Invoked="OnForwardMessageInvoked" />
+                                   Invoked="OnForwardMessageInvoked">
+                          <SwipeItem.IconImageSource>
+                            <FontImageSource FontFamily="MaterialSymbolsOutlined" Glyph="{x:Static symbols:MaterialOutlined.Forward}" Color="White" Size="18" />
+                          </SwipeItem.IconImageSource>
+                        </SwipeItem>
                         <SwipeItem Text="Reply"
                                    BackgroundColor="#059669"
                                    IsVisible="{Binding CanReply}"
-                                   Invoked="OnReplyToMessageInvoked" />
+                                   Invoked="OnReplyToMessageInvoked">
+                          <SwipeItem.IconImageSource>
+                            <FontImageSource FontFamily="MaterialSymbolsOutlined" Glyph="{x:Static symbols:MaterialOutlined.Reply}" Color="White" Size="18" />
+                          </SwipeItem.IconImageSource>
+                        </SwipeItem>
                         <SwipeItem Text="{Binding IsPinned, Converter={StaticResource PinSwipeItemText}}"
                                    BackgroundColor="#B45309"
                                    IsVisible="{Binding CanPin}"
-                                   Invoked="OnTogglePinInvoked" />
+                                   Invoked="OnTogglePinInvoked">
+                          <SwipeItem.IconImageSource>
+                            <FontImageSource FontFamily="MaterialSymbolsOutlined" Glyph="{x:Static symbols:MaterialOutlined.Push_pin}" Color="White" Size="18" />
+                          </SwipeItem.IconImageSource>
+                        </SwipeItem>
                       </SwipeItems>
                     </SwipeView.RightItems>
 
@@ -428,14 +391,14 @@ What this does:
                            IsVisible="{Binding IsSystem}"
                            FontAttributes="Italic"
                            FontSize="12"
-                           TextColor="{StaticResource TextSecondary}"
+                           TextColor="{StaticResource ColorOnSurfaceVariant}"
                            HorizontalOptions="Center"
                            Margin="0,4" />
 
                     <!-- Real message bubble -->
                     <Border IsVisible="{Binding IsSystem, Converter={StaticResource InvertBool}}"
                             BackgroundColor="{StaticResource BubbleBg}" Padding="14,10"
-                            Stroke="{StaticResource StrokeIdle}" StrokeThickness="1">
+                            Stroke="{StaticResource ColorOutline}" StrokeThickness="1">
                       <Border.StrokeShape>
                         <RoundRectangle CornerRadius="12" />
                       </Border.StrokeShape>
@@ -446,21 +409,21 @@ What this does:
                       <VerticalStackLayout Spacing="4">
                         <HorizontalStackLayout Spacing="8">
                           <Label Text="{Binding Sender}" FontAttributes="Bold" FontSize="12"
-                                 TextColor="{StaticResource PrimaryStart}" />
+                                 TextColor="{StaticResource ColorPrimaryVariant}" />
                           <Label Text="{Binding SentAtUtc, StringFormat='{0:HH:mm}'}"
-                                 FontSize="11" TextColor="{StaticResource TextSecondary}" VerticalOptions="Center" />
+                                 FontSize="11" TextColor="{StaticResource ColorOnSurfaceVariant}" VerticalOptions="Center" />
                           <Label Text="(edited)" FontSize="11" FontAttributes="Italic"
-                                 TextColor="{StaticResource TextSecondary}" IsVisible="{Binding IsEdited}"
+                                 TextColor="{StaticResource ColorOnSurfaceVariant}" IsVisible="{Binding IsEdited}"
                                  VerticalOptions="Center">
                             <Label.GestureRecognizers>
                               <TapGestureRecognizer Tapped="OnViewEditHistoryTapped" />
                             </Label.GestureRecognizers>
                           </Label>
-                          <Label Text="📌" FontSize="11" IsVisible="{Binding IsPinned}" VerticalOptions="Center" />
+                          <Label Text="{x:Static symbols:MaterialOutlined.Push_pin}" FontFamily="MaterialSymbolsOutlined" FontSize="11" IsVisible="{Binding IsPinned}" VerticalOptions="Center" />
                         </HorizontalStackLayout>
 
                         <Border IsVisible="{Binding HasReplyPreview}"
-                                Padding="8,6" StrokeThickness="0" BackgroundColor="{StaticResource PanelBg}">
+                                Padding="8,6" StrokeThickness="0" BackgroundColor="{StaticResource ColorSurfaceVariant}">
                           <Border.StrokeShape>
                             <RoundRectangle CornerRadius="6" />
                           </Border.StrokeShape>
@@ -469,17 +432,17 @@ What this does:
                           </Border.GestureRecognizers>
                           <VerticalStackLayout Spacing="1">
                             <Label Text="{Binding ReplyTo.Sender}" FontSize="11" FontAttributes="Bold"
-                                   TextColor="{StaticResource PrimaryStart}" />
+                                   TextColor="{StaticResource ColorPrimaryVariant}" />
                             <Label FontSize="12" LineBreakMode="TailTruncation" MaxLines="1">
                               <Label.Triggers>
                                 <DataTrigger TargetType="Label" Binding="{Binding ReplyTo.IsDeleted}" Value="True">
                                   <Setter Property="Text" Value="Original message deleted" />
                                   <Setter Property="FontAttributes" Value="Italic" />
-                                  <Setter Property="TextColor" Value="{StaticResource TextSecondary}" />
+                                  <Setter Property="TextColor" Value="{StaticResource ColorOnSurfaceVariant}" />
                                 </DataTrigger>
                                 <DataTrigger TargetType="Label" Binding="{Binding ReplyTo.IsDeleted}" Value="False">
                                   <Setter Property="Text" Value="{Binding ReplyTo.Snippet}" />
-                                  <Setter Property="TextColor" Value="{StaticResource TextPrimary}" />
+                                  <Setter Property="TextColor" Value="{StaticResource ColorOnSurface}" />
                                 </DataTrigger>
                               </Label.Triggers>
                             </Label>
@@ -489,20 +452,20 @@ What this does:
                         <Label Text="{Binding Body, Converter={StaticResource EmojiDisplay}}"
                                IsVisible="{Binding IsDeleted, Converter={StaticResource InvertBool}}"
                                LineBreakMode="WordWrap"
-                               TextColor="{StaticResource TextPrimary}"
+                               TextColor="{StaticResource ColorOnSurface}"
                                FontSize="14" />
                         <Label Text="Message deleted"
                                IsVisible="{Binding IsDeleted}"
                                FontAttributes="Italic"
                                FontSize="13"
-                               TextColor="{StaticResource TextSecondary}" />
+                               TextColor="{StaticResource ColorOnSurfaceVariant}" />
 
                         <Label Text="↪ Forwarded" FontSize="11" FontAttributes="Italic"
-                               TextColor="{StaticResource TextSecondary}" IsVisible="{Binding IsForwarded}" />
+                               TextColor="{StaticResource ColorOnSurfaceVariant}" IsVisible="{Binding IsForwarded}" />
 
                         <Border IsVisible="{Binding HasLinkPreview}"
                                 Padding="0" StrokeThickness="1"
-                                Stroke="{StaticResource StrokeIdle}" BackgroundColor="{StaticResource PanelBg}">
+                                Stroke="{StaticResource ColorOutline}" BackgroundColor="{StaticResource ColorSurfaceVariant}">
                           <Border.StrokeShape>
                             <RoundRectangle CornerRadius="10" />
                           </Border.StrokeShape>
@@ -515,18 +478,18 @@ What this does:
                                    IsVisible="{Binding HasLinkPreviewImage}" />
                             <VerticalStackLayout Spacing="2" Padding="10,8">
                               <Label Text="{Binding LinkPreview.Title}" FontSize="12" FontAttributes="Bold"
-                                     LineBreakMode="TailTruncation" MaxLines="1" TextColor="{StaticResource TextPrimary}" />
+                                     LineBreakMode="TailTruncation" MaxLines="1" TextColor="{StaticResource ColorOnSurface}" />
                               <Label Text="{Binding LinkPreview.Description}" FontSize="11"
-                                     LineBreakMode="TailTruncation" MaxLines="2" TextColor="{StaticResource TextSecondary}" />
+                                     LineBreakMode="TailTruncation" MaxLines="2" TextColor="{StaticResource ColorOnSurfaceVariant}" />
                               <Label Text="{Binding LinkPreview.Url}" FontSize="10"
-                                     LineBreakMode="TailTruncation" MaxLines="1" TextColor="{StaticResource PrimaryStart}" />
+                                     LineBreakMode="TailTruncation" MaxLines="1" TextColor="{StaticResource ColorPrimaryVariant}" />
                             </VerticalStackLayout>
                           </VerticalStackLayout>
                         </Border>
 
                         <Border IsVisible="{Binding ShowAttachmentPlaceholder}"
                                 Padding="10,8" StrokeThickness="1"
-                                Stroke="{StaticResource StrokeIdle}" BackgroundColor="{StaticResource PanelBg}">
+                                Stroke="{StaticResource ColorOutline}" BackgroundColor="{StaticResource ColorSurfaceVariant}">
                           <Border.StrokeShape>
                             <RoundRectangle CornerRadius="10" />
                           </Border.StrokeShape>
@@ -534,12 +497,12 @@ What this does:
                             <TapGestureRecognizer Tapped="OnAttachmentTapped" />
                           </Border.GestureRecognizers>
                           <HorizontalStackLayout Spacing="8">
-                            <Label Text="📎" FontSize="16" VerticalOptions="Center" />
+                            <Label Text="{x:Static symbols:MaterialOutlined.Attach_file}" FontFamily="MaterialSymbolsOutlined" FontSize="16" VerticalOptions="Center" />
                             <VerticalStackLayout Spacing="2">
                               <Label Text="{Binding Attachment.FileName}" FontSize="12"
-                                     TextColor="{StaticResource TextPrimary}" LineBreakMode="TailTruncation" />
+                                     TextColor="{StaticResource ColorOnSurface}" LineBreakMode="TailTruncation" />
                               <Label Text="{Binding IsAttachmentLoading, Converter={StaticResource AttachmentStatusText}}"
-                                     FontSize="11" TextColor="{StaticResource TextSecondary}" />
+                                     FontSize="11" TextColor="{StaticResource ColorOnSurfaceVariant}" />
                             </VerticalStackLayout>
                           </HorizontalStackLayout>
                         </Border>
@@ -550,7 +513,7 @@ What this does:
 
                         <Border IsVisible="{Binding IsVoiceMessage}"
                                 Padding="10,8" StrokeThickness="1"
-                                Stroke="{StaticResource StrokeIdle}" BackgroundColor="{StaticResource PanelBg}">
+                                Stroke="{StaticResource ColorOutline}" BackgroundColor="{StaticResource ColorSurfaceVariant}">
                           <Border.StrokeShape>
                             <RoundRectangle CornerRadius="10" />
                           </Border.StrokeShape>
@@ -559,34 +522,34 @@ What this does:
                           </Border.GestureRecognizers>
                           <VerticalStackLayout Spacing="4" MinimumWidthRequest="170">
                             <HorizontalStackLayout Spacing="8">
-                              <Label FontSize="16" VerticalOptions="Center">
+                              <Label FontFamily="MaterialSymbolsOutlined" FontSize="16" VerticalOptions="Center">
                                 <Label.Triggers>
                                   <DataTrigger TargetType="Label" Binding="{Binding IsPlayingVoiceMessage}" Value="True">
-                                    <Setter Property="Text" Value="⏸" />
+                                    <Setter Property="Text" Value="{x:Static symbols:MaterialOutlined.Pause}" />
                                   </DataTrigger>
                                   <DataTrigger TargetType="Label" Binding="{Binding IsPlayingVoiceMessage}" Value="False">
-                                    <Setter Property="Text" Value="▶" />
+                                    <Setter Property="Text" Value="{x:Static symbols:MaterialOutlined.Play_arrow}" />
                                   </DataTrigger>
                                 </Label.Triggers>
                               </Label>
-                              <Label Text="Voice message" FontSize="12" TextColor="{StaticResource TextPrimary}" VerticalOptions="Center" />
+                              <Label Text="Voice message" FontSize="12" TextColor="{StaticResource ColorOnSurface}" VerticalOptions="Center" />
                               <Label Text="{Binding VoiceMessageDurationText}" FontSize="11"
-                                     TextColor="{StaticResource TextSecondary}" VerticalOptions="Center"
+                                     TextColor="{StaticResource ColorOnSurfaceVariant}" VerticalOptions="Center"
                                      IsVisible="{Binding IsPlayingVoiceMessage, Converter={StaticResource InvertBool}}" />
                               <Label Text="{Binding IsAttachmentLoading, Converter={StaticResource AttachmentStatusText}}"
-                                     FontSize="11" TextColor="{StaticResource TextSecondary}"
+                                     FontSize="11" TextColor="{StaticResource ColorOnSurfaceVariant}"
                                      IsVisible="{Binding IsAttachmentLoading}" VerticalOptions="Center" />
                             </HorizontalStackLayout>
                             <controls:WaveformView MessageItem="{Binding .}" HeightRequest="28"
                                                    IsVisible="{Binding HasWaveform}" />
-                            <Label Text="{Binding PlaybackPositionText}" FontSize="10" TextColor="{StaticResource TextSecondary}"
+                            <Label Text="{Binding PlaybackPositionText}" FontSize="10" TextColor="{StaticResource ColorOnSurfaceVariant}"
                                    IsVisible="{Binding IsPlayingVoiceMessage}" />
                           </VerticalStackLayout>
                         </Border>
 
                         <Border IsVisible="{Binding IsVideoAttachment}"
                                 Padding="10,8" StrokeThickness="1"
-                                Stroke="{StaticResource StrokeIdle}" BackgroundColor="{StaticResource PanelBg}">
+                                Stroke="{StaticResource ColorOutline}" BackgroundColor="{StaticResource ColorSurfaceVariant}">
                           <Border.StrokeShape>
                             <RoundRectangle CornerRadius="10" />
                           </Border.StrokeShape>
@@ -594,19 +557,19 @@ What this does:
                             <TapGestureRecognizer Tapped="OnOpenExternalAttachmentTapped" />
                           </Border.GestureRecognizers>
                           <HorizontalStackLayout Spacing="8">
-                            <Label Text="🎥" FontSize="16" VerticalOptions="Center" />
-                            <Label Text="Video - tap to play" FontSize="12" TextColor="{StaticResource TextPrimary}" VerticalOptions="Center" />
+                            <Label Text="{x:Static symbols:MaterialOutlined.Videocam}" FontFamily="MaterialSymbolsOutlined" FontSize="16" VerticalOptions="Center" />
+                            <Label Text="Video - tap to play" FontSize="12" TextColor="{StaticResource ColorOnSurface}" VerticalOptions="Center" />
                             <Label Text="{Binding VideoDurationText}" FontSize="11"
-                                   TextColor="{StaticResource TextSecondary}" VerticalOptions="Center" />
+                                   TextColor="{StaticResource ColorOnSurfaceVariant}" VerticalOptions="Center" />
                             <Label Text="{Binding IsAttachmentLoading, Converter={StaticResource AttachmentStatusText}}"
-                                   FontSize="11" TextColor="{StaticResource TextSecondary}"
+                                   FontSize="11" TextColor="{StaticResource ColorOnSurfaceVariant}"
                                    IsVisible="{Binding IsAttachmentLoading}" VerticalOptions="Center" />
                           </HorizontalStackLayout>
                         </Border>
 
                         <Border IsVisible="{Binding IsDocumentAttachment}"
                                 Padding="10,8" StrokeThickness="1"
-                                Stroke="{StaticResource StrokeIdle}" BackgroundColor="{StaticResource PanelBg}">
+                                Stroke="{StaticResource ColorOutline}" BackgroundColor="{StaticResource ColorSurfaceVariant}">
                           <Border.StrokeShape>
                             <RoundRectangle CornerRadius="10" />
                           </Border.StrokeShape>
@@ -614,14 +577,14 @@ What this does:
                             <TapGestureRecognizer Tapped="OnOpenExternalAttachmentTapped" />
                           </Border.GestureRecognizers>
                           <HorizontalStackLayout Spacing="8">
-                            <Label Text="📄" FontSize="16" VerticalOptions="Center" />
+                            <Label Text="{x:Static symbols:MaterialOutlined.Description}" FontFamily="MaterialSymbolsOutlined" FontSize="16" VerticalOptions="Center" />
                             <VerticalStackLayout Spacing="1">
                               <Label Text="{Binding Attachment.FileName}" FontSize="12"
-                                     TextColor="{StaticResource TextPrimary}" LineBreakMode="TailTruncation" />
-                              <Label Text="{Binding DocumentSizeText}" FontSize="11" TextColor="{StaticResource TextSecondary}" />
+                                     TextColor="{StaticResource ColorOnSurface}" LineBreakMode="TailTruncation" />
+                              <Label Text="{Binding DocumentSizeText}" FontSize="11" TextColor="{StaticResource ColorOnSurfaceVariant}" />
                             </VerticalStackLayout>
                             <Label Text="{Binding IsAttachmentLoading, Converter={StaticResource AttachmentStatusText}}"
-                                   FontSize="11" TextColor="{StaticResource TextSecondary}"
+                                   FontSize="11" TextColor="{StaticResource ColorOnSurfaceVariant}"
                                    IsVisible="{Binding IsAttachmentLoading}" VerticalOptions="Center" />
                           </HorizontalStackLayout>
                         </Border>
@@ -631,7 +594,7 @@ What this does:
                             <BindableLayout.ItemTemplate>
                               <DataTemplate x:DataType="models:ReactionItem">
                                 <Border Padding="7,3" Margin="0,0,6,0" StrokeThickness="1"
-                                        Stroke="{StaticResource StrokeIdle}" BackgroundColor="{StaticResource PanelBg}"
+                                        Stroke="{StaticResource ColorOutline}" BackgroundColor="{StaticResource ColorSurfaceVariant}"
                                         ToolTipProperties.Text="{Binding ReactorsText}">
                                   <Border.StrokeShape>
                                     <RoundRectangle CornerRadius="10" />
@@ -641,7 +604,7 @@ What this does:
                                   </Border.GestureRecognizers>
                                   <HorizontalStackLayout Spacing="4">
                                     <Label Text="{Binding Emoji}" FontSize="12" />
-                                    <Label Text="{Binding Count}" FontSize="11" TextColor="{StaticResource TextSecondary}" />
+                                    <Label Text="{Binding Count}" FontSize="11" TextColor="{StaticResource ColorOnSurfaceVariant}" />
                                   </HorizontalStackLayout>
                                 </Border>
                               </DataTemplate>
@@ -652,20 +615,20 @@ What this does:
                                   IsVisible="{Binding IsDeleted, Converter={StaticResource InvertBool}}"
                                   Clicked="OnReactButtonClicked"
                                   WidthRequest="28" HeightRequest="24" Padding="0" FontSize="12"
-                                  BackgroundColor="{StaticResource PanelBg}" TextColor="{StaticResource TextSecondary}"
+                                  BackgroundColor="{StaticResource ColorSurfaceVariant}" TextColor="{StaticResource ColorOnSurfaceVariant}"
                                   CornerRadius="8" />
                         </HorizontalStackLayout>
 
                         <Label Text="Seen"
                                IsVisible="{Binding SeenByOther}"
                                FontSize="10"
-                               TextColor="{StaticResource TextSecondary}"
+                               TextColor="{StaticResource ColorOnSurfaceVariant}"
                                HorizontalOptions="End" />
 
                         <Label Text="{Binding GroupSeenText}"
                                IsVisible="{Binding ShowGroupSeenIndicator}"
                                FontSize="10"
-                               TextColor="{StaticResource TextSecondary}"
+                               TextColor="{StaticResource ColorOnSurfaceVariant}"
                                HorizontalOptions="End" />
                       </VerticalStackLayout>
                     </Border>
@@ -677,7 +640,7 @@ What this does:
         </ScrollView>
       </Border>
 
-      <Border Grid.Row="2" Style="{StaticResource Card}" Padding="16" Margin="0,0,12,0">
+      <Border Grid.Row="2" Style="{StaticResource CardBorder}" Padding="16" Margin="0,0,12,0">
         <Grid ColumnSpacing="10" RowSpacing="4">
           <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
@@ -694,78 +657,74 @@ What this does:
           </Grid.ColumnDefinitions>
 
           <Border Grid.Row="0" Grid.ColumnSpan="6" IsVisible="{Binding IsReplying}"
-                  Padding="10,6" StrokeThickness="0" BackgroundColor="{StaticResource PanelBg}">
+                  Padding="10,6" StrokeThickness="0" BackgroundColor="{StaticResource ColorSurfaceVariant}">
             <Border.StrokeShape>
               <RoundRectangle CornerRadius="8" />
             </Border.StrokeShape>
             <Grid ColumnDefinitions="*,Auto">
               <VerticalStackLayout Grid.Column="0" Spacing="1">
                 <Label Text="{Binding PendingReply.Sender, StringFormat='Replying to {0}'}" FontSize="11"
-                       FontAttributes="Bold" TextColor="{StaticResource PrimaryStart}" />
+                       FontAttributes="Bold" TextColor="{StaticResource ColorPrimaryVariant}" />
                 <Label Text="{Binding PendingReply.Body}" FontSize="12" LineBreakMode="TailTruncation" MaxLines="1"
-                       TextColor="{StaticResource TextSecondary}" />
+                       TextColor="{StaticResource ColorOnSurfaceVariant}" />
               </VerticalStackLayout>
-              <Button Grid.Column="1" Text="✕" Command="{Binding CancelReplyCommand}"
-                      WidthRequest="28" HeightRequest="28" Padding="0" FontSize="12"
-                      BackgroundColor="Transparent" TextColor="{StaticResource TextSecondary}" />
+              <Button Grid.Column="1" Text="{x:Static symbols:MaterialOutlined.Close}" FontFamily="MaterialSymbolsOutlined" Command="{Binding CancelReplyCommand}"
+                      WidthRequest="28" HeightRequest="28" Padding="0" FontSize="14"
+                      BackgroundColor="Transparent" TextColor="{StaticResource ColorOnSurfaceVariant}" />
             </Grid>
           </Border>
 
-          <Border Grid.Row="1" Grid.Column="0" Style="{StaticResource FieldBorder}">
-            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8" VerticalOptions="Center">
-              <Label Grid.Column="0" Text="✍️" VerticalOptions="Center" />
-              <Entry Grid.Column="1"
-                     x:Name="MessageEntry"
-                     Placeholder="{Binding MessagePlaceholder}"
-                     Text="{Binding OutgoingMessage}"
-                     ReturnType="Send"
-                     TextColor="{StaticResource TextPrimary}"
-                     PlaceholderColor="{StaticResource TextSecondary}"
-                     BackgroundColor="Transparent" />
-            </Grid>
-          </Border>
+          <material:TextField Grid.Row="1" Grid.Column="0"
+                 x:Name="MessageEntry"
+                 Title="{Binding MessagePlaceholder}"
+                 Text="{Binding OutgoingMessage}"
+                 ReturnType="Send" />
 
           <Button Grid.Row="1" Grid.Column="1"
-                  Text="📎"
+                  Text="{x:Static symbols:MaterialOutlined.Attach_file}"
+                  FontFamily="MaterialSymbolsOutlined"
                   Command="{Binding PickAndSendAttachmentCommand}"
                   WidthRequest="44"
                   HeightRequest="48"
-                  BackgroundColor="#1F2937"
-                  TextColor="#E5E7EB"
+                  BackgroundColor="{StaticResource ColorSurfaceVariant}"
+                  TextColor="{StaticResource ColorOnSurface}"
                   CornerRadius="12" />
 
           <Button Grid.Row="1" Grid.Column="2"
                   Text="{Binding IsRecordingVoiceMessage, Converter={StaticResource RecordButtonText}}"
+                  FontFamily="MaterialSymbolsOutlined"
                   Command="{Binding RecordVoiceMessageCommand}"
                   WidthRequest="44"
                   HeightRequest="48"
                   BackgroundColor="{Binding IsRecordingVoiceMessage, Converter={StaticResource RecordButtonBackground}}"
-                  TextColor="#E5E7EB"
+                  TextColor="{StaticResource ColorOnSurface}"
                   CornerRadius="12" />
 
           <Button Grid.Row="1" Grid.Column="3"
-                  Text="🎥"
+                  Text="{x:Static symbols:MaterialOutlined.Videocam}"
+                  FontFamily="MaterialSymbolsOutlined"
                   Command="{Binding PickAndSendVideoCommand}"
                   WidthRequest="44"
                   HeightRequest="48"
-                  BackgroundColor="#1F2937"
-                  TextColor="#E5E7EB"
+                  BackgroundColor="{StaticResource ColorSurfaceVariant}"
+                  TextColor="{StaticResource ColorOnSurface}"
                   CornerRadius="12" />
 
           <Button Grid.Row="1" Grid.Column="4"
-                  Text="😊"
+                  Text="{x:Static symbols:MaterialOutlined.Mood}"
+                  FontFamily="MaterialSymbolsOutlined"
                   Command="{Binding ShowEmojiPickerCommand}"
                   WidthRequest="44"
                   HeightRequest="48"
-                  BackgroundColor="#1F2937"
-                  TextColor="#E5E7EB"
+                  BackgroundColor="{StaticResource ColorSurfaceVariant}"
+                  TextColor="{StaticResource ColorOnSurface}"
                   CornerRadius="12" />
 
           <Button Grid.Row="1" Grid.Column="5"
                   Text="Send"
                   Command="{Binding SendCommand}"
                   IsEnabled="{Binding CanSend}"
-                  Style="{StaticResource PrimaryBtn}"
+                  Style="{StaticResource PrimaryButton}"
                   WidthRequest="110" />
 
           <Label Grid.Row="2" Grid.ColumnSpan="6"
@@ -774,14 +733,14 @@ What this does:
                   FontSize="12"
                   Opacity="0.85"
                   FontAttributes="Italic"
-                  TextColor="{DynamicResource TextSecondary}" />
+                  TextColor="{DynamicResource ColorOnSurfaceVariant}" />
 
           <Label Grid.Row="2" Grid.ColumnSpan="6"
                  Text="{Binding TypingUser, StringFormat='{0} is typing…'}"
                  IsVisible="{Binding IsPeerTyping}"
                  FontAttributes="Italic"
                  FontSize="12"
-                 TextColor="{StaticResource TextSecondary}"
+                 TextColor="{StaticResource ColorOnSurfaceVariant}"
                  Margin="6,6,0,0" />
 
           <Label Grid.Row="2" Grid.ColumnSpan="6"
@@ -789,19 +748,21 @@ What this does:
                  IsVisible="{Binding IsPeerRecordingVoiceMessage}"
                  FontAttributes="Italic"
                  FontSize="12"
-                 TextColor="{StaticResource TextSecondary}"
+                 TextColor="{StaticResource ColorOnSurfaceVariant}"
                  Margin="6,6,0,0" />
         </Grid>
       </Border>
     </Grid>
 
     <!-- RIGHT: People -->
-    <Border Grid.Column="2" Style="{StaticResource Card}">
+    <Border Grid.Column="2" Style="{StaticResource CardBorder}">
       <VerticalStackLayout Spacing="0">
         <Border Padding="20,22" StrokeThickness="0" Background="{StaticResource HeaderBrush}">
           <VerticalStackLayout Spacing="14">
-            <Label Text="{Binding User, StringFormat='👤 {0}'}"
-                   FontSize="16" FontAttributes="Bold" TextColor="White" />
+            <HorizontalStackLayout Spacing="8">
+              <Label Text="{x:Static symbols:MaterialOutlined.Person}" FontFamily="MaterialSymbolsOutlined" FontSize="16" TextColor="White" VerticalOptions="Center" />
+              <Label Text="{Binding User}" FontSize="16" FontAttributes="Bold" TextColor="White" VerticalOptions="Center" />
+            </HorizontalStackLayout>
             <Border BackgroundColor="White" Padding="10,8" StrokeThickness="0">
               <Border.StrokeShape>
                 <RoundRectangle CornerRadius="10" />
@@ -821,7 +782,10 @@ What this does:
         </Border>
 
         <VerticalStackLayout Padding="16,16" Spacing="12">
-          <Label Text="👥 People" FontSize="16" FontAttributes="Bold" TextColor="{StaticResource TextPrimary}" />
+          <HorizontalStackLayout Spacing="8">
+            <Label Text="{x:Static symbols:MaterialOutlined.Group}" FontFamily="MaterialSymbolsOutlined" FontSize="16" TextColor="{StaticResource ColorOnSurface}" VerticalOptions="Center" />
+            <Label Text="People" FontSize="16" FontAttributes="Bold" TextColor="{StaticResource ColorOnSurface}" VerticalOptions="Center" />
+          </HorizontalStackLayout>
 
           <Grid ColumnDefinitions="*,*,*" ColumnSpacing="8">
             <Border Grid.Column="0" BackgroundColor="#082638" Padding="10,12" StrokeThickness="0">
@@ -851,7 +815,7 @@ What this does:
             <CollectionView x:Name="PeopleList" ItemsSource="{Binding People}" SelectionMode="Single">
               <CollectionView.ItemTemplate>
                 <DataTemplate x:DataType="models:UserPresenceItem">
-                  <Border BackgroundColor="{StaticResource PanelBg}" Padding="12,10" Margin="0,0,0,10" StrokeThickness="1" Stroke="{StaticResource StrokeIdle}">
+                  <Border BackgroundColor="{StaticResource ColorSurfaceVariant}" Padding="12,10" Margin="0,0,0,10" StrokeThickness="1" Stroke="{StaticResource ColorOutline}">
                     <Border.StrokeShape><RoundRectangle CornerRadius="12" /></Border.StrokeShape>
                     <Grid ColumnSpacing="12">
                       <Grid.ColumnDefinitions>
@@ -865,7 +829,7 @@ What this does:
                           <Image Source="{Binding AvatarUrl}" Aspect="AspectFill" WidthRequest="32" HeightRequest="32" />
                         </Border>
 
-                        <Border StrokeThickness="2" Stroke="{StaticResource CardBg}">
+                        <Border StrokeThickness="2" Stroke="{StaticResource ColorSurface}">
                           <Border.StrokeShape><RoundRectangle CornerRadius="16" /></Border.StrokeShape>
                           <Ellipse WidthRequest="28" HeightRequest="28">
                             <Ellipse.Triggers>
@@ -887,8 +851,8 @@ What this does:
                       </Grid>
 
                       <VerticalStackLayout Grid.Column="1" Spacing="2" VerticalOptions="Center">
-                        <Label Text="{Binding Name}" FontSize="14" FontAttributes="Bold" TextColor="{StaticResource TextPrimary}" />
-                        <Label FontSize="12" TextColor="{StaticResource TextSecondary}">
+                        <Label Text="{Binding Name}" FontSize="14" FontAttributes="Bold" TextColor="{StaticResource ColorOnSurface}" />
+                        <Label FontSize="12" TextColor="{StaticResource ColorOnSurfaceVariant}">
                           <Label.Triggers>
                             <DataTrigger TargetType="Label" Binding="{Binding Status}" Value="{x:Static models:PresenceStatus.Busy}">
                               <Setter Property="Text" Value="Busy" />
