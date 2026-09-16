@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<!--
+File: call.html
+
+What this does:
+- Purpose: The WebRTC side of a 1:1 call - getUserMedia + RTCPeerConnection - hosted in a
+  HybridWebView so it can use standard browser WebRTC APIs instead of a native binding (MAUI has
+  no first-party cross-platform WebRTC library). Actual media flows peer-to-peer once signaling
+  finishes; this page never talks to the Chatter server directly, only to CallViewModel via
+  HybridWebView's message bridge (window.HybridWebView.sendMessage / the
+  HybridWebViewMessageReceived event) - CallViewModel is what actually relays SDP/ICE through
+  ChatHub's call-signaling hub methods.
+- Protocol: every message either way is a JSON object with a "type" field - see the switch
+  statements in handleNativeMessage (commands received from C#) and the send() calls (events
+  sent to C#) for the full set.
+- STUN only, no TURN: gathers reflexive ICE candidates via a public Google STUN server so two
+  peers can usually find each other through NAT, but there's no relay fallback for restrictive
+  NATs (symmetric NAT, some corporate/mobile networks) - see the README's "Known simplifications".
+-->
+<html>
+<head>
+  <meta charset="utf-8" />
+  <style>
+    html, body { margin: 0; padding: 0; background: #0B1220; height: 100%; overflow: hidden; }
+    #remoteVideo { width: 100%; height: 100%; object-fit: cover; background: #0B1220; }
+    #localVideo {
+      position: absolute; width: 30%; max-width: 160px; right: 12px; bottom: 12px;
+      border-radius: 8px; border: 1px solid #1F2937; object-fit: cover; background: #101827;
+    }
+  </style>
+</head>
+<body>
+  <video id="remoteVideo" autoplay playsinline></video>
+  <video id="localVideo" autoplay playsinline muted></video>
+
+  <script>
+    const ICE_SERVERS = [{ urls: "stun:stun.l.google.com:19302" }];
+
+    let pc = null;
+    let localStream = null;
+    let isVideoCall = true;
+
+    function send(message) {
+      window.HybridWebView.sendMessage(JSON.stringify(message));
+    }
+
+    function ensurePeerConnection() {
+      if (pc) return pc;
+      pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+
+      pc.onicecandidate = (event) => {
+        if (event.candidate) send({ type: "ice-candidate", candidate: JSON.stringify(event.candidate) });
+      };
+
+      pc.ontrack = (event) => {
+        const remote = document.getElementById("remoteVideo");
+        if (remote.srcObject !== event.streams[0]) remote.srcObject = event.streams[0];
+      };
+
+      pc.onconnectionstatechange = () => {
+        if (pc.connectionState === "connected") send({ type: "connected" });
+        else if (pc.connectionState === "failed" || pc.connectionState === "disconnected")
+          send({ type: "disconnected", state: pc.connectionState });
+      };
+
+      return pc;
+    }
+
+    async function getLocalMedia(video) {
+      if (localStream) return localStream;
+      localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: video });
+      document.getElementById("localVideo").srcObject = localStream;
+      document.getElementById("localVideo").style.display = video ? "block" : "none";
+      return localStream;
+    }
+
+    async function startAsCaller(kind) {
+      try {
+        isVideoCall = kind === "video";
+        const stream = await getLocalMedia(isVideoCall);
+        const connection = ensurePeerConnection();
+        stream.getTracks().forEach((t) => connection.addTrack(t, stream));
+
+        const offer = await connection.createOffer();
+        await connection.setLocalDescription(offer);
+        send({ type: "offer-created", sdp: JSON.stringify(offer) });
+      } catch (err) {
+        send({ type: "error", message: String(err) });
+      }
+    }
+
+    async function startAsCallee(kind, offerJson) {
+      try {
+        isVideoCall = kind === "video";
+        const connection = ensurePeerConnection();
+        await connection.setRemoteDescription(JSON.parse(offerJson));
+
+        const stream = await getLocalMedia(isVideoCall);
+        stream.getTracks().forEach((t) => connection.addTrack(t, stream));
+
+        const answer = await connection.createAnswer();
+        await connection.setLocalDescription(answer);
+        send({ type: "answer-created", sdp: JSON.stringify(answer) });
+      } catch (err) {
+        send({ type: "error", message: String(err) });
+      }
+    }
+
+    async function applyRemoteAnswer(answerJson) {
+      try {
+        await pc.setRemoteDescription(JSON.parse(answerJson));
+      } catch (err) {
+        send({ type: "error", message: String(err) });
+      }
+    }
+
+    async function addRemoteIceCandidate(candidateJson) {
+      try {
+        if (pc) await pc.addIceCandidate(JSON.parse(candidateJson));
+      } catch (err) {
+        // Late/duplicate candidates are common and harmless - don't surface these as call errors.
+      }
+    }
+
+    function toggleMute(muted) {
+      if (localStream) localStream.getAudioTracks().forEach((t) => (t.enabled = !muted));
+    }
+
+    function toggleCamera(off) {
+      if (localStream) localStream.getVideoTracks().forEach((t) => (t.enabled = !off));
+    }
+
+    function hangup() {
+      if (pc) {
+        pc.close();
+        pc = null;
+      }
+      if (localStream) {
+        localStream.getTracks().forEach((t) => t.stop());
+        localStream = null;
+      }
+    }
+
+    function handleNativeMessage(message) {
+      const data = JSON.parse(message);
+      switch (data.type) {
+        case "start-caller":
+          startAsCaller(data.kind);
+          break;
+        case "start-callee":
+          startAsCallee(data.kind, data.sdp);
+          break;
+        case "remote-answer":
+          applyRemoteAnswer(data.sdp);
+          break;
+        case "ice-candidate":
+          addRemoteIceCandidate(data.candidate);
+          break;
+        case "toggle-mute":
+          toggleMute(data.muted);
+          break;
+        case "toggle-camera":
+          toggleCamera(data.off);
+          break;
+        case "hangup":
+          hangup();
+          break;
+      }
+    }
+
+    window.addEventListener("HybridWebViewMessageReceived", (event) => handleNativeMessage(event.detail.message));
+    window.addEventListener("DOMContentLoaded", () => send({ type: "ready" }));
+  </script>
+</body>
+</html>

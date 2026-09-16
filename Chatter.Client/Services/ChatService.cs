@@ -63,6 +63,14 @@ public class ChatService
     public event Action<string, long, string>? MessagePinned;   // chatId, messageId, pinnedByDisplayName
     public event Action<string, long>? MessageUnpinned;         // chatId, messageId
 
+    // Call signaling (1:1 DMs only - see ChatHub's own comment for why). The server never reads
+    // an SDP/ICE payload's contents, it's a dumb relay - see CallViewModel for what these mean.
+    public event Action<string, string, string, string>? IncomingCall;  // chatId, fromDisplayName, kind, sdpOffer
+    public event Action<string, string>? CallAnswered;                  // chatId, sdpAnswer
+    public event Action<string>? CallDeclined;                          // chatId
+    public event Action<string, string>? CallIceCandidateReceived;      // chatId, candidateJson
+    public event Action<string>? CallEnded;                             // chatId
+
     // Group admin (add/remove member, rename)
     public event Action<string>? RemovedFromChat;               // chatId - you were kicked or the group no longer includes you
     public event Action<string, string>? ChatRenamed;           // chatId, newLabel
@@ -182,6 +190,19 @@ public class ChatService
 
         _conn.On<string, long>("MessageUnpinned", (chatId, messageId) =>
             MessageUnpinned?.Invoke(chatId, messageId));
+
+        _conn.On<string, string, string, string>("IncomingCall", (chatId, fromDisplayName, kind, sdpOffer) =>
+            IncomingCall?.Invoke(chatId, fromDisplayName, kind, sdpOffer));
+
+        _conn.On<string, string>("CallAnswered", (chatId, sdpAnswer) =>
+            CallAnswered?.Invoke(chatId, sdpAnswer));
+
+        _conn.On<string>("CallDeclined", chatId => CallDeclined?.Invoke(chatId));
+
+        _conn.On<string, string>("CallIceCandidate", (chatId, candidateJson) =>
+            CallIceCandidateReceived?.Invoke(chatId, candidateJson));
+
+        _conn.On<string>("CallEnded", chatId => CallEnded?.Invoke(chatId));
 
         _conn.On<string, long, string, int, bool, string>("ReactionChanged",
             (chatId, messageId, emoji, count, added, byDisplayName) =>
@@ -355,6 +376,25 @@ public class ChatService
     public Task SetChatMutedAsync(string chatId, bool muted) =>
         _conn?.SendAsync("SetChatMuted", chatId, muted) ?? Task.CompletedTask;
 
+    public Task SetChatPinnedAsync(string chatId, bool pinned) =>
+        _conn?.SendAsync("SetChatPinned", chatId, pinned) ?? Task.CompletedTask;
+
+    /* Call signaling */
+    public Task CallInviteAsync(string chatId, string kind, string sdpOffer) =>
+        _conn?.InvokeAsync("CallInvite", chatId, kind, sdpOffer) ?? Task.CompletedTask;
+
+    public Task CallAnswerAsync(string chatId, string sdpAnswer) =>
+        _conn?.SendAsync("CallAnswer", chatId, sdpAnswer) ?? Task.CompletedTask;
+
+    public Task CallDeclineAsync(string chatId) =>
+        _conn?.SendAsync("CallDecline", chatId) ?? Task.CompletedTask;
+
+    public Task CallIceCandidateAsync(string chatId, string candidateJson) =>
+        _conn?.SendAsync("CallIceCandidate", chatId, candidateJson) ?? Task.CompletedTask;
+
+    public Task CallHangupAsync(string chatId) =>
+        _conn?.SendAsync("CallHangup", chatId) ?? Task.CompletedTask;
+
     /* Blocking */
     public Task BlockUserAsync(string displayName) =>
         _conn?.SendAsync("BlockUser", displayName) ?? Task.CompletedTask;
@@ -434,10 +474,22 @@ public class ChatService
             ? Task.FromResult(0L)
             : _conn.InvokeAsync<long>("SendVideo", chatId, fileName, contentType, data, durationSeconds, replyToMessageId);
 
+    public Task<long> SendFileAsync(string chatId, string fileName, string contentType, byte[] data, long? replyToMessageId = null) =>
+        _conn is null
+            ? Task.FromResult(0L)
+            : _conn.InvokeAsync<long>("SendFile", chatId, fileName, contentType, data, replyToMessageId);
+
     public async Task<AttachmentDataDto?> GetAttachmentDataAsync(long messageId)
     {
         if (_conn is null) return null;
         return await _conn.InvokeAsync<AttachmentDataDto>("GetAttachmentData", messageId);
+    }
+
+    public async Task<LinkPreviewDto?> GetLinkPreviewAsync(string url)
+    {
+        if (_conn is null) return null;
+        try { return await _conn.InvokeAsync<LinkPreviewDto?>("GetLinkPreview", url); }
+        catch { return null; } // best-effort - a failed preview just means no card shows
     }
 
     public Task<long> ForwardMessageAsync(long messageId, string targetChatId) =>

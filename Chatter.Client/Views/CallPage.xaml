@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+File: CallPage.xaml
+
+What this does:
+- Purpose: Full-screen call UI - the WebRTC video surface (HybridWebView, see
+  Resources/Raw/wwwroot/call.html) plus an overlay for status text and mute/camera/hangup
+  controls.
+- How: Binds to CallViewModel. The HybridWebView itself isn't data-bound (RawMessageReceived is
+  wired in code-behind via CallViewModel.AttachWebView) since HybridWebView's message channel
+  isn't a bindable property.
+-->
+<ContentPage
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:Chatter.Client.ViewModels"
+    xmlns:conv="clr-namespace:Chatter.Client.Converters"
+    x:Class="Chatter.Client.Views.CallPage"
+    x:DataType="vm:CallViewModel"
+    Title="Call"
+    BackgroundColor="#0B1220"
+    Shell.NavBarIsVisible="False">
+
+  <ContentPage.Resources>
+    <ResourceDictionary>
+      <conv:MuteButtonTextConverter x:Key="MuteButtonText" />
+      <conv:CameraButtonTextConverter x:Key="CameraButtonText" />
+    </ResourceDictionary>
+  </ContentPage.Resources>
+
+  <Grid>
+    <HybridWebView x:Name="CallWebView"
+                   HybridRoot="wwwroot"
+                   DefaultFile="call.html" />
+
+    <VerticalStackLayout VerticalOptions="Start" HorizontalOptions="Center" Margin="0,24,0,0" Spacing="4">
+      <Label Text="{Binding PeerDisplayName}" FontSize="18" FontAttributes="Bold" TextColor="White" HorizontalOptions="Center" />
+      <Label Text="{Binding StatusText}" FontSize="13" TextColor="#9CA3AF" HorizontalOptions="Center" />
+    </VerticalStackLayout>
+
+    <HorizontalStackLayout VerticalOptions="End" HorizontalOptions="Center" Margin="0,0,0,32" Spacing="20">
+      <Button Text="{Binding IsMuted, Converter={StaticResource MuteButtonText}}"
+              Command="{Binding ToggleMuteCommand}"
+              WidthRequest="56" HeightRequest="56" CornerRadius="28" FontSize="20" Padding="0"
+              BackgroundColor="#1F2937" TextColor="White" />
+      <Button Text="{Binding IsCameraOff, Converter={StaticResource CameraButtonText}}"
+              Command="{Binding ToggleCameraCommand}"
+              WidthRequest="56" HeightRequest="56" CornerRadius="28" FontSize="20" Padding="0"
+              BackgroundColor="#1F2937" TextColor="White" />
+      <Button Text="📞"
+              Command="{Binding HangupCommand}"
+              WidthRequest="56" HeightRequest="56" CornerRadius="28" FontSize="20" Padding="0"
+              BackgroundColor="#DC2626" TextColor="White" Rotation="135" />
+    </HorizontalStackLayout>
+  </Grid>
+</ContentPage>

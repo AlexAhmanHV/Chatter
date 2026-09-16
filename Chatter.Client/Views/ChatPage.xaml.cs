@@ -143,11 +143,18 @@ public partial class ChatPage : ContentPage
             vm.ViewEditHistoryCommand.Execute(item);
     }
 
-    private void OnPlayVideoTapped(object? sender, EventArgs e)
+    private void OnOpenExternalAttachmentTapped(object? sender, EventArgs e)
     {
         if (BindingContext is not ChatViewModel vm) return;
         if (sender is Element { BindingContext: ChatMessageItem item })
-            vm.PlayVideoCommand.Execute(item);
+            vm.OpenExternalAttachmentCommand.Execute(item);
+    }
+
+    private void OnLinkPreviewTapped(object? sender, EventArgs e)
+    {
+        if (BindingContext is not ChatViewModel vm) return;
+        if (sender is Element { BindingContext: ChatMessageItem item })
+            vm.OpenLinkPreviewCommand.Execute(item);
     }
 
     private void OnPinnedMessageTapped(object? sender, EventArgs e)

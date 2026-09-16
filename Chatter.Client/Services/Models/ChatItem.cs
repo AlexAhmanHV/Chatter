@@ -20,6 +20,7 @@ public partial class ChatItem : ObservableObject
     [ObservableProperty] public partial string Label { get; set; } = string.Empty;
     [ObservableProperty] public partial int Unread { get; set; }
     [ObservableProperty] public partial bool IsMuted { get; set; }
+    [ObservableProperty] public partial bool IsPinned { get; set; }
 
     public bool IsGroup => Id.StartsWith("group:", System.StringComparison.OrdinalIgnoreCase);
 }

@@ -16,6 +16,7 @@ What this does:
     xmlns:vm="clr-namespace:Chatter.Client.ViewModels"
     xmlns:models="clr-namespace:Chatter.Client.Models"
     xmlns:conv="clr-namespace:Chatter.Client.Converters"
+    xmlns:controls="clr-namespace:Chatter.Client.Controls"
     x:Class="Chatter.Client.Views.ChatPage"
     x:Name="ChatPageRoot"
     x:DataType="vm:ChatViewModel"
@@ -248,6 +249,7 @@ What this does:
                           </Label.Triggers>
                         </Label>
                         <Label Text="🔇" FontSize="11" IsVisible="{Binding IsMuted}" VerticalOptions="Center" />
+                        <Label Text="📌" FontSize="11" IsVisible="{Binding IsPinned}" VerticalOptions="Center" />
                       </HorizontalStackLayout>
                       <Label Text="Tap to open" FontSize="11" TextColor="{StaticResource TextSecondary}" />
                     </VerticalStackLayout>
@@ -280,7 +282,7 @@ What this does:
 
       <Border Grid.Row="0" Style="{StaticResource Card}" Padding="20,16" Margin="0,0,12,12">
         <VerticalStackLayout Spacing="10">
-          <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="12">
+          <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto" ColumnSpacing="12">
             <Border Grid.Column="0" WidthRequest="40" HeightRequest="40" StrokeThickness="0" Background="{StaticResource HeaderBrush}">
               <Border.StrokeShape>
                 <RoundRectangle CornerRadius="20" />
@@ -302,12 +304,17 @@ What this does:
                 </Border>
               </HorizontalStackLayout>
             </VerticalStackLayout>
-            <Button Grid.Column="2" Text="🔍"
+            <Button Grid.Column="2" Text="📞"
+                    Command="{Binding StartCallCommand}"
+                    IsVisible="{Binding IsSelectedChatDm}"
+                    WidthRequest="40" HeightRequest="40" FontSize="16" Padding="0"
+                    BackgroundColor="#1F2937" TextColor="{StaticResource TextPrimary}" CornerRadius="20" />
+            <Button Grid.Column="3" Text="🔍"
                     Command="{Binding ToggleSearchCommand}"
                     WidthRequest="40" HeightRequest="40" FontSize="16" Padding="0"
                     BackgroundColor="#1F2937" TextColor="{StaticResource TextPrimary}" CornerRadius="20" />
             <!-- ManageChatCommand no-ops for Lobby/drafts/no selection, so this can always be visible. -->
-            <Button Grid.Column="3" Text="⋮"
+            <Button Grid.Column="4" Text="⋮"
                     Command="{Binding ManageChatCommand}"
                     WidthRequest="40" HeightRequest="40" FontSize="18" Padding="0"
                     BackgroundColor="#1F2937" TextColor="{StaticResource TextPrimary}" CornerRadius="20" />
@@ -493,6 +500,30 @@ What this does:
                         <Label Text="↪ Forwarded" FontSize="11" FontAttributes="Italic"
                                TextColor="{StaticResource TextSecondary}" IsVisible="{Binding IsForwarded}" />
 
+                        <Border IsVisible="{Binding HasLinkPreview}"
+                                Padding="0" StrokeThickness="1"
+                                Stroke="{StaticResource StrokeIdle}" BackgroundColor="{StaticResource PanelBg}">
+                          <Border.StrokeShape>
+                            <RoundRectangle CornerRadius="10" />
+                          </Border.StrokeShape>
+                          <Border.GestureRecognizers>
+                            <TapGestureRecognizer Tapped="OnLinkPreviewTapped" />
+                          </Border.GestureRecognizers>
+                          <VerticalStackLayout Spacing="0">
+                            <Image Source="{Binding LinkPreview.ImageUrl}" Aspect="AspectFill"
+                                   HeightRequest="120"
+                                   IsVisible="{Binding HasLinkPreviewImage}" />
+                            <VerticalStackLayout Spacing="2" Padding="10,8">
+                              <Label Text="{Binding LinkPreview.Title}" FontSize="12" FontAttributes="Bold"
+                                     LineBreakMode="TailTruncation" MaxLines="1" TextColor="{StaticResource TextPrimary}" />
+                              <Label Text="{Binding LinkPreview.Description}" FontSize="11"
+                                     LineBreakMode="TailTruncation" MaxLines="2" TextColor="{StaticResource TextSecondary}" />
+                              <Label Text="{Binding LinkPreview.Url}" FontSize="10"
+                                     LineBreakMode="TailTruncation" MaxLines="1" TextColor="{StaticResource PrimaryStart}" />
+                            </VerticalStackLayout>
+                          </VerticalStackLayout>
+                        </Border>
+
                         <Border IsVisible="{Binding ShowAttachmentPlaceholder}"
                                 Padding="10,8" StrokeThickness="1"
                                 Stroke="{StaticResource StrokeIdle}" BackgroundColor="{StaticResource PanelBg}">
@@ -546,10 +577,10 @@ What this does:
                                      FontSize="11" TextColor="{StaticResource TextSecondary}"
                                      IsVisible="{Binding IsAttachmentLoading}" VerticalOptions="Center" />
                             </HorizontalStackLayout>
-                            <VerticalStackLayout Spacing="2" IsVisible="{Binding IsPlayingVoiceMessage}">
-                              <ProgressBar Progress="{Binding PlaybackProgress}" ProgressColor="{StaticResource PrimaryStart}" />
-                              <Label Text="{Binding PlaybackPositionText}" FontSize="10" TextColor="{StaticResource TextSecondary}" />
-                            </VerticalStackLayout>
+                            <controls:WaveformView MessageItem="{Binding .}" HeightRequest="28"
+                                                   IsVisible="{Binding HasWaveform}" />
+                            <Label Text="{Binding PlaybackPositionText}" FontSize="10" TextColor="{StaticResource TextSecondary}"
+                                   IsVisible="{Binding IsPlayingVoiceMessage}" />
                           </VerticalStackLayout>
                         </Border>
 
@@ -560,13 +591,35 @@ What this does:
                             <RoundRectangle CornerRadius="10" />
                           </Border.StrokeShape>
                           <Border.GestureRecognizers>
-                            <TapGestureRecognizer Tapped="OnPlayVideoTapped" />
+                            <TapGestureRecognizer Tapped="OnOpenExternalAttachmentTapped" />
                           </Border.GestureRecognizers>
                           <HorizontalStackLayout Spacing="8">
                             <Label Text="🎥" FontSize="16" VerticalOptions="Center" />
                             <Label Text="Video - tap to play" FontSize="12" TextColor="{StaticResource TextPrimary}" VerticalOptions="Center" />
                             <Label Text="{Binding VideoDurationText}" FontSize="11"
                                    TextColor="{StaticResource TextSecondary}" VerticalOptions="Center" />
+                            <Label Text="{Binding IsAttachmentLoading, Converter={StaticResource AttachmentStatusText}}"
+                                   FontSize="11" TextColor="{StaticResource TextSecondary}"
+                                   IsVisible="{Binding IsAttachmentLoading}" VerticalOptions="Center" />
+                          </HorizontalStackLayout>
+                        </Border>
+
+                        <Border IsVisible="{Binding IsDocumentAttachment}"
+                                Padding="10,8" StrokeThickness="1"
+                                Stroke="{StaticResource StrokeIdle}" BackgroundColor="{StaticResource PanelBg}">
+                          <Border.StrokeShape>
+                            <RoundRectangle CornerRadius="10" />
+                          </Border.StrokeShape>
+                          <Border.GestureRecognizers>
+                            <TapGestureRecognizer Tapped="OnOpenExternalAttachmentTapped" />
+                          </Border.GestureRecognizers>
+                          <HorizontalStackLayout Spacing="8">
+                            <Label Text="📄" FontSize="16" VerticalOptions="Center" />
+                            <VerticalStackLayout Spacing="1">
+                              <Label Text="{Binding Attachment.FileName}" FontSize="12"
+                                     TextColor="{StaticResource TextPrimary}" LineBreakMode="TailTruncation" />
+                              <Label Text="{Binding DocumentSizeText}" FontSize="11" TextColor="{StaticResource TextSecondary}" />
+                            </VerticalStackLayout>
                             <Label Text="{Binding IsAttachmentLoading, Converter={StaticResource AttachmentStatusText}}"
                                    FontSize="11" TextColor="{StaticResource TextSecondary}"
                                    IsVisible="{Binding IsAttachmentLoading}" VerticalOptions="Center" />

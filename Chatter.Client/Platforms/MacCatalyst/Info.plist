@@ -35,6 +35,8 @@
 	<key>XSAppIconAssets</key>
 	<string>Assets.xcassets/appicon.appiconset</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Chatter uses the microphone to record voice messages you choose to send.</string>
+	<string>Chatter uses the microphone to record voice messages and for audio/video calls.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Chatter uses the camera for video calls you choose to start or answer.</string>
 </dict>
 </plist>

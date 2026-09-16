@@ -14,6 +14,7 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -30,6 +31,7 @@ using Microsoft.Maui.Media;
 using Microsoft.Maui.Storage;
 using Plugin.Maui.Audio;
 using Chatter.Client.Helpers;
+using Chatter.Core.Services;
 using Chatter.Shared.Models;
 
 namespace Chatter.Client.ViewModels;
@@ -83,6 +85,7 @@ public partial class ChatViewModel : ObservableObject
 
     /* Paginated history */
     private const int HistoryPageSize = 50;
+    private const int WaveformBarCount = 40;
     private readonly HashSet<string> _historyLoaded = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _noMoreHistory = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, long> _oldestLoadedMessageId = new(StringComparer.OrdinalIgnoreCase);
@@ -92,6 +95,7 @@ public partial class ChatViewModel : ObservableObject
 
     /* Computed properties */
     public bool CanSend => !string.IsNullOrWhiteSpace(OutgoingMessage) && SelectedChat != null;
+    public bool IsSelectedChatDm => SelectedChat?.Id.StartsWith("dm:", StringComparison.OrdinalIgnoreCase) == true;
     public int OfflineCount => Math.Max(0, People.Count - OnlineUsers.Count);
 
     /* Commands */
@@ -119,13 +123,15 @@ public partial class ChatViewModel : ObservableObject
     public IAsyncRelayCommand<ChatMessageItem> TogglePinCommand { get; }
     public IAsyncRelayCommand<ChatMessageItem> ViewEditHistoryCommand { get; }
     public IAsyncRelayCommand PickAndSendVideoCommand { get; }
-    public IAsyncRelayCommand<ChatMessageItem> PlayVideoCommand { get; }
+    public IAsyncRelayCommand<ChatMessageItem> OpenExternalAttachmentCommand { get; }
+    public IAsyncRelayCommand<ChatMessageItem> OpenLinkPreviewCommand { get; }
 
     // Pinned messages for whichever chat is currently selected - refreshed on selection
     // (LoadPinnedMessagesAsync) and kept current from live MessagePinned/MessageUnpinned events.
     public ObservableCollection<ChatMessageItem> PinnedMessages { get; } = new();
     public bool HasPinnedMessages => PinnedMessages.Count > 0;
     public IRelayCommand ToggleSearchCommand { get; }
+    public IAsyncRelayCommand StartCallCommand { get; }
 
     // The message the composer will attach as a reply when the next SendCommand/attachment/voice
     // message goes out - null means "not replying to anything". Cleared after every send attempt
@@ -411,41 +417,7 @@ public partial class ChatViewModel : ObservableObject
             });
 
         _chat.ChatsForMeUpdated += list =>
-            MainThread.BeginInvokeOnMainThread(() =>
-            {
-                var shouldHave = new HashSet<string>(list.Select(c => c.Id), StringComparer.OrdinalIgnoreCase);
-
-                foreach (var summary in list)
-                {
-                    if (_hiddenChats.Contains(summary.Id)) continue;
-                    var chatItem = EnsureChatItemWithLabel(summary.Id, summary.Label, summary.UnreadCount);
-                    chatItem.IsMuted = summary.IsMuted; // always synced, unlike Unread which is live-driven once created
-
-                    // The server resolves DM labels to the *other* participant's current
-                    // display name, so this is how the client learns about DM partners now
-                    // that chat IDs are opaque (no more parsing "dm:name1|name2").
-                    if (summary.Id.StartsWith("dm:", StringComparison.OrdinalIgnoreCase))
-                        _knownUsers.Add(Canon(summary.Label));
-                }
-
-                for (int i = Chats.Count - 1; i >= 0; i--)
-                {
-                    var cid = Chats[i].Id;
-                    if (IsDraftId(cid)) continue;
-                    if (!shouldHave.Contains(cid))
-                        Chats.RemoveAt(i);
-                }
-
-                var lobby = Chats.FirstOrDefault(c => string.Equals(c.Id, "Lobby", StringComparison.OrdinalIgnoreCase));
-                if (lobby is not null && Chats.IndexOf(lobby) != 0)
-                    Chats.Move(Chats.IndexOf(lobby), 0);
-
-                if (SelectedChat is null && Chats.Count > 0)
-                    SelectedChat = Chats[0];
-
-                RecomputePeople(OnlineUsers);
-                UpdateMessagePlaceholder();
-            });
+            MainThread.BeginInvokeOnMainThread(() => ApplyChatsForMeUpdate(list));
 
         _chat.AddedChat += (chatId, label) =>
             MainThread.BeginInvokeOnMainThread(() =>
@@ -472,6 +444,7 @@ public partial class ChatViewModel : ObservableObject
                 var msgItem = new ChatMessageItem(messageId, fromUser, msg, sentAtUtc, isMine: false, isSystem: false,
                     attachment, isForwarded, replyTo);
                 list.Add(msgItem);
+                TryLoadLinkPreview(msgItem);
 
                 bool isViewingThis = IsActive && SelectedChat?.Id == chatId;
                 if (isViewingThis)
@@ -512,6 +485,7 @@ public partial class ChatViewModel : ObservableObject
                 var item = new ChatMessageItem(messageId, u, m, sentAtUtc, isMine: Ci.Equals(u, User), isSystem: isSystem,
                     attachment, isForwarded, replyTo);
                 list.Add(item);
+                TryLoadLinkPreview(item);
 
                 bool isViewingThis = IsActive && SelectedChat?.Id == chatId;
                 if (isViewingThis)
@@ -561,6 +535,29 @@ public partial class ChatViewModel : ObservableObject
                     var pinned = PinnedMessages.FirstOrDefault(m => m.Id == messageId);
                     if (pinned is not null) PinnedMessages.Remove(pinned);
                 }
+            });
+
+        // Listens app-wide, not just while a chat is open, so a call still rings even if the
+        // caller is on a different chat right now. A fresh CallViewModel is only created once the
+        // user accepts - any ICE candidates the caller sends before that are missed, a known
+        // tradeoff of not pre-creating call state for every possible incoming call.
+        _chat.IncomingCall += (chatId, fromDisplayName, kind, sdpOffer) =>
+            MainThread.BeginInvokeOnMainThread(async () =>
+            {
+                var page = GetRootPage();
+                if (page is null) return;
+
+                var kindLabel = Ci.Equals(kind, "video") ? "video call" : "audio call";
+                var accept = await page.DisplayAlert("Incoming call", $"{fromDisplayName} is calling ({kindLabel})", "Accept", "Decline");
+                if (!accept)
+                {
+                    await _chat.CallDeclineAsync(chatId);
+                    return;
+                }
+
+                var callVm = new CallViewModel(_chat);
+                callVm.StartAsCallee(chatId, fromDisplayName, video: Ci.Equals(kind, "video"), sdpOffer);
+                await page.Navigation.PushAsync(new CallPage(callVm));
             });
 
         _chat.ReactionChanged += (chatId, messageId, emoji, count, added, byDisplayName) =>
@@ -696,8 +693,10 @@ public partial class ChatViewModel : ObservableObject
         TogglePinCommand = new AsyncRelayCommand<ChatMessageItem>(TogglePinAsync);
         ViewEditHistoryCommand = new AsyncRelayCommand<ChatMessageItem>(ViewEditHistoryAsync);
         PickAndSendVideoCommand = new AsyncRelayCommand(PickAndSendVideoAsync);
-        PlayVideoCommand = new AsyncRelayCommand<ChatMessageItem>(PlayVideoAsync);
+        OpenExternalAttachmentCommand = new AsyncRelayCommand<ChatMessageItem>(OpenExternalAttachmentAsync);
+        OpenLinkPreviewCommand = new AsyncRelayCommand<ChatMessageItem>(OpenLinkPreviewAsync);
         ToggleSearchCommand = new RelayCommand(ToggleSearch);
+        StartCallCommand = new AsyncRelayCommand(StartCallAsync);
         JumpToSearchResultCommand = new AsyncRelayCommand<ChatMessageItem>(JumpToSearchResultAsync);
     }
 
@@ -987,6 +986,7 @@ public partial class ChatViewModel : ObservableObject
                 var data = await _chat.GetAttachmentDataAsync(item.Id);
                 if (data is null) return;
                 item.VoiceMessageData = data.Data;
+                item.WaveformBars = WavWaveformExtractor.ExtractAmplitudes(data.Data, WaveformBarCount);
             }
             catch (Exception ex)
             {
@@ -1135,79 +1135,126 @@ public partial class ChatViewModel : ObservableObject
         }
     }
 
-    /* Video - picked with MediaPicker (single clip; MAUI has no multi-video picker), uploaded via
-       SendVideo, then played externally through the OS's own video player (Launcher.OpenAsync) -
-       simplest correct option without pulling in a dedicated media-playback control just for
-       this. Duration isn't extracted client-side (no reliable cross-platform API for a FileResult
-       without a media library), unlike a voice message where the recorder always knows it. */
+    /* Video & documents - picked together via FilePicker.PickMultipleAsync (MediaPicker has no
+       multi-select, and no document support at all) with a combined video+document file-type
+       filter, then dispatched per-file to SendVideo or SendFile based on the guessed content
+       type. A received video/document plays/opens externally through the OS's own handler
+       (Launcher.OpenAsync) rather than rendering inline - simplest correct option without a
+       dedicated media-playback control or document viewer. Video duration isn't extracted
+       client-side (no reliable cross-platform API for a FileResult without a media library),
+       unlike a voice message where the recorder always knows it. */
+    private static readonly FilePickerFileType VideoAndDocumentFileType = new(new Dictionary<DevicePlatform, IEnumerable<string>>
+    {
+        { DevicePlatform.WinUI, new[] { ".mp4", ".mov", ".webm", ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".txt", ".zip" } },
+        { DevicePlatform.Android, new[] { "video/*", "application/pdf", "application/msword",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "application/vnd.ms-excel", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "application/vnd.ms-powerpoint", "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            "text/plain", "application/zip" } },
+        { DevicePlatform.iOS, new[] { "public.movie", "com.adobe.pdf", "public.data" } },
+        { DevicePlatform.MacCatalyst, new[] { "public.movie", "com.adobe.pdf", "public.data" } },
+    });
+
     private async Task PickAndSendVideoAsync()
     {
         if (SelectedChat is null)
         {
-            await Ui.DisplayAlert("Pick a chat", "Select a chat before sending a video.", "OK");
+            await Ui.DisplayAlert("Pick a chat", "Select a chat before sending a video or file.", "OK");
             return;
         }
         if (IsDraftId(SelectedChat.Id))
         {
-            await Ui.DisplayAlert("Send a message first", "Send a text message to start this conversation before sharing a video.", "OK");
+            await Ui.DisplayAlert("Send a message first", "Send a text message to start this conversation before sharing a video or file.", "OK");
             return;
         }
 
-        FileResult? video;
+        IEnumerable<FileResult>? files;
         try
         {
-            video = await MediaPicker.Default.PickVideoAsync();
+            files = await FilePicker.Default.PickMultipleAsync(new PickOptions
+            {
+                PickerTitle = "Pick a video or file",
+                FileTypes = VideoAndDocumentFileType,
+            });
         }
         catch (Exception ex)
         {
             await Ui.DisplayAlert("Couldn't open picker", ex.Message, "OK");
             return;
         }
-        if (video is null) return; // user cancelled
 
-        byte[] bytes;
-        try
-        {
-            await using var stream = await video.OpenReadAsync();
-            using var ms = new MemoryStream();
-            await stream.CopyToAsync(ms);
-            bytes = ms.ToArray();
-        }
-        catch (Exception ex)
-        {
-            await Ui.DisplayAlert("Couldn't read video", ex.Message, "OK");
-            return;
-        }
+        var fileList = files?.ToList() ?? new List<FileResult>();
+        if (fileList.Count == 0) return; // user cancelled
 
         var replyToId = PendingReply?.Id;
         PendingReply = null;
 
-        try
+        var failures = 0;
+        foreach (var file in fileList)
         {
-            await _chat.SendVideoAsync(SelectedChat.Id, video.FileName, GuessVideoContentType(video.FileName), bytes, durationSeconds: null, replyToId);
+            byte[] bytes;
+            try
+            {
+                await using var stream = await file.OpenReadAsync();
+                using var ms = new MemoryStream();
+                await stream.CopyToAsync(ms);
+                bytes = ms.ToArray();
+            }
+            catch
+            {
+                failures++;
+                continue;
+            }
+
+            try
+            {
+                var contentType = GuessVideoOrDocumentContentType(file.FileName);
+                if (contentType.StartsWith("video/", StringComparison.OrdinalIgnoreCase))
+                    await _chat.SendVideoAsync(SelectedChat.Id, file.FileName, contentType, bytes, durationSeconds: null, replyToId);
+                else
+                    await _chat.SendFileAsync(SelectedChat.Id, file.FileName, contentType, bytes, replyToId);
+            }
+            catch
+            {
+                failures++;
+            }
+
+            replyToId = null; // only the first item carries the reply
         }
-        catch (Exception ex)
-        {
-            await Ui.DisplayAlert("Couldn't send video", ex.Message, "OK");
-        }
+
+        if (failures > 0)
+            await Ui.DisplayAlert("Some files didn't send", $"{failures} of {fileList.Count} file(s) couldn't be sent.", "OK");
     }
 
-    private static string GuessVideoContentType(string fileName) =>
+    private static string GuessVideoOrDocumentContentType(string fileName) =>
         Path.GetExtension(fileName).ToLowerInvariant() switch
         {
+            ".mp4" => "video/mp4",
             ".mov" => "video/quicktime",
             ".webm" => "video/webm",
-            _ => "video/mp4",
+            ".pdf" => "application/pdf",
+            ".doc" => "application/msword",
+            ".docx" => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            ".xls" => "application/vnd.ms-excel",
+            ".xlsx" => "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            ".ppt" => "application/vnd.ms-powerpoint",
+            ".pptx" => "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            ".txt" => "text/plain",
+            ".zip" => "application/zip",
+            _ => "application/octet-stream",
         };
 
-    private async Task PlayVideoAsync(ChatMessageItem? item)
+    // Handles both a video and a generic document - both are opened externally via the OS's own
+    // handler, they only differ in the bubble's icon/label (see IsVideoAttachment/
+    // IsDocumentAttachment on ChatMessageItem).
+    private async Task OpenExternalAttachmentAsync(ChatMessageItem? item)
     {
-        if (item is null || !item.IsVideoAttachment || item.Id <= 0) return;
+        if (item is null || (!item.IsVideoAttachment && !item.IsDocumentAttachment) || item.Id <= 0) return;
 
-        if (item.VideoLocalPath is not null)
+        if (item.ExternalOpenLocalPath is not null)
         {
-            try { await Launcher.Default.OpenAsync(new OpenFileRequest("Video", new ReadOnlyFile(item.VideoLocalPath))); }
-            catch (Exception ex) { await Ui.DisplayAlert("Couldn't open video", ex.Message, "OK"); }
+            try { await Launcher.Default.OpenAsync(new OpenFileRequest(item.Attachment!.FileName, new ReadOnlyFile(item.ExternalOpenLocalPath))); }
+            catch (Exception ex) { await Ui.DisplayAlert("Couldn't open file", ex.Message, "OK"); }
             return;
         }
 
@@ -1218,21 +1265,18 @@ public partial class ChatViewModel : ObservableObject
             var data = await _chat.GetAttachmentDataAsync(item.Id);
             if (data is null) return;
 
-            var ext = data.ContentType switch
-            {
-                "video/quicktime" => ".mov",
-                "video/webm" => ".webm",
-                _ => ".mp4",
-            };
-            var path = Path.Combine(FileSystem.CacheDirectory, $"chatter-video-{item.Id}{ext}");
+            // Keep the original filename (sanitized) so the OS picks a sensible handler/icon and
+            // "save as" default, rather than always writing e.g. "file.bin".
+            var safeName = string.Join("_", (item.Attachment?.FileName ?? "file").Split(Path.GetInvalidFileNameChars()));
+            var path = Path.Combine(FileSystem.CacheDirectory, $"chatter-{item.Id}-{safeName}");
             await File.WriteAllBytesAsync(path, data.Data);
-            item.VideoLocalPath = path;
+            item.ExternalOpenLocalPath = path;
 
-            await Launcher.Default.OpenAsync(new OpenFileRequest("Video", new ReadOnlyFile(path)));
+            await Launcher.Default.OpenAsync(new OpenFileRequest(item.Attachment!.FileName, new ReadOnlyFile(path)));
         }
         catch (Exception ex)
         {
-            await Ui.DisplayAlert("Couldn't play video", ex.Message, "OK");
+            await Ui.DisplayAlert("Couldn't open file", ex.Message, "OK");
         }
         finally
         {
@@ -1387,6 +1431,74 @@ public partial class ChatViewModel : ObservableObject
     // Group-admin options are always offered on a group chat rather than only to the admin -
     // if the caller isn't the creator, the server rejects it and we just show the error; the
     // client has no separate notion of "am I the admin" to hide them proactively.
+    // Applies a fresh chat-list snapshot from the server: syncs labels/mute/pin state, drops
+    // chats we're no longer in, and reorders to match the server's own ordering (Lobby, then
+    // pinned chats, then the rest - see ChatHub.BuildChatSummariesAsync). Called both from the
+    // live ChatsForMeUpdated event and right after toggling a pin, so the reorder is immediate
+    // instead of waiting for the next natural resync.
+    private void ApplyChatsForMeUpdate(IReadOnlyList<ChatSummary> list)
+    {
+        var shouldHave = new HashSet<string>(list.Select(c => c.Id), StringComparer.OrdinalIgnoreCase);
+
+        foreach (var summary in list)
+        {
+            if (_hiddenChats.Contains(summary.Id)) continue;
+            var chatItem = EnsureChatItemWithLabel(summary.Id, summary.Label, summary.UnreadCount);
+            chatItem.IsMuted = summary.IsMuted; // always synced, unlike Unread which is live-driven once created
+            chatItem.IsPinned = summary.IsPinned;
+
+            // The server resolves DM labels to the *other* participant's current display name,
+            // so this is how the client learns about DM partners now that chat IDs are opaque
+            // (no more parsing "dm:name1|name2").
+            if (summary.Id.StartsWith("dm:", StringComparison.OrdinalIgnoreCase))
+                _knownUsers.Add(Canon(summary.Label));
+        }
+
+        for (int i = Chats.Count - 1; i >= 0; i--)
+        {
+            var cid = Chats[i].Id;
+            if (IsDraftId(cid)) continue;
+            if (!shouldHave.Contains(cid))
+                Chats.RemoveAt(i);
+        }
+
+        // Draft chats aren't in `list` at all, so they're left wherever they already are (drafts
+        // only ever get created at the front anyway - see StartDmAsync).
+        var desiredOrder = list
+            .Select(s => Chats.FirstOrDefault(c => Ci.Equals(c.Id, s.Id)))
+            .Where(c => c is not null)
+            .Cast<ChatItem>()
+            .ToList();
+        for (int targetIndex = 0; targetIndex < desiredOrder.Count; targetIndex++)
+        {
+            var currentIndex = Chats.IndexOf(desiredOrder[targetIndex]);
+            if (currentIndex != targetIndex)
+                Chats.Move(currentIndex, targetIndex);
+        }
+
+        if (SelectedChat is null && Chats.Count > 0)
+            SelectedChat = Chats[0];
+
+        RecomputePeople(OnlineUsers);
+        UpdateMessagePlaceholder();
+    }
+
+    // Calls are DM-only (see ChatHub.CallInvite) - the 📞 header button is already hidden for
+    // non-DM chats via IsSelectedChatDm, this is just the same guard server-side would enforce.
+    private async Task StartCallAsync()
+    {
+        if (SelectedChat is null || !IsSelectedChatDm) return;
+        var page = GetRootPage();
+        if (page is null) return;
+
+        var choice = await page.DisplayActionSheet($"Call {SelectedChat.Label}", "Cancel", null, "Audio call", "Video call");
+        if (string.IsNullOrEmpty(choice) || choice == "Cancel") return;
+
+        var callVm = new CallViewModel(_chat);
+        callVm.StartAsCaller(SelectedChat.Id, SelectedChat.Label, video: choice == "Video call");
+        await page.Navigation.PushAsync(new CallPage(callVm));
+    }
+
     private async Task ManageChatAsync()
     {
         var chat = SelectedChat;
@@ -1397,7 +1509,7 @@ public partial class ChatViewModel : ObservableObject
         var isGroup = chat.IsGroup;
         var isDm = chat.Id.StartsWith("dm:", StringComparison.OrdinalIgnoreCase);
 
-        var options = new List<string> { chat.IsMuted ? "Unmute" : "Mute" };
+        var options = new List<string> { chat.IsMuted ? "Unmute" : "Mute", chat.IsPinned ? "Unpin chat" : "Pin chat" };
         if (isGroup) options.AddRange(new[] { "View members", "Add member", "Remove member", "Rename group", "Promote to admin", "Demote from admin" });
         if (isDm) options.AddRange(new[] { "Block user", "Unblock user", "Last seen" });
 
@@ -1415,6 +1527,14 @@ public partial class ChatViewModel : ObservableObject
                 case "Unmute":
                     await _chat.SetChatMutedAsync(chat.Id, false);
                     chat.IsMuted = false;
+                    break;
+                case "Pin chat":
+                    await _chat.SetChatPinnedAsync(chat.Id, true);
+                    ApplyChatsForMeUpdate(await _chat.GetMyChatsAsync());
+                    break;
+                case "Unpin chat":
+                    await _chat.SetChatPinnedAsync(chat.Id, false);
+                    ApplyChatsForMeUpdate(await _chat.GetMyChatsAsync());
                     break;
                 case "View members":
                     var members = await _chat.GetGroupMembersAsync(chat.Id);
@@ -1560,6 +1680,7 @@ public partial class ChatViewModel : ObservableObject
         UpdateMessagePlaceholder();
 
         OnPropertyChanged(nameof(CanSend));
+        OnPropertyChanged(nameof(IsSelectedChatDm));
         CanLoadMoreHistory = false;
         PendingReply = null; // a reply to a message in the chat we're leaving wouldn't make sense here
         PinnedMessages.Clear();
@@ -1648,7 +1769,48 @@ public partial class ChatViewModel : ObservableObject
         foreach (var r in dto.Reactions)
             item.Reactions.Add(new ReactionItem(dto.Id, r.Emoji, r.Count, r.ReactedByMe, r.ReactedBy));
 
+        TryLoadLinkPreview(item);
         return item;
+    }
+
+    // Rich link previews: fetched server-side (see ChatHub.GetLinkPreview) for the first URL
+    // found in a plain-text message, cached locally by URL so identical links across messages
+    // don't each trigger their own round trip.
+    private static readonly Regex UrlRegex = new(@"https?://\S+", RegexOptions.Compiled);
+    private readonly Dictionary<string, LinkPreviewDto?> _linkPreviewCache = new();
+
+    private void TryLoadLinkPreview(ChatMessageItem item)
+    {
+        if (item.IsSystem || item.IsDeleted || item.HasAttachment || string.IsNullOrWhiteSpace(item.Body)) return;
+        var match = UrlRegex.Match(item.Body);
+        if (match.Success) _ = LoadLinkPreviewAsync(item, match.Value);
+    }
+
+    private async Task LoadLinkPreviewAsync(ChatMessageItem item, string url)
+    {
+        if (_linkPreviewCache.TryGetValue(url, out var cached))
+        {
+            if (cached is not null) item.LinkPreview = cached;
+            return;
+        }
+
+        try
+        {
+            var preview = await _chat.GetLinkPreviewAsync(url);
+            _linkPreviewCache[url] = preview;
+            if (preview is not null) item.LinkPreview = preview;
+        }
+        catch
+        {
+            _linkPreviewCache[url] = null;
+        }
+    }
+
+    private async Task OpenLinkPreviewAsync(ChatMessageItem? item)
+    {
+        if (item?.LinkPreview is not { } preview) return;
+        try { await Launcher.Default.OpenAsync(preview.Url); }
+        catch (Exception ex) { await Ui.DisplayAlert("Couldn't open link", ex.Message, "OK"); }
     }
 
     // Chats only hold whatever arrived live during this app session, so the first time a

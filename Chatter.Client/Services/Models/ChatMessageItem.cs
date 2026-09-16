@@ -62,6 +62,20 @@ public partial class ChatMessageItem : ObservableObject
 
     [ObservableProperty] public partial bool IsPinned { get; set; }
 
+    // Set once ChatViewModel has resolved a URL found in Body via GetLinkPreviewAsync - null
+    // until then, and stays null if the message has no URL or the preview fetch failed/found
+    // nothing worth showing.
+    [ObservableProperty] public partial LinkPreviewDto? LinkPreview { get; set; }
+    public bool HasLinkPreview => LinkPreview is not null &&
+        (!string.IsNullOrWhiteSpace(LinkPreview.Title) || !string.IsNullOrWhiteSpace(LinkPreview.Description));
+    public bool HasLinkPreviewImage => !string.IsNullOrWhiteSpace(LinkPreview?.ImageUrl);
+
+    partial void OnLinkPreviewChanged(LinkPreviewDto? value)
+    {
+        OnPropertyChanged(nameof(HasLinkPreview));
+        OnPropertyChanged(nameof(HasLinkPreviewImage));
+    }
+
     [ObservableProperty] public partial string Body { get; set; } = string.Empty;
     [ObservableProperty] public partial DateTime? EditedAtUtc { get; set; }
     [ObservableProperty] public partial bool IsDeleted { get; set; }
@@ -93,23 +107,42 @@ public partial class ChatMessageItem : ObservableObject
     public bool HasAttachment => Attachment is not null;
     public bool IsVoiceMessage => Attachment?.ContentType.StartsWith("audio/", StringComparison.OrdinalIgnoreCase) == true;
     public bool IsVideoAttachment => Attachment?.ContentType.StartsWith("video/", StringComparison.OrdinalIgnoreCase) == true;
-    public bool IsImageAttachment => HasAttachment && !IsVoiceMessage && !IsVideoAttachment;
+    public bool IsImageAttachment => HasAttachment && !IsVoiceMessage && !IsVideoAttachment
+        && Attachment!.ContentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase);
+    // Anything with an attachment that isn't voice/video/image - a generic document (PDF, Office
+    // file, zip, ...) opened externally the same way a video is, just with no duration/thumbnail.
+    public bool IsDocumentAttachment => HasAttachment && !IsVoiceMessage && !IsVideoAttachment && !IsImageAttachment;
     public string VoiceMessageDurationText => Attachment?.DurationSeconds is { } s
         ? TimeSpan.FromSeconds(s).ToString(s >= 3600 ? @"h\:mm\:ss" : @"m\:ss")
         : string.Empty;
     public string VideoDurationText => IsVideoAttachment && Attachment?.DurationSeconds is { } vs
         ? TimeSpan.FromSeconds(vs).ToString(vs >= 3600 ? @"h\:mm\:ss" : @"m\:ss")
         : string.Empty;
+    public string DocumentSizeText => Attachment?.SizeBytes is { } bytes ? FormatFileSize(bytes) : string.Empty;
+
+    private static string FormatFileSize(int bytes) => bytes switch
+    {
+        < 1024 => $"{bytes} B",
+        < 1024 * 1024 => $"{bytes / 1024.0:0.#} KB",
+        _ => $"{bytes / 1024.0 / 1024.0:0.#} MB",
+    };
 
     [ObservableProperty] public partial ImageSource? AttachmentImage { get; set; }
     [ObservableProperty] public partial bool IsAttachmentLoading { get; set; }
     [ObservableProperty] public partial byte[]? VoiceMessageData { get; set; }
     [ObservableProperty] public partial bool IsPlayingVoiceMessage { get; set; }
 
-    // Set once a video's bytes have been fetched and written to a cache file (see
-    // ChatViewModel.PlayVideoAsync), so tapping the same video again reopens it without
+    // Amplitude bars for the voice message waveform (see WavWaveformExtractor), computed once
+    // when VoiceMessageData is first loaded - null until then (the bubble just shows the plain
+    // duration label until the first tap, since bytes are only ever fetched lazily on play).
+    [ObservableProperty] public partial float[]? WaveformBars { get; set; }
+    public bool HasWaveform => WaveformBars is not null;
+    partial void OnWaveformBarsChanged(float[]? value) => OnPropertyChanged(nameof(HasWaveform));
+
+    // Set once a video/document's bytes have been fetched and written to a cache file (see
+    // ChatViewModel.OpenExternalAttachmentAsync), so tapping it again reopens it without
     // re-downloading. Path, not bytes - it's handed straight to Launcher.OpenAsync.
-    [ObservableProperty] public partial string? VideoLocalPath { get; set; }
+    [ObservableProperty] public partial string? ExternalOpenLocalPath { get; set; }
 
     // Playback progress for a voice message, updated on a short timer while playing (see
     // ChatViewModel.PlayVoiceMessageAsync) - PlaybackDurationSeconds defaults to the duration the
