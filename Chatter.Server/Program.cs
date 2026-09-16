@@ -156,7 +156,14 @@ if (app.Environment.IsDevelopment())
     app.MapOpenApi();
 }
 
-app.UseHttpsRedirection();
+// Skipped in Development: the client's default BaseUrl is plain http://localhost, and redirecting
+// that to https here strips the Authorization header on the cross-origin (port-changing) redirect
+// (confirmed via curl -L reproducing the exact 401 seen on SignalR's negotiate call) - breaking
+// login/hub auth for anyone running the app against a local dev server out of the box.
+if (!app.Environment.IsDevelopment())
+{
+    app.UseHttpsRedirection();
+}
 app.UseCors();
 app.UseAuthentication();
 app.UseAuthorization();
