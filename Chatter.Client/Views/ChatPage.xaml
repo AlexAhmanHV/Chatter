@@ -581,17 +581,14 @@ What this does:
                           <FlexLayout Wrap="Wrap" BindableLayout.ItemsSource="{Binding Reactions}">
                             <BindableLayout.ItemTemplate>
                               <DataTemplate x:DataType="models:ReactionItem">
-                                <Border Padding="7,3" Margin="0,0,6,0" StrokeThickness="1"
-                                        Stroke="{StaticResource ColorOutline}" BackgroundColor="{StaticResource ColorSurfaceVariant}"
+                                <Border Padding="0" Margin="0,0,10,0" StrokeThickness="0" BackgroundColor="Transparent"
+                                        HorizontalOptions="Start"
                                         ToolTipProperties.Text="{Binding ReactorsText}">
-                                  <Border.StrokeShape>
-                                    <RoundRectangle CornerRadius="10" />
-                                  </Border.StrokeShape>
                                   <Border.GestureRecognizers>
                                     <TapGestureRecognizer Tapped="OnReactionPillTapped" />
                                   </Border.GestureRecognizers>
-                                  <HorizontalStackLayout Spacing="4">
-                                    <Label Text="{Binding Emoji}" FontSize="12" />
+                                  <HorizontalStackLayout Spacing="4" HorizontalOptions="Start">
+                                    <Label Text="{Binding Emoji}" FontSize="14" />
                                     <Label Text="{Binding Count}" FontSize="11" TextColor="{StaticResource ColorOnSurfaceVariant}" />
                                   </HorizontalStackLayout>
                                 </Border>

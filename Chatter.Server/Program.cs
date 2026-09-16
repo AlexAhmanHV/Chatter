@@ -182,7 +182,7 @@ app.MapPost("/auth/register", async (RegisterRequest req, UserManager<Applicatio
     var user = new ApplicationUser { UserName = req.Email, Email = req.Email, DisplayName = displayName };
     var result = await userManager.CreateAsync(user, req.Password);
     if (!result.Succeeded)
-        return Results.BadRequest(new { error = string.Join(" ", result.Errors.Select(e => e.Description)) });
+        return Results.BadRequest(new { error = string.Join("\n\n", result.Errors.Select(e => e.Description)) });
 
     var (token, expiresAtUtc) = JwtIssuer.CreateToken(user, config);
     return Results.Ok(new AuthResponse(token, expiresAtUtc, user.DisplayName));
