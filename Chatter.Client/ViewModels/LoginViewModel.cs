@@ -78,6 +78,18 @@ public partial class LoginViewModel : ObservableObject
     private static Task ShowAlertAsync(string title, string message, string cancel = "OK") =>
         MainThread.InvokeOnMainThreadAsync(() => Ui.DisplayAlert(title, message, cancel));
 
+    private static Task<bool> ShowConfirmAsync(string title, string message, string accept, string cancel) =>
+        MainThread.InvokeOnMainThreadAsync(() => Ui.DisplayAlert(title, message, accept, cancel));
+
+    private static Task<bool> ConfirmInsecureServerAsync()
+    {
+        if (!ServerConfig.IsCurrentServerInsecure) return Task.FromResult(true);
+        return ShowConfirmAsync(
+            "Unencrypted connection",
+            $"\"{ServerConfig.BaseUrl}\" isn't encrypted (http). Your email, password, and messages would cross the network in plain text. Continue anyway?",
+            "Continue", "Cancel");
+    }
+
     // Command handler: login flow with validation, auth call, and success event
     private async Task LoginAsync()
     {
@@ -89,6 +101,8 @@ public partial class LoginViewModel : ObservableObject
             await ShowAlertAsync("Missing info", "Please enter email and password.", "OK");
             return;
         }
+
+        if (!await ConfirmInsecureServerAsync()) return;
 
         IsBusy = true;
 

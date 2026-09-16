@@ -1369,7 +1369,9 @@ public partial class ChatViewModel : ObservableObject
 
     // Re-resolves one person's avatar URL after an AvatarChanged notification, appending
     // `version` as a cache-busting query string so the client actually refetches the new image
-    // instead of reusing whatever it had cached for the old URL.
+    // instead of reusing whatever it had cached for the old URL. relativeUrl already carries its
+    // own signed "?exp=...&sig=..." query string (see ChatHub.GetAvatarUrls), so `v` is appended
+    // with "&", not "?".
     private async Task RefreshAvatarAsync(string displayName, long version)
     {
         try
@@ -1379,7 +1381,7 @@ public partial class ChatViewModel : ObservableObject
 
             var person = People.FirstOrDefault(p => Ci.Equals(p.Name, Canon(displayName)));
             if (person is not null)
-                person.AvatarUrl = $"{ServerConfig.BaseUrl}{relativeUrl}?v={version}";
+                person.AvatarUrl = $"{ServerConfig.BaseUrl}{relativeUrl}&v={version}";
         }
         catch { }
     }

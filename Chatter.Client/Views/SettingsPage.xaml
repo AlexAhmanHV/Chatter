@@ -177,6 +177,22 @@ What this does:
           </VerticalStackLayout>
         </Border>
 
+        <Border Style="{StaticResource CardBorder}">
+          <VerticalStackLayout Spacing="14">
+            <HorizontalStackLayout Spacing="12">
+              <Label Text="{x:Static symbols:MaterialOutlined.Logout}" Style="{StaticResource IconGlyph}" TextColor="{StaticResource ColorError}" />
+              <Label Text="Log out" Style="{StaticResource TypeTitle}" FontSize="18" VerticalOptions="Center" />
+            </HorizontalStackLayout>
+            <Label Text="You'll need to log in again the next time you open Chatter."
+                   Style="{StaticResource TypeCaption}" FontSize="12" />
+            <Button Text="Log out"
+                    Command="{Binding LogoutCommand}"
+                    Style="{StaticResource SecondaryButton}"
+                    TextColor="{StaticResource ColorError}"
+                    BorderColor="{StaticResource ColorError}" />
+          </VerticalStackLayout>
+        </Border>
+
       </VerticalStackLayout>
     </ScrollView>
 

@@ -1,3 +1,5 @@
+using System.Net;
+using System.Net.Sockets;
 using Microsoft.Maui.Devices;
 using Microsoft.Maui.Storage;
 
@@ -61,5 +63,35 @@ public static class ServerConfig
         }
 
         Preferences.Default.Set(PreferenceKey, value.Trim().TrimEnd('/'));
+    }
+
+    // True when BaseUrl is plain http *and* points somewhere other than this machine/LAN - i.e.
+    // the case where email/password/messages would actually cross a real, untrusted network in
+    // cleartext. Plain http to localhost/a LAN address (the default for local dev - see
+    // DefaultBaseUrl) is exempted since nothing there leaves a trusted boundary. Used to warn
+    // before login/register - see LoginViewModel/RegisterViewModel.
+    public static bool IsCurrentServerInsecure
+    {
+        get
+        {
+            if (!Uri.TryCreate(BaseUrl, UriKind.Absolute, out var uri)) return false;
+            if (!string.Equals(uri.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase)) return false;
+            return !IsLocalOrPrivateHost(uri.Host);
+        }
+    }
+
+    private static bool IsLocalOrPrivateHost(string host)
+    {
+        if (string.Equals(host, "localhost", StringComparison.OrdinalIgnoreCase)) return true;
+        if (!IPAddress.TryParse(host, out var ip)) return false; // a real hostname - treat as public
+        if (IPAddress.IsLoopback(ip)) return true;
+        if (ip.AddressFamily != AddressFamily.InterNetwork) return false;
+
+        var b = ip.GetAddressBytes();
+        if (b[0] == 10) return true;                              // 10.0.0.0/8 (incl. the Android emulator's 10.0.2.2)
+        if (b[0] == 172 && b[1] is >= 16 and <= 31) return true;   // 172.16.0.0/12
+        if (b[0] == 192 && b[1] == 168) return true;               // 192.168.0.0/16
+        if (b[0] == 169 && b[1] == 254) return true;               // 169.254.0.0/16 (link-local)
+        return false;
     }
 }

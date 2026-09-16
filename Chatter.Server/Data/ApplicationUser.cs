@@ -10,8 +10,8 @@ public class ApplicationUser : IdentityUser
     public string DisplayName { get; set; } = string.Empty;
 
     // Profile picture, stored as a blob (see ChatHub.UpdateAvatar for size/content-type limits).
-    // Served publicly and unauthenticated at GET /avatars/{userId} - see Program.cs and the
-    // README's known-simplifications list for why that's an acceptable tradeoff here.
+    // Served at GET /avatars/{userId} behind a signed, expiring link rather than a bare
+    // Authorization header - see Program.cs and Auth/AvatarUrlSigner.
     public byte[]? AvatarData { get; set; }
     public string? AvatarContentType { get; set; }
 

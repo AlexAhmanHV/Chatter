@@ -42,12 +42,20 @@ public partial class SettingsViewModel : ObservableObject
     /// Picks an image and uploads it as the profile picture.
     public IAsyncRelayCommand PickAvatarCommand { get; }
 
+    /// Signs out and returns to the Login page.
+    public IAsyncRelayCommand LogoutCommand { get; }
+
+    // Raised once sign-out has actually happened (token cleared, hub disconnected) so the View
+    // can reset the navigation stack back to Login - see SettingsPage.xaml.cs.
+    public event Action? LoggedOut;
+
     public SettingsViewModel(ApiAuthService auth, ChatService chat)
     {
         _auth = auth;
         _chat = chat;
         SaveCommand = new AsyncRelayCommand(SaveAsync);
         PickAvatarCommand = new AsyncRelayCommand(PickAvatarAsync);
+        LogoutCommand = new AsyncRelayCommand(LogoutAsync);
         DisplayName = _auth.CurrentDisplayName ?? string.Empty;
 
         _ = LoadAvatarPreviewAsync();
@@ -57,6 +65,9 @@ public partial class SettingsViewModel : ObservableObject
 
     private static Task ShowAlertAsync(string title, string message, string cancel = "OK") =>
         MainThread.InvokeOnMainThreadAsync(() => Ui.DisplayAlert(title, message, cancel));
+
+    private static Task<bool> ShowConfirmAsync(string title, string message, string accept, string cancel) =>
+        MainThread.InvokeOnMainThreadAsync(() => Ui.DisplayAlert(title, message, accept, cancel));
 
     private static Task NavigateBackAsync()
     {
@@ -127,6 +138,17 @@ public partial class SettingsViewModel : ObservableObject
         {
             await ShowAlertAsync("Couldn't update avatar", ex.Message, "OK");
         }
+    }
+
+    private async Task LogoutAsync()
+    {
+        var confirmed = await ShowConfirmAsync("Log out?", "You'll need to log in again to use Chatter.", "Log out", "Cancel");
+        if (!confirmed) return;
+
+        try { await _chat.StopAsync(); } catch { }
+        _auth.SignOut();
+
+        LoggedOut?.Invoke();
     }
 
     private async Task SaveAsync()

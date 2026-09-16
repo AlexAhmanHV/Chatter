@@ -61,6 +61,16 @@ public class ApiAuthService
     // ChatViewModel) - this just keeps what Settings pre-fills next time in sync for this run.
     public void UpdateLocalDisplayName(string newName) => CurrentDisplayName = newName;
 
+    // Logs out: there's no server-side session/refresh-token to revoke (a token is just valid
+    // until it expires - see JwtIssuer), so this is the whole story client-side - drop the token
+    // and cached name so nothing in this app run can use them again. Pair with ChatService.StopAsync
+    // to also close the live hub connection (see SettingsViewModel.LogoutAsync).
+    public void SignOut()
+    {
+        AccessToken = null;
+        CurrentDisplayName = null;
+    }
+
     private static async Task<string> ExtractErrorAsync(HttpResponseMessage resp)
     {
         if (resp.StatusCode is HttpStatusCode.TooManyRequests or HttpStatusCode.ServiceUnavailable)

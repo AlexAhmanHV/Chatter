@@ -41,6 +41,16 @@ builder.Services.AddIdentityCore<ApplicationUser>(options =>
         options.Password.RequireLowercase = false;
         options.Password.RequireDigit = false;
         options.User.RequireUniqueEmail = true;
+
+        // Locks an account out after repeated bad passwords, independent of (and on top of) the
+        // per-IP rate limit below - that only slows down one IP, it doesn't protect a specific
+        // account from being brute-forced across many IPs. Enforced by hand in /auth/login (see
+        // AccessFailedAsync/ResetAccessFailedCountAsync/IsLockedOutAsync there) since this app
+        // calls UserManager.CheckPasswordAsync directly instead of going through SignInManager,
+        // which is what would normally apply this automatically.
+        options.Lockout.MaxFailedAccessAttempts = 5;
+        options.Lockout.DefaultLockoutTimeSpan = TimeSpan.FromMinutes(15);
+        options.Lockout.AllowedForNewUsers = true;
     })
     .AddEntityFrameworkStores<ChatDbContext>();
 
@@ -182,7 +192,17 @@ app.MapPost("/auth/register", async (RegisterRequest req, UserManager<Applicatio
     var user = new ApplicationUser { UserName = req.Email, Email = req.Email, DisplayName = displayName };
     var result = await userManager.CreateAsync(user, req.Password);
     if (!result.Succeeded)
-        return Results.BadRequest(new { error = string.Join("\n\n", result.Errors.Select(e => e.Description)) });
+    {
+        // "Email/username already taken" is deliberately never surfaced verbatim - doing so lets
+        // anyone probe this endpoint to discover which email addresses already have an account
+        // (user enumeration). Every other validation error (e.g. password too short) still comes
+        // through as-is; only the duplicate-account case is generalized.
+        var isDuplicate = result.Errors.Any(e => e.Code is "DuplicateUserName" or "DuplicateEmail");
+        var message = isDuplicate
+            ? "Couldn't create an account with that email. Try logging in instead, or use a different email."
+            : string.Join("\n\n", result.Errors.Select(e => e.Description));
+        return Results.BadRequest(new { error = message });
+    }
 
     var (token, expiresAtUtc) = JwtIssuer.CreateToken(user, config);
     return Results.Ok(new AuthResponse(token, expiresAtUtc, user.DisplayName));
@@ -191,9 +211,25 @@ app.MapPost("/auth/register", async (RegisterRequest req, UserManager<Applicatio
 
 app.MapPost("/auth/login", async (LoginRequest req, UserManager<ApplicationUser> userManager, IConfiguration config) =>
 {
+    const string invalidCredentialsMessage = "Invalid email or password.";
+
     var user = string.IsNullOrWhiteSpace(req.Email) ? null : await userManager.FindByEmailAsync(req.Email);
-    if (user is null || !await userManager.CheckPasswordAsync(user, req.Password ?? string.Empty))
-        return Results.Json(new { error = "Invalid email or password." }, statusCode: StatusCodes.Status401Unauthorized);
+    if (user is null)
+        return Results.Json(new { error = invalidCredentialsMessage }, statusCode: StatusCodes.Status401Unauthorized);
+
+    // Checked before AND independent of the password: this app calls CheckPasswordAsync directly
+    // instead of going through SignInManager, so lockout (configured above) isn't enforced
+    // automatically - it has to be applied by hand here via AccessFailedAsync/IsLockedOutAsync.
+    if (await userManager.IsLockedOutAsync(user))
+        return Results.Json(new { error = "Too many failed attempts. Please try again in a few minutes." }, statusCode: StatusCodes.Status401Unauthorized);
+
+    if (!await userManager.CheckPasswordAsync(user, req.Password ?? string.Empty))
+    {
+        await userManager.AccessFailedAsync(user); // counts toward the lockout threshold above
+        return Results.Json(new { error = invalidCredentialsMessage }, statusCode: StatusCodes.Status401Unauthorized);
+    }
+
+    await userManager.ResetAccessFailedCountAsync(user);
 
     var (token, expiresAtUtc) = JwtIssuer.CreateToken(user, config);
     return Results.Ok(new AuthResponse(token, expiresAtUtc, user.DisplayName));
@@ -203,13 +239,20 @@ app.MapPost("/auth/login", async (LoginRequest req, UserManager<ApplicationUser>
 // SignalR hub endpoint (requires a valid JWT from /auth/login or /auth/register - see ChatHub's [Authorize])
 app.MapHub<ChatHub>("/hub/Chat");
 
-// Public, unauthenticated by design: the simplest way for a plain <Image Source="url"/> in the
-// MAUI client to work without wiring an Authorization header through image loading. A profile
-// picture isn't sensitive chat content, so this is a deliberate tradeoff, not an oversight - see
-// the README's known-simplifications list. Chat message attachments are NOT served this way;
-// those stay behind ChatHub.GetAttachmentData's membership check.
-app.MapGet("/avatars/{userId}", async (string userId, IDbContextFactory<ChatDbContext> dbFactory) =>
+// No [Authorize] here (a plain <Image Source="url"/> in the MAUI client can't attach an
+// Authorization header) - instead, the link itself only works if it was signed by ChatHub's own
+// GetAvatarUrls, which does require [Authorize], and expires shortly after (see AvatarUrlSigner).
+// Chat message attachments are NOT served this way; those stay behind ChatHub.GetAttachmentData's
+// membership check.
+app.MapGet("/avatars/{userId}", async (string userId, string? exp, string? sig, IDbContextFactory<ChatDbContext> dbFactory, IConfiguration config) =>
 {
+    if (!long.TryParse(exp, out var expVal))
+        return Results.Unauthorized();
+
+    var signingKey = config["Jwt:SigningKey"]!;
+    if (!AvatarUrlSigner.Validate(userId, expVal, sig, signingKey))
+        return Results.Unauthorized();
+
     await using var db = await dbFactory.CreateDbContextAsync();
     var user = await db.Users.FindAsync(userId);
     if (user?.AvatarData is null || user.AvatarContentType is null)

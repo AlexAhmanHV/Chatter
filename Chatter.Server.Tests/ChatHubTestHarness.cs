@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Security.Claims;
 using Chatter.Server.Data;
 using Chatter.Server.Hubs;
@@ -5,6 +6,7 @@ using Chatter.Server.Services;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Moq;
 
 namespace Chatter.Server.Tests;
@@ -91,7 +93,7 @@ public static class ChatHubTestHarness
         groups.Setup(g => g.RemoveFromGroupAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
-        var hub = new ChatHub(new FakeDbContextFactory(dbName), new LinkPreviewFetcher(new HttpClient()))
+        var hub = new ChatHub(new FakeDbContextFactory(dbName), new LinkPreviewFetcher(new HttpClient()), BuildJwtConfig())
         {
             Context = new FakeHubCallerContext(connectionId, userId),
             Clients = clients.Object,
@@ -100,6 +102,15 @@ public static class ChatHubTestHarness
 
         return hub;
     }
+
+    // Only needs Jwt:SigningKey - ChatHub reads it to sign avatar URLs (see AvatarUrlSigner).
+    private static IConfiguration BuildJwtConfig() =>
+        new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Jwt:SigningKey"] = "test-signing-key-at-least-32-bytes-long-for-hmac",
+            })
+            .Build();
 
     private static void EnsureUserRowExists(string dbName, string userId)
     {

@@ -19,6 +19,7 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
+using Chatter.Server.Auth;
 using Chatter.Server.Data;
 using Chatter.Server.Services;
 using Chatter.Shared.Models;
@@ -31,11 +32,19 @@ public class ChatHub : Hub
     private readonly IDbContextFactory<ChatDbContext> _dbFactory;
 
     private readonly LinkPreviewFetcher _linkPreviewFetcher;
+    private readonly IConfiguration _config;
 
-    public ChatHub(IDbContextFactory<ChatDbContext> dbFactory, LinkPreviewFetcher linkPreviewFetcher)
+    // How long a signed avatar link stays valid (see AvatarUrlSigner/GetAvatarUrls) before a
+    // client needs to re-resolve it. Generous on purpose: an already-loaded image stays displayed
+    // regardless (MAUI doesn't re-fetch a bitmap it already rendered), this just bounds how long a
+    // copied/leaked link keeps working.
+    private static readonly TimeSpan AvatarLinkLifetime = TimeSpan.FromHours(1);
+
+    public ChatHub(IDbContextFactory<ChatDbContext> dbFactory, LinkPreviewFetcher linkPreviewFetcher, IConfiguration config)
     {
         _dbFactory = dbFactory;
         _linkPreviewFetcher = linkPreviewFetcher;
+        _config = config;
     }
 
     private const string LobbyId = "Lobby";
@@ -301,16 +310,25 @@ public class ChatHub : Hub
 
     // Resolves avatar URLs for a batch of display names at once (the client already knows names,
     // never raw user ids, so this is the one place that translates - the URL embeds the id, the
-    // caller never sees it directly).
+    // caller never sees it directly). Each URL carries a short-lived signature (see
+    // AvatarUrlSigner) rather than being a bare, forever-valid "/avatars/{id}" - since this method
+    // requires [Authorize] like the rest of the hub, only an already-authenticated caller can ever
+    // mint one, and it stops working on its own after AvatarLinkLifetime.
     public Task<Dictionary<string, string>> GetAvatarUrls(List<string> displayNames)
     {
+        var signingKey = _config["Jwt:SigningKey"]!;
+        var exp = DateTimeOffset.UtcNow.Add(AvatarLinkLifetime).ToUnixTimeSeconds();
+
         var result = new Dictionary<string, string>(Ci);
         foreach (var raw in displayNames ?? new List<string>())
         {
             var name = (raw ?? string.Empty).Trim();
             if (name.Length == 0) continue;
             if (_userIdByDisplayName.TryGetValue(name, out var userId))
-                result[name] = $"/avatars/{userId}";
+            {
+                var sig = AvatarUrlSigner.Sign(userId, exp, signingKey);
+                result[name] = $"/avatars/{userId}?exp={exp}&sig={sig}";
+            }
         }
         return Task.FromResult(result);
     }

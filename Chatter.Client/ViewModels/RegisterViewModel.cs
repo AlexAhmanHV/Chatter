@@ -47,25 +47,40 @@ public partial class RegisterViewModel : ObservableObject
     private static Task ShowAlertAsync(string title, string message, string cancel = "OK") =>
         MainThread.InvokeOnMainThreadAsync(() => Ui.DisplayAlert(title, message, cancel));
 
+    private static Task<bool> ShowConfirmAsync(string title, string message, string accept, string cancel) =>
+        MainThread.InvokeOnMainThreadAsync(() => Ui.DisplayAlert(title, message, accept, cancel));
+
+    private static Task<bool> ConfirmInsecureServerAsync()
+    {
+        if (!ServerConfig.IsCurrentServerInsecure) return Task.FromResult(true);
+        return ShowConfirmAsync(
+            "Unencrypted connection",
+            $"\"{ServerConfig.BaseUrl}\" isn't encrypted (http). Your email, password, and messages would cross the network in plain text. Continue anyway?",
+            "Continue", "Cancel");
+    }
+
     private async Task RegisterAsync()
     {
         if (IsBusy) return;
+
+        if (string.IsNullOrWhiteSpace(Email) || string.IsNullOrWhiteSpace(Password))
+        {
+            await ShowAlertAsync("Missing info", "Enter email and password.", "OK");
+            return;
+        }
+
+        if (!string.Equals(Password, ConfirmPassword, StringComparison.Ordinal))
+        {
+            await ShowAlertAsync("Password mismatch", "Passwords do not match.", "OK");
+            return;
+        }
+
+        if (!await ConfirmInsecureServerAsync()) return;
+
         IsBusy = true;
 
         try
         {
-            if (string.IsNullOrWhiteSpace(Email) || string.IsNullOrWhiteSpace(Password))
-            {
-                await ShowAlertAsync("Missing info", "Enter email and password.", "OK");
-                return;
-            }
-
-            if (!string.Equals(Password, ConfirmPassword, StringComparison.Ordinal))
-            {
-                await ShowAlertAsync("Password mismatch", "Passwords do not match.", "OK");
-                return;
-            }
-
             var email = Email!;
             var password = Password!;
 
