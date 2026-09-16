@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!--
+File: ThemedActionSheetOverlay.xaml
+
+What this does:
+- Purpose: A dark, Material-styled stand-in for the native DisplayActionSheet dialog (a title, a
+  list of option buttons, an optional destructive one, and a Cancel button), which otherwise renders
+  as an unstyled gray OS list.
+- How: Embedded as the last child of ChatPage's root layout (only ChatPage uses action sheets
+  today). ShowAsync builds one row per option in code-behind (the option set is only known at call
+  time), flips the overlay visible, and awaits a TaskCompletionSource completed by a row tap or
+  Cancel.
+-->
+<ContentView xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="Chatter.Client.Controls.ThemedActionSheetOverlay"
+             x:Name="Root"
+             IsVisible="False"
+             InputTransparent="False">
+
+  <!-- Merged locally, not inherited - see ThemedAlertOverlay's comment on the same crash. -->
+  <ContentView.Resources>
+    <ResourceDictionary>
+      <ResourceDictionary.MergedDictionaries>
+        <ResourceDictionary Source="/Resources/Styles/Theme.xaml" />
+      </ResourceDictionary.MergedDictionaries>
+
+      <Style x:Key="ActionRow" TargetType="Button">
+        <Setter Property="BackgroundColor" Value="Transparent" />
+        <Setter Property="TextColor" Value="{StaticResource ColorOnSurface}" />
+        <Setter Property="FontFamily" Value="OpenSansRegular" />
+        <Setter Property="FontSize" Value="15" />
+        <Setter Property="CornerRadius" Value="0" />
+        <Setter Property="Padding" Value="20,15" />
+        <Setter Property="HorizontalOptions" Value="Fill" />
+      </Style>
+    </ResourceDictionary>
+  </ContentView.Resources>
+
+  <Grid BackgroundColor="#B3000000">
+    <Border Style="{StaticResource CardBorder}" WidthRequest="360" Padding="0" MaximumHeightRequest="520"
+            HorizontalOptions="Center" VerticalOptions="Center">
+      <VerticalStackLayout Spacing="0">
+        <Label x:Name="TitleLabel" Style="{StaticResource TypeTitle}" FontSize="17"
+               Margin="20,18,20,14" HorizontalTextAlignment="Center" />
+        <BoxView HeightRequest="1" BackgroundColor="{StaticResource ColorOutline}" />
+        <ScrollView MaximumHeightRequest="360">
+          <VerticalStackLayout x:Name="OptionsStack" Spacing="0" />
+        </ScrollView>
+        <BoxView HeightRequest="1" BackgroundColor="{StaticResource ColorOutline}" />
+        <Button x:Name="CancelButton" Style="{StaticResource SecondaryButton}"
+                Margin="16" Clicked="OnCancelClicked" />
+      </VerticalStackLayout>
+    </Border>
+  </Grid>
+</ContentView>

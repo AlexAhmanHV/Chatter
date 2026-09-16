@@ -10,6 +10,7 @@ What this does:
 */
 
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.Messaging;
@@ -22,7 +23,7 @@ using Chatter.Client.ViewModels;
 
 namespace Chatter.Client.Views;
 
-public partial class ChatPage : ContentPage, IAlertHost
+public partial class ChatPage : ContentPage, IAlertHost, IPromptHost, IActionSheetHost
 {
     private readonly IServiceProvider _services;
 
@@ -248,4 +249,12 @@ public partial class ChatPage : ContentPage, IAlertHost
 
     public Task<bool> ShowConfirmAsync(string title, string message, string accept, string cancel) =>
         AlertOverlay.ShowConfirmAsync(title, message, accept, cancel);
+
+    public Task<string?> ShowPromptAsync(
+        string title, string message, string accept = "OK", string cancel = "Cancel",
+        string? placeholder = null, int maxLength = -1, string initialValue = "") =>
+        PromptOverlay.ShowAsync(title, message, accept, cancel, placeholder, maxLength, initialValue);
+
+    public Task<string?> ShowActionSheetAsync(string title, string cancel, string? destruction, IReadOnlyList<string> buttons) =>
+        ActionSheetOverlay.ShowAsync(title, cancel, destruction, buttons);
 }

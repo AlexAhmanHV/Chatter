@@ -897,5 +897,7 @@ What this does:
     </Border>
 
     <controls:ThemedAlertOverlay x:Name="AlertOverlay" Grid.ColumnSpan="3" />
+    <controls:ThemedPromptOverlay x:Name="PromptOverlay" Grid.ColumnSpan="3" />
+    <controls:ThemedActionSheetOverlay x:Name="ActionSheetOverlay" Grid.ColumnSpan="3" />
   </Grid>
 </ContentPage>

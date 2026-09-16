@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!--
+File: ThemedPromptOverlay.xaml
+
+What this does:
+- Purpose: A dark, Material-styled stand-in for the native DisplayPromptAsync dialog (single text
+  field + accept/cancel), which renders as an unstyled white OS dialog. Uses the same
+  UraniumUI.Material TextField as Login/Register so it reads like the same input control, not a
+  one-off.
+- How: Embedded as the last child of ChatPage's root layout (only ChatPage uses prompts today).
+  ShowAsync flips it visible and awaits a TaskCompletionSource completed by Accept/Cancel.
+-->
+<ContentView xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:material="clr-namespace:UraniumUI.Material.Controls;assembly=UraniumUI.Material"
+             x:Class="Chatter.Client.Controls.ThemedPromptOverlay"
+             x:Name="Root"
+             IsVisible="False"
+             InputTransparent="False">
+
+  <!-- Merged locally, not inherited - see ThemedAlertOverlay's comment on the same crash. -->
+  <ContentView.Resources>
+    <ResourceDictionary>
+      <ResourceDictionary.MergedDictionaries>
+        <ResourceDictionary Source="/Resources/Styles/Theme.xaml" />
+      </ResourceDictionary.MergedDictionaries>
+    </ResourceDictionary>
+  </ContentView.Resources>
+
+  <Grid BackgroundColor="#B3000000">
+    <Border Style="{StaticResource CardBorder}" WidthRequest="360" Padding="24,26"
+            HorizontalOptions="Center" VerticalOptions="Center">
+      <VerticalStackLayout Spacing="20">
+        <Label x:Name="TitleLabel" Style="{StaticResource TypeTitle}" />
+        <material:TextField x:Name="InputField" ReturnType="Done" Completed="OnInputCompleted" />
+        <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
+          <Button x:Name="CancelButton" Grid.Column="0" Style="{StaticResource SecondaryButton}"
+                  Text="Cancel" Clicked="OnCancelClicked" />
+          <Button x:Name="AcceptButton" Grid.Column="1" Style="{StaticResource PrimaryButton}"
+                  Text="OK" Clicked="OnAcceptClicked" />
+        </Grid>
+      </VerticalStackLayout>
+    </Border>
+  </Grid>
+</ContentView>

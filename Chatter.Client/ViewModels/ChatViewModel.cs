@@ -716,10 +716,8 @@ public partial class ChatViewModel : ObservableObject
     private async Task EditMessageAsync(ChatMessageItem? item)
     {
         if (item is null || !item.CanModify) return;
-        var page = GetRootPage();
-        if (page is null) return;
 
-        var newText = await page.DisplayPromptAsync("Edit message", "Update your message:", initialValue: item.Body, maxLength: 2000);
+        var newText = await Ui.DisplayPromptAsync("Edit message", "Update your message:", initialValue: item.Body, maxLength: 2000);
         if (newText is null) return; // cancelled
 
         newText = newText.Trim();
@@ -732,8 +730,6 @@ public partial class ChatViewModel : ObservableObject
     private async Task DeleteMessageAsync(ChatMessageItem? item)
     {
         if (item is null || !item.CanModify) return;
-        var page = GetRootPage();
-        if (page is null) return;
 
         var confirmed = await Ui.DisplayAlert("Delete message", "This can't be undone.", "Delete", "Cancel");
         if (!confirmed) return;
@@ -745,10 +741,8 @@ public partial class ChatViewModel : ObservableObject
     private async Task ReactAsync(ChatMessageItem? item)
     {
         if (item is null || item.Id <= 0) return;
-        var page = GetRootPage();
-        if (page is null) return;
 
-        var choice = await page.DisplayActionSheet("React", "Cancel", null, QuickReactionEmojis);
+        var choice = await Ui.DisplayActionSheet("React", "Cancel", null, QuickReactionEmojis);
         if (string.IsNullOrEmpty(choice) || choice == "Cancel") return;
 
         try { await _chat.ToggleReactionAsync(item.Id, choice); }
@@ -1068,9 +1062,6 @@ public partial class ChatViewModel : ObservableObject
     {
         if (item is null || !item.CanForward) return;
 
-        var page = GetRootPage();
-        if (page is null) return;
-
         var targets = Chats.Where(c => c != SelectedChat && !IsDraftId(c.Id)).ToList();
         if (targets.Count == 0)
         {
@@ -1078,7 +1069,7 @@ public partial class ChatViewModel : ObservableObject
             return;
         }
 
-        var choice = await page.DisplayActionSheet("Forward to…", "Cancel", null, targets.Select(c => c.Label).ToArray());
+        var choice = await Ui.DisplayActionSheet("Forward to…", "Cancel", null, targets.Select(c => c.Label).ToArray());
         if (string.IsNullOrEmpty(choice) || choice == "Cancel") return;
 
         var target = targets.FirstOrDefault(c => c.Label == choice);
@@ -1396,13 +1387,10 @@ public partial class ChatViewModel : ObservableObject
     /* Group chat creation */
     private async Task CreateGroupChatAsync()
     {
-        var page = GetRootPage();
-        if (page is null) return;
-
-        var name = await page.DisplayPromptAsync("New group", "Group name:");
+        var name = await Ui.DisplayPromptAsync("New group", "Group name:");
         if (string.IsNullOrWhiteSpace(name)) return;
 
-        var membersText = await page.DisplayPromptAsync("New group", "Members (comma-separated display names):");
+        var membersText = await Ui.DisplayPromptAsync("New group", "Members (comma-separated display names):");
         if (membersText is null) return;
 
         var members = membersText
@@ -1491,7 +1479,7 @@ public partial class ChatViewModel : ObservableObject
         var page = GetRootPage();
         if (page is null) return;
 
-        var choice = await page.DisplayActionSheet($"Call {SelectedChat.Label}", "Cancel", null, "Audio call", "Video call");
+        var choice = await Ui.DisplayActionSheet($"Call {SelectedChat.Label}", "Cancel", null, "Audio call", "Video call");
         if (string.IsNullOrEmpty(choice) || choice == "Cancel") return;
 
         var callVm = new CallViewModel(_chat);
@@ -1502,8 +1490,7 @@ public partial class ChatViewModel : ObservableObject
     private async Task ManageChatAsync()
     {
         var chat = SelectedChat;
-        var page = GetRootPage();
-        if (chat is null || page is null) return;
+        if (chat is null) return;
         if (Ci.Equals(chat.Id, "Lobby") || IsDraftId(chat.Id)) return;
 
         var isGroup = chat.IsGroup;
@@ -1513,7 +1500,7 @@ public partial class ChatViewModel : ObservableObject
         if (isGroup) options.AddRange(new[] { "View members", "Add member", "Remove member", "Rename group", "Promote to admin", "Demote from admin" });
         if (isDm) options.AddRange(new[] { "Block user", "Unblock user", "Last seen" });
 
-        var choice = await page.DisplayActionSheet($"Manage \"{chat.Label}\"", "Cancel", null, options.ToArray());
+        var choice = await Ui.DisplayActionSheet($"Manage \"{chat.Label}\"", "Cancel", null, options.ToArray());
         if (string.IsNullOrEmpty(choice) || choice == "Cancel") return;
 
         try
@@ -1543,27 +1530,27 @@ public partial class ChatViewModel : ObservableObject
                     await Ui.DisplayAlert("Members", string.Join("\n", lines), "OK");
                     break;
                 case "Promote to admin":
-                    var toPromote = await page.DisplayPromptAsync("Promote to admin", "Display name:");
+                    var toPromote = await Ui.DisplayPromptAsync("Promote to admin", "Display name:");
                     if (!string.IsNullOrWhiteSpace(toPromote))
                         await _chat.PromoteGroupAdminAsync(chat.Id, toPromote.Trim());
                     break;
                 case "Demote from admin":
-                    var toDemote = await page.DisplayPromptAsync("Demote from admin", "Display name:");
+                    var toDemote = await Ui.DisplayPromptAsync("Demote from admin", "Display name:");
                     if (!string.IsNullOrWhiteSpace(toDemote))
                         await _chat.DemoteGroupAdminAsync(chat.Id, toDemote.Trim());
                     break;
                 case "Add member":
-                    var toAdd = await page.DisplayPromptAsync("Add member", "Display name:");
+                    var toAdd = await Ui.DisplayPromptAsync("Add member", "Display name:");
                     if (!string.IsNullOrWhiteSpace(toAdd))
                         await _chat.AddGroupMemberAsync(chat.Id, toAdd.Trim());
                     break;
                 case "Remove member":
-                    var toRemove = await page.DisplayPromptAsync("Remove member", "Display name:");
+                    var toRemove = await Ui.DisplayPromptAsync("Remove member", "Display name:");
                     if (!string.IsNullOrWhiteSpace(toRemove))
                         await _chat.RemoveGroupMemberAsync(chat.Id, toRemove.Trim());
                     break;
                 case "Rename group":
-                    var newName = await page.DisplayPromptAsync("Rename group", "New name:", initialValue: chat.Label);
+                    var newName = await Ui.DisplayPromptAsync("Rename group", "New name:", initialValue: chat.Label);
                     if (!string.IsNullOrWhiteSpace(newName))
                         await _chat.RenameGroupChatAsync(chat.Id, newName.Trim());
                     break;
