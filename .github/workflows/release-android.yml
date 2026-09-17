@@ -1,0 +1,92 @@
+name: Release Android build
+
+# Publishes a signed Android APK of Chatter.Client and attaches it as an asset to a GitHub
+# Release - so a non-developer can download and sideload it instead of installing the .NET
+# SDK/MAUI workloads and building from source (see README's "Getting started" for that path).
+# No Google Play account or app-signing secrets needed: `dotnet publish` for Android
+# auto-generates a signing keystore when none is configured, which is enough to produce an
+# installable APK (just not one Google Play itself would accept - that's a separate, optional
+# step, not required for "download and sideload").
+#
+# Triggers on pushing a version tag (e.g. `git tag v1.0.0 && git push origin v1.0.0`) - the same
+# tag release-windows.yml reacts to, so one tag produces both platforms' assets on the same
+# release - or manually via the Actions tab (workflow_dispatch) for a test build.
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version label for this build (used as the release tag/name)"
+        required: true
+        default: "v0.0.0-manual"
+
+permissions:
+  contents: write # needed to create/update the GitHub Release and upload its asset
+
+jobs:
+  build-android-apk:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "9.0.x"
+
+      - name: Install MAUI Android workload
+        run: dotnet workload install maui-android
+
+      - name: Determine version
+        id: version
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "value=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish Android APK
+        run: >
+          dotnet publish Chatter.Client/Chatter.Client.csproj
+          -f net9.0-android
+          -c Release
+          -p:AndroidPackageFormat=apk
+          -o publish/android
+
+      # The publish output name includes the ApplicationId (e.g.
+      # "com.companyname.chatter.client-Signed.apk") - located by pattern rather than hardcoded
+      # so a future ApplicationId change doesn't silently break this step.
+      - name: Locate and rename the signed APK
+        shell: bash
+        run: |
+          version="${{ steps.version.outputs.value }}"
+          apk=$(find publish/android -maxdepth 1 -iname "*-Signed.apk" | head -n1)
+          if [ -z "$apk" ]; then
+            apk=$(find publish/android -maxdepth 1 -iname "*.apk" | head -n1)
+          fi
+          if [ -z "$apk" ]; then
+            echo "No .apk found in publish/android" >&2
+            find publish/android -maxdepth 1
+            exit 1
+          fi
+          cp "$apk" "Chatter-Android-${version}.apk"
+
+      - name: Create or update the GitHub Release with the APK attached
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          version="${{ steps.version.outputs.value }}"
+          asset="Chatter-Android-${version}.apk"
+          notes="Signed Android APK - sideload it directly, no Google Play needed.
+
+          On your phone: download the .apk, open it, and allow \"install from unknown sources\" if asked (Android blocks sideloading by default).
+
+          Before first use, point the app at your server: on the login screen, tap \"Server address\" and enter your server's address (see the project README for how to run the server)."
+
+          gh release create "$version" "$asset" --title "$version" --notes "$notes" \
+            || gh release upload "$version" "$asset" --clobber

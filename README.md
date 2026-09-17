@@ -9,7 +9,9 @@
 
 ---
 
-## Quick start (Windows, no coding required)
+## Quick start (Windows & Android, no coding required)
+
+**Windows:**
 
 1. Download the latest Windows build from **[Releases](../../releases/latest)** - grab the `Chatter-Windows-*.zip` file under "Assets".
 2. Unzip it anywhere and run `Chatter.Client.exe`. It's self-contained - no .NET install needed.
@@ -17,13 +19,20 @@
 4. On the login screen, tap **Server address** and enter the address of a running Chatter server (e.g. `http://192.168.1.42:5291`) - either your own ([Configure](#configure) + [Run the backend](#run-the-backend-aspnet-core) below, optionally [exposed to the internet](#expose-your-server-to-the-internet-optional) via a tunnel) or one someone else is already hosting for you.
 5. Register an account and start chatting.
 
-This covers the Windows client only. The server, and every other platform (Android/iOS/macOS), still need to be built from source - see [Getting started](#getting-started) below.
+**Android:**
+
+1. On your phone, download the latest `Chatter-Android-*.apk` from **[Releases](../../releases/latest)**.
+2. Open the downloaded file. Android blocks installs from outside the Play Store by default, so you'll be prompted to allow "install from this source" (or "unknown apps") the first time - allow it and continue.
+3. Open the app, tap **Server address**, and point it at a running Chatter server, same as the Windows steps above.
+4. Register an account and start chatting.
+
+This covers Windows and Android only. The server, and iOS/macOS, still need to be built from source - see [Getting started](#getting-started) below. (iOS/macOS can't be sideloaded this way at all - Apple requires a paid Developer account and either TestFlight or an App Store release, unlike Android's plain APK download.)
 
 ---
 
 ## Table of contents
 
-* [Quick start (Windows, no coding required)](#quick-start-windows-no-coding-required)
+* [Quick start (Windows & Android, no coding required)](#quick-start-windows--android-no-coding-required)
 * [Overview](#overview)
 * [Why it’s useful](#why-its-useful)
 * [Architecture](#architecture)
@@ -466,12 +475,13 @@ trust with the link; don't post the URL somewhere public.
 
 ### Run the client (MAUI)
 
-Just want to run the Windows app without building it? See [Quick start](#quick-start-windows-no-coding-required)
-at the top of this README - it's a pre-built download from
-[GitHub Releases](../../releases/latest), published by `.github/workflows/release-windows.yml`
-(triggered on a version tag, or manually via the Actions tab).
+Just want to run the Windows or Android app without building it? See
+[Quick start](#quick-start-windows--android-no-coding-required) at the top of this README - both
+are pre-built downloads from [GitHub Releases](../../releases/latest), published by
+`.github/workflows/release-windows.yml` and `release-android.yml` respectively (both triggered on
+a version tag, or manually via the Actions tab).
 
-Everything below is for building from source instead (any other platform, or if you want to
+Everything below is for building from source instead (iOS/macOS, or if you want to
 change the code):
 
 MAUI projects are multi‑targeted; prefer `-t:Run -f <TFM>`.
