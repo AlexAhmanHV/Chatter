@@ -12,11 +12,13 @@ What this does:
   RawMessageReceived and get relayed to the server through ChatService; server-relayed messages
   from the other party (answer, remote ICE candidates, hangup) arrive via ChatService's events and
   get forwarded into the page via SendRawMessage.
-- Caveat: this app ships no TURN server, only a public STUN server for NAT-reflexive candidates
-  (see call.html) - a call between two peers behind restrictive/symmetric NATs may never connect.
-  This is a known, documented simplification, not a bug to chase - see the README.
+- ICE servers: fetched fresh from ChatHub.GetIceServers on every call ("ready" handler below) and
+  pushed into the page before start-caller/start-callee - always includes public STUN, plus a
+  short-lived TURN credential if the server has one configured (see README's "Configure"). Not
+  cached client-side since a TURN credential expires and shouldn't outlive one call attempt.
 */
 
+using System.Linq;
 using System.Text.Json;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -154,15 +156,7 @@ public partial class CallViewModel : ObservableObject
         {
             case "ready":
                 _jsReady = true;
-                if (IsCaller)
-                {
-                    Status = CallStatus.Ringing;
-                    SendToJs(new { type = "start-caller", kind = IsVideoCall ? "video" : "audio" });
-                }
-                else if (_pendingOfferForCallee is not null)
-                {
-                    SendToJs(new { type = "start-callee", kind = IsVideoCall ? "video" : "audio", sdp = _pendingOfferForCallee });
-                }
+                _ = SendIceServersThenStartAsync();
                 break;
 
             case "offer-created":
@@ -190,6 +184,30 @@ public partial class CallViewModel : ObservableObject
                 Status = CallStatus.Failed;
                 EndCall(notifyPeer: true);
                 break;
+        }
+    }
+
+    // Pushes this call's ICE server config into the page before telling it to actually start -
+    // call.html falls back to its own hardcoded public-STUN default if this fails or is skipped,
+    // so a transient GetIceServers error degrades to "no TURN this call" rather than no call.
+    private async Task SendIceServersThenStartAsync()
+    {
+        try
+        {
+            var servers = await _chat.GetIceServersAsync();
+            var jsServers = servers.Select(s => new { urls = s.Urls, username = s.Username, credential = s.Credential });
+            SendToJs(new { type = "set-ice-servers", servers = jsServers });
+        }
+        catch { /* call.html keeps its default STUN-only config */ }
+
+        if (IsCaller)
+        {
+            Status = CallStatus.Ringing;
+            SendToJs(new { type = "start-caller", kind = IsVideoCall ? "video" : "audio" });
+        }
+        else if (_pendingOfferForCallee is not null)
+        {
+            SendToJs(new { type = "start-callee", kind = IsVideoCall ? "video" : "audio", sdp = _pendingOfferForCallee });
         }
     }
 

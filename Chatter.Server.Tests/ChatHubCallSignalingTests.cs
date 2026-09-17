@@ -118,4 +118,40 @@ public class ChatHubCallSignalingTests
         var outsiderHub = ChatHubTestHarness.Create(NewId(), NewId());
         await Assert.ThrowsAsync<HubException>(() => outsiderHub.CallAnswer(chatId, "fake-sdp-answer"));
     }
+
+    // ---------- ICE server config ----------
+
+    [Fact]
+    public async Task GetIceServers_NoTurnConfigured_ReturnsStunOnly()
+    {
+        var db = NewId();
+        var hub = ChatHubTestHarness.Create(db, NewId());
+        await hub.OnConnectedAsync();
+
+        var servers = await hub.GetIceServers();
+
+        var server = Assert.Single(servers);
+        Assert.StartsWith("stun:", server.Urls);
+        Assert.Null(server.Username);
+        Assert.Null(server.Credential);
+    }
+
+    [Fact]
+    public async Task GetIceServers_TurnConfigured_IncludesSignedTurnCredential()
+    {
+        var db = NewId();
+        var hub = ChatHubTestHarness.Create(db, NewId(), extraConfig: new Dictionary<string, string?>
+        {
+            ["Turn:Url"] = "turn:turn.example.com:3478",
+            ["Turn:SharedSecret"] = "turn-shared-secret",
+        });
+        await hub.OnConnectedAsync();
+
+        var servers = await hub.GetIceServers();
+
+        Assert.Equal(2, servers.Count);
+        var turn = Assert.Single(servers, s => s.Urls == "turn:turn.example.com:3478");
+        Assert.NotNull(turn.Username);
+        Assert.NotNull(turn.Credential);
+    }
 }

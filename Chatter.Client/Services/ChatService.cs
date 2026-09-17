@@ -78,6 +78,10 @@ public class ChatService
     // Someone's profile picture changed - re-resolve their avatar URL (see GetAvatarUrlsAsync).
     public event Action<string, long>? AvatarChanged;           // displayName, version (cache-bust)
 
+    // The caller's own account was just banned by a site admin (ChatHub.BanUser) - see the
+    // "Banned" handler above for why this is cooperative rather than a forced disconnect.
+    public event Action? Banned;
+
     /* Constructor
        Stores the auth dependency used to supply an access token when establishing the hub connection.
     */
@@ -166,6 +170,11 @@ public class ChatService
         _conn.On<string>("RemovedFromChat", chatId => RemovedFromChat?.Invoke(chatId));
         _conn.On<string, string>("ChatRenamed", (chatId, newLabel) => ChatRenamed?.Invoke(chatId, newLabel));
         _conn.On<string, long>("AvatarChanged", (displayName, version) => AvatarChanged?.Invoke(displayName, version));
+
+        // Sent by ChatHub.BanUser to any of the target's live connections. Cooperative only - see
+        // BanUser's own comment on why this can't forcibly sever the connection from the server
+        // side - so a well-behaved client (this one) reacts by disconnecting and signing out.
+        _conn.On("Banned", () => Banned?.Invoke());
 
         // ----- Handlers: Rosters & chat lists -----
         _conn.On<List<string>>("OnlineUsers", list =>
@@ -329,6 +338,13 @@ public class ChatService
         return (list ?? new()).AsReadOnly();
     }
 
+    public async Task<IReadOnlyList<GlobalSearchResultDto>> SearchAllChatsAsync(string query, int take = 50)
+    {
+        if (_conn is null) return Array.Empty<GlobalSearchResultDto>();
+        var list = await _conn.InvokeAsync<List<GlobalSearchResultDto>>("SearchAllChats", query, take);
+        return (list ?? new()).AsReadOnly();
+    }
+
     public Task<string?> CreateGroupChatAsync(string name, List<string> memberDisplayNames) =>
         _conn is null
             ? Task.FromResult<string?>(null)
@@ -406,6 +422,34 @@ public class ChatService
     {
         if (_conn is null) return Array.Empty<string>();
         var list = await _conn.InvokeAsync<List<string>>("GetBlockedUsers");
+        return (list ?? new()).AsReadOnly();
+    }
+
+    /* Moderation (site admin) */
+    public Task ReportMessageAsync(long messageId, string reason) =>
+        _conn?.SendAsync("ReportMessage", messageId, reason) ?? Task.CompletedTask;
+
+    public async Task<IReadOnlyList<ReportDto>> GetReportsAsync()
+    {
+        if (_conn is null) return Array.Empty<ReportDto>();
+        var list = await _conn.InvokeAsync<List<ReportDto>>("GetReports");
+        return (list ?? new()).AsReadOnly();
+    }
+
+    public Task DismissReportAsync(long reportId) =>
+        _conn?.SendAsync("DismissReport", reportId) ?? Task.CompletedTask;
+
+    public Task BanUserAsync(string displayName) =>
+        _conn?.SendAsync("BanUser", displayName) ?? Task.CompletedTask;
+
+    public Task UnbanUserAsync(string displayName) =>
+        _conn?.SendAsync("UnbanUser", displayName) ?? Task.CompletedTask;
+
+    /* Calls: ICE server config (STUN + optional TURN - see ChatHub.GetIceServers) */
+    public async Task<IReadOnlyList<IceServerDto>> GetIceServersAsync()
+    {
+        if (_conn is null) return Array.Empty<IceServerDto>();
+        var list = await _conn.InvokeAsync<List<IceServerDto>>("GetIceServers");
         return (list ?? new()).AsReadOnly();
     }
 

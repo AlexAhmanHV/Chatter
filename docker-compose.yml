@@ -13,6 +13,32 @@ services:
       # issue and validate tokens from /auth/login and /auth/register). Generate your own -
       # e.g. `openssl rand -base64 48` - never reuse the one in this repo's dev settings.
       - Jwt__SigningKey=replace-me-with-a-real-random-secret
+      # Optional: only needed if you also run the coturn service below (see its own comment).
+      # Leave both unset and calls still work via public STUN alone - see README's
+      # "Audio/video calls" section for what TURN buys you and when you'd want it.
+      # - Turn__Url=turn:your-server-address:3478
+      # - Turn__SharedSecret=replace-me-with-a-different-real-random-secret
+
+  # Optional TURN relay for calls between peers behind restrictive/symmetric NATs, where public
+  # STUN alone can't establish a direct connection (see README's "Audio/video calls"). Uncomment
+  # this service and the chatter-server Turn__* environment lines above (with matching
+  # Turn__SharedSecret / static-auth-secret) to enable it - calls work fine without it, just
+  # without a fallback for that specific case.
+  # coturn:
+  #   image: coturn/coturn:latest
+  #   command:
+  #     - -n
+  #     - --log-file=stdout
+  #     - --listening-port=3478
+  #     - --min-port=49160
+  #     - --max-port=49200
+  #     - --use-auth-secret
+  #     - --static-auth-secret=replace-me-with-a-different-real-random-secret
+  #     - --realm=chatter
+  #   ports:
+  #     - "3478:3478/tcp"
+  #     - "3478:3478/udp"
+  #     - "49160-49200:49160-49200/udp"
 
 volumes:
   chatter-data:

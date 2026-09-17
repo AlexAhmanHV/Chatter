@@ -31,6 +31,7 @@ public static class JwtIssuer
             new Claim("sub", user.Id),
             new Claim("email", user.Email ?? string.Empty),
             new Claim("display_name", user.DisplayName),
+            new Claim("is_admin", user.IsAdmin ? "true" : "false"),
         };
 
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(signingKey));

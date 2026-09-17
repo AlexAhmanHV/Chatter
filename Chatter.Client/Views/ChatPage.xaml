@@ -286,6 +286,11 @@ What this does:
                    Color="{StaticResource ColorPrimary}" VerticalOptions="Center" />
           </Grid>
 
+          <HorizontalStackLayout IsVisible="{Binding IsSearching}" Spacing="8" Margin="0,6,0,0">
+            <Switch IsToggled="{Binding IsGlobalSearch}" Scale="0.8" />
+            <Label Text="Search everywhere" FontSize="12" TextColor="{StaticResource ColorOnSurfaceVariant}" VerticalOptions="Center" />
+          </HorizontalStackLayout>
+
           <CollectionView IsVisible="{Binding IsSearching}" ItemsSource="{Binding SearchResults}" MaximumHeightRequest="260">
             <CollectionView.ItemTemplate>
               <DataTemplate x:DataType="models:ChatMessageItem">
@@ -296,6 +301,8 @@ What this does:
                     <TapGestureRecognizer Tapped="OnSearchResultTapped" />
                   </Border.GestureRecognizers>
                   <VerticalStackLayout Spacing="2">
+                    <Label Text="{Binding SearchChatLabel}" IsVisible="{Binding HasSearchChatLabel}"
+                           FontSize="10" FontAttributes="Bold" TextColor="{StaticResource ColorPrimary}" />
                     <HorizontalStackLayout Spacing="6">
                       <Label Text="{Binding Sender}" FontSize="12" FontAttributes="Bold" TextColor="{StaticResource ColorPrimaryVariant}" />
                       <Label Text="{Binding SentAtUtc, StringFormat='{0:g}'}" FontSize="11" TextColor="{StaticResource ColorOnSurfaceVariant}" />
@@ -369,6 +376,14 @@ What this does:
                                    Invoked="OnTogglePinInvoked">
                           <SwipeItem.IconImageSource>
                             <FontImageSource FontFamily="MaterialSymbolsOutlined" Glyph="{x:Static symbols:MaterialOutlined.Push_pin}" Color="White" Size="18" />
+                          </SwipeItem.IconImageSource>
+                        </SwipeItem>
+                        <SwipeItem Text="Report"
+                                   BackgroundColor="#7C2D12"
+                                   IsVisible="{Binding CanReport}"
+                                   Invoked="OnReportMessageInvoked">
+                          <SwipeItem.IconImageSource>
+                            <FontImageSource FontFamily="MaterialSymbolsOutlined" Glyph="{x:Static symbols:MaterialOutlined.Flag}" Color="White" Size="18" />
                           </SwipeItem.IconImageSource>
                         </SwipeItem>
                       </SwipeItems>
@@ -744,12 +759,20 @@ What this does:
       <VerticalStackLayout Spacing="0">
         <Border Padding="20,22" StrokeThickness="0" BackgroundColor="{StaticResource ColorSurfaceVariant}">
           <VerticalStackLayout Spacing="14">
-            <Grid ColumnDefinitions="*,Auto">
+            <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
               <HorizontalStackLayout Grid.Column="0" Spacing="8">
                 <Label Text="{x:Static symbols:MaterialOutlined.Person}" FontFamily="MaterialSymbolsOutlined" FontSize="16" TextColor="{StaticResource ColorPrimaryVariant}" VerticalOptions="Center" />
                 <Label Text="{Binding User}" FontSize="16" FontAttributes="Bold" TextColor="{StaticResource ColorOnSurface}" VerticalOptions="Center" />
               </HorizontalStackLayout>
-              <Button Grid.Column="1" Text="{x:Static symbols:MaterialOutlined.Settings}"
+              <Button Grid.Column="1" Text="{x:Static symbols:MaterialOutlined.Flag}"
+                      FontFamily="MaterialSymbolsOutlined"
+                      Command="{Binding ViewReportsCommand}"
+                      IsVisible="{Binding IsAdmin}"
+                      ToolTipProperties.Text="Pending reports (admin)"
+                      WidthRequest="32" HeightRequest="32" FontSize="16" Padding="0"
+                      BackgroundColor="{StaticResource ColorOutline}" TextColor="{StaticResource ColorError}" CornerRadius="16"
+                      VerticalOptions="Center" />
+              <Button Grid.Column="2" Text="{x:Static symbols:MaterialOutlined.Settings}"
                       FontFamily="MaterialSymbolsOutlined"
                       Clicked="OnSettingsClicked"
                       ToolTipProperties.Text="Settings"

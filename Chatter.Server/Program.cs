@@ -204,8 +204,10 @@ app.MapPost("/auth/register", async (RegisterRequest req, UserManager<Applicatio
         return Results.BadRequest(new { error = message });
     }
 
+    await SyncAdminFlagAsync(user, userManager, config);
+
     var (token, expiresAtUtc) = JwtIssuer.CreateToken(user, config);
-    return Results.Ok(new AuthResponse(token, expiresAtUtc, user.DisplayName));
+    return Results.Ok(new AuthResponse(token, expiresAtUtc, user.DisplayName, user.IsAdmin));
 })
 .RequireRateLimiting("auth");
 
@@ -229,10 +231,17 @@ app.MapPost("/auth/login", async (LoginRequest req, UserManager<ApplicationUser>
         return Results.Json(new { error = invalidCredentialsMessage }, statusCode: StatusCodes.Status401Unauthorized);
     }
 
+    // Checked after the password so a banned user can't use this to enumerate whether an email
+    // has an account (same reasoning as the generic invalid-credentials message above), and
+    // independent of lockout - a ban isn't a lockout, it doesn't expire on its own.
+    if (user.IsBanned)
+        return Results.Json(new { error = "This account has been banned." }, statusCode: StatusCodes.Status401Unauthorized);
+
     await userManager.ResetAccessFailedCountAsync(user);
+    await SyncAdminFlagAsync(user, userManager, config);
 
     var (token, expiresAtUtc) = JwtIssuer.CreateToken(user, config);
-    return Results.Ok(new AuthResponse(token, expiresAtUtc, user.DisplayName));
+    return Results.Ok(new AuthResponse(token, expiresAtUtc, user.DisplayName, user.IsAdmin));
 })
 .RequireRateLimiting("auth");
 
@@ -282,6 +291,23 @@ app.MapGet("/weatherforecast", () =>
 .WithName("GetWeatherForecast");
 
 app.Run();
+
+// Grants (or revokes) site-admin rights based purely on server config, checked on every login/
+// register rather than being settable through any API - keeps "who's an admin" a deployment
+// decision, not something reachable over the wire. Admin:Emails is a plain JSON array in
+// appsettings/environment, e.g. "Admin__Emails__0"="you@example.com". Case-insensitive match
+// against the account's email since that's how Identity itself treats email uniqueness here.
+static async Task SyncAdminFlagAsync(ApplicationUser user, UserManager<ApplicationUser> userManager, IConfiguration config)
+{
+    var adminEmails = config.GetSection("Admin:Emails").Get<string[]>() ?? Array.Empty<string>();
+    var shouldBeAdmin = user.Email is not null &&
+        adminEmails.Any(e => string.Equals(e, user.Email, StringComparison.OrdinalIgnoreCase));
+
+    if (user.IsAdmin == shouldBeAdmin) return;
+
+    user.IsAdmin = shouldBeAdmin;
+    await userManager.UpdateAsync(user);
+}
 
 // ---- Types ----
 

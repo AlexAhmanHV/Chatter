@@ -41,6 +41,16 @@ public partial class ChatViewModel : ObservableObject
     /* Core services & constants */
     private readonly ChatService _chat;
     private readonly IAudioManager _audio;
+    private readonly ApiAuthService _auth;
+
+    // Whether the signed-in account is a site admin (see ApplicationUser.IsAdmin) - drives whether
+    // moderation UI (report review, ban) shows up at all.
+    public bool IsAdmin => _auth.IsAdmin;
+
+    // Raised when this account is banned mid-session (see the Banned hub event / OnBanned below)
+    // so the View can reset navigation back to a fresh Login page - same pattern and reason as
+    // SettingsViewModel.LoggedOut.
+    public event Action? LoggedOut;
 
     // De-dup only for synthetic lines (rename/system notices) that have no server-assigned id.
     // Real messages are de-duped by id instead - see ChatMessageReceived/DmNotify below.
@@ -126,6 +136,10 @@ public partial class ChatViewModel : ObservableObject
     public IAsyncRelayCommand<ChatMessageItem> OpenExternalAttachmentCommand { get; }
     public IAsyncRelayCommand<ChatMessageItem> OpenLinkPreviewCommand { get; }
 
+    /* Moderation */
+    public IAsyncRelayCommand<ChatMessageItem> ReportMessageCommand { get; }
+    public IAsyncRelayCommand ViewReportsCommand { get; }
+
     // Pinned messages for whichever chat is currently selected - refreshed on selection
     // (LoadPinnedMessagesAsync) and kept current from live MessagePinned/MessageUnpinned events.
     public ObservableCollection<ChatMessageItem> PinnedMessages { get; } = new();
@@ -148,6 +162,12 @@ public partial class ChatViewModel : ObservableObject
     [ObservableProperty] public partial bool IsSearchRunning { get; set; }
     public ObservableCollection<ChatMessageItem> SearchResults { get; } = new();
     private CancellationTokenSource? _searchCts;
+
+    // Toggles between "search this chat" (SearchMessages) and "search everywhere" (SearchAllChats)
+    // - same SearchQuery/SearchResults, just a different server call and result shape (each item
+    // gets SearchChatId/SearchChatLabel set so the result list can show and jump to its chat).
+    [ObservableProperty] public partial bool IsGlobalSearch { get; set; }
+    partial void OnIsGlobalSearchChanged(bool value) => OnSearchQueryChanged(SearchQuery);
 
     /* Voice message recording state */
     [ObservableProperty] public partial bool IsRecordingVoiceMessage { get; set; }
@@ -326,10 +346,13 @@ public partial class ChatViewModel : ObservableObject
     }
 
     /* Constructor: event wiring & initial command setup */
-    public ChatViewModel(ChatService chat, IAudioManager audio)
+    public ChatViewModel(ChatService chat, IAudioManager audio, ApiAuthService auth)
     {
         _chat = chat;
         _audio = audio;
+        _auth = auth;
+
+        _chat.Banned += OnBanned;
 
         People.CollectionChanged += (_, __) => OnPropertyChanged(nameof(OfflineCount));
         PinnedMessages.CollectionChanged += (_, __) => OnPropertyChanged(nameof(HasPinnedMessages));
@@ -698,6 +721,8 @@ public partial class ChatViewModel : ObservableObject
         ToggleSearchCommand = new RelayCommand(ToggleSearch);
         StartCallCommand = new AsyncRelayCommand(StartCallAsync);
         JumpToSearchResultCommand = new AsyncRelayCommand<ChatMessageItem>(JumpToSearchResultAsync);
+        ReportMessageCommand = new AsyncRelayCommand<ChatMessageItem>(ReportMessageAsync);
+        ViewReportsCommand = new AsyncRelayCommand(ViewReportsAsync);
     }
 
     private ChatMessageItem? FindMessage(string chatId, long messageId) =>
@@ -1283,6 +1308,7 @@ public partial class ChatViewModel : ObservableObject
         if (!IsSearching)
         {
             SearchQuery = null;
+            IsGlobalSearch = false;
             SearchResults.Clear();
             _searchCts?.Cancel();
         }
@@ -1291,17 +1317,18 @@ public partial class ChatViewModel : ObservableObject
     partial void OnSearchQueryChanged(string? value)
     {
         _searchCts?.Cancel();
-        if (!IsSearching || SelectedChat is null || IsDraftId(SelectedChat.Id) || string.IsNullOrWhiteSpace(value))
+        if (!IsSearching || string.IsNullOrWhiteSpace(value) ||
+            (!IsGlobalSearch && (SelectedChat is null || IsDraftId(SelectedChat.Id))))
         {
             SearchResults.Clear();
             return;
         }
 
         _searchCts = new CancellationTokenSource();
-        _ = DelayedSearchAsync(SelectedChat.Id, value, _searchCts.Token);
+        _ = DelayedSearchAsync(SelectedChat?.Id, value, IsGlobalSearch, _searchCts.Token);
     }
 
-    private async Task DelayedSearchAsync(string chatId, string query, CancellationToken ct)
+    private async Task DelayedSearchAsync(string? chatId, string query, bool global, CancellationToken ct)
     {
         try { await Task.Delay(300, ct); }
         catch (TaskCanceledException) { return; }
@@ -1310,12 +1337,29 @@ public partial class ChatViewModel : ObservableObject
         IsSearchRunning = true;
         try
         {
-            var results = await _chat.SearchMessagesAsync(chatId, query);
-            if (ct.IsCancellationRequested) return;
+            if (global)
+            {
+                var globalResults = await _chat.SearchAllChatsAsync(query);
+                if (ct.IsCancellationRequested) return;
 
-            SearchResults.Clear();
-            foreach (var dto in results)
-                SearchResults.Add(ToItem(dto));
+                SearchResults.Clear();
+                foreach (var result in globalResults)
+                {
+                    var item = ToItem(result.Message);
+                    item.SearchChatId = result.ChatId;
+                    item.SearchChatLabel = result.ChatLabel;
+                    SearchResults.Add(item);
+                }
+            }
+            else if (chatId is not null)
+            {
+                var results = await _chat.SearchMessagesAsync(chatId, query);
+                if (ct.IsCancellationRequested) return;
+
+                SearchResults.Clear();
+                foreach (var dto in results)
+                    SearchResults.Add(ToItem(dto));
+            }
         }
         catch
         {
@@ -1337,7 +1381,19 @@ public partial class ChatViewModel : ObservableObject
 
         IsSearching = false;
         SearchQuery = null;
+        IsGlobalSearch = false;
         SearchResults.Clear();
+
+        // A global result may point at a chat other than the one currently open - switch to it
+        // first (which kicks off its own history load) so the message has a chance to be there.
+        if (item.SearchChatId is { } targetChatId && SelectedChat?.Id != targetChatId)
+        {
+            var target = Chats.FirstOrDefault(c => Ci.Equals(c.Id, targetChatId));
+            if (target is null) return; // not in our chat list anymore (e.g. removed from the group)
+
+            SelectedChat = target;
+            await LoadHistoryIfNeededAsync(targetChatId);
+        }
 
         await JumpToMessageIdAsync(item.Id);
     }
@@ -1575,6 +1631,87 @@ public partial class ChatViewModel : ObservableObject
         {
             await Ui.DisplayAlert("Couldn't complete that action", ex.Message, "OK");
         }
+    }
+
+    /* Moderation - reporting is open to any member; reviewing reports and acting on them
+       (delete/ban) is admin-only, both gated here (so the UI doesn't even offer it) and
+       independently re-checked server-side (RequireSiteAdmin). */
+    private async Task ReportMessageAsync(ChatMessageItem? item)
+    {
+        if (item is null || item.Id <= 0 || item.IsSystem) return;
+
+        var reason = await Ui.DisplayPromptAsync("Report message", "Why are you reporting this?", maxLength: 500);
+        if (string.IsNullOrWhiteSpace(reason)) return;
+
+        try
+        {
+            await _chat.ReportMessageAsync(item.Id, reason.Trim());
+            await Ui.DisplayAlert("Reported", "Thanks - a site admin will review this.", "OK");
+        }
+        catch (Exception ex)
+        {
+            await Ui.DisplayAlert("Couldn't report message", ex.Message, "OK");
+        }
+    }
+
+    // Shows the pending report queue as a chain of action sheets (pick a report, then pick what
+    // to do about it) rather than a dedicated admin page - this is a low-frequency, admin-only
+    // flow, so it isn't worth its own screen the way the rest of the app's features are.
+    private async Task ViewReportsAsync()
+    {
+        if (!IsAdmin) return;
+
+        List<ReportDto> reports;
+        try { reports = (await _chat.GetReportsAsync()).ToList(); }
+        catch (Exception ex)
+        {
+            await Ui.DisplayAlert("Couldn't load reports", ex.Message, "OK");
+            return;
+        }
+
+        if (reports.Count == 0)
+        {
+            await Ui.DisplayAlert("Reports", "No pending reports.", "OK");
+            return;
+        }
+
+        var options = reports.Select(r => $"[{r.ChatLabel}] {r.MessageSenderDisplayName}: {r.MessageSnippet}").ToArray();
+        var choice = await Ui.DisplayActionSheet("Pending reports", "Close", null, options);
+        var index = Array.IndexOf(options, choice ?? string.Empty);
+        if (index < 0) return;
+        var report = reports[index];
+
+        var banOption = $"Ban {report.MessageSenderDisplayName}";
+        var action = await Ui.DisplayActionSheet(
+            $"{report.MessageSenderDisplayName}: “{report.MessageSnippet}”\nReported for: {report.Reason}",
+            "Cancel", banOption,
+            "Delete message", banOption, "Dismiss report");
+        if (string.IsNullOrEmpty(action) || action == "Cancel") return;
+
+        try
+        {
+            if (action == "Delete message")
+                await _chat.DeleteMessageAsync(report.MessageId);
+            else if (action == banOption)
+                await _chat.BanUserAsync(report.MessageSenderDisplayName);
+
+            await _chat.DismissReportAsync(report.ReportId);
+        }
+        catch (Exception ex)
+        {
+            await Ui.DisplayAlert("Couldn't complete that action", ex.Message, "OK");
+        }
+    }
+
+    // The server can't forcibly sever an already-connected session when banning it (see
+    // ChatHub.BanUser) - this cooperative handler is the enforcement for a well-behaved client:
+    // sign out and reset navigation, same shape as an ordinary logout (SettingsViewModel.LogoutAsync).
+    private async void OnBanned()
+    {
+        await Ui.DisplayAlert("Account banned", "This account has been banned by a site admin.", "OK");
+        try { await _chat.StopAsync(); } catch { }
+        _auth.SignOut();
+        LoggedOut?.Invoke();
     }
 
     /* Chat labeling & item management

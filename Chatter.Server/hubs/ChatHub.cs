@@ -1142,7 +1142,8 @@ public class ChatHub : Hub
 
         await using var db = await _dbFactory.CreateDbContextAsync();
         var msg = await db.Messages.FindAsync(messageId) ?? throw new HubException("Message not found.");
-        if (!Ci.Equals(msg.SenderUserId, me)) throw new HubException("You can only delete your own messages.");
+        if (!Ci.Equals(msg.SenderUserId, me) && !IsSiteAdmin())
+            throw new HubException("You can only delete your own messages.");
 
         msg.IsDeleted = true;
         msg.Body = string.Empty;
@@ -1354,6 +1355,135 @@ public class ChatHub : Hub
         (_blockedByUser.TryGetValue(a, out var setA) && setA.Contains(b)) ||
         (_blockedByUser.TryGetValue(b, out var setB) && setB.Contains(a));
 
+    // -------------------------------------------------------
+    // Moderation (site admin - see ApplicationUser.IsAdmin/RequireSiteAdmin)
+    // -------------------------------------------------------
+
+    // Any member of a message's chat can flag it for a site admin to review. Doesn't hide the
+    // message, notify its sender, or require the reporter to justify anything beyond a short
+    // reason - it's purely an entry in the admin queue (GetReports), not an automatic action.
+    private const int MaxReportReasonLength = 500;
+
+    public async Task ReportMessage(long messageId, string reason)
+    {
+        var me = RequireUserId();
+        EnforceRateLimit("reportMessage", maxPerWindow: 10, window: TimeSpan.FromMinutes(1));
+
+        reason = (reason ?? string.Empty).Trim();
+        if (reason.Length == 0) throw new HubException("Please describe why you're reporting this.");
+        if (reason.Length > MaxReportReasonLength) reason = reason[..MaxReportReasonLength];
+
+        await using var db = await _dbFactory.CreateDbContextAsync();
+        var msg = await db.Messages.FindAsync(messageId) ?? throw new HubException("Message not found.");
+        RequireMembership(msg.ChatId, me);
+
+        db.MessageReports.Add(new MessageReportEntity
+        {
+            MessageId = messageId,
+            ReporterUserId = me,
+            Reason = reason,
+            CreatedAtUtc = DateTime.UtcNow,
+        });
+        await db.SaveChangesAsync();
+    }
+
+    // Chat label built from an admin's-eye view rather than ComputeChatLabelForUser's "the other
+    // person" logic - an admin reviewing reports usually isn't a member of the reported chat, so
+    // there's no "my perspective" to resolve a DM's label from; naming both participants avoids
+    // silently mislabeling it as whichever participant happens to match a caller who isn't there.
+    private string ComputeChatLabelForAdmin(string chatId)
+    {
+        if (Ci.Equals(chatId, LobbyId)) return "Lobby";
+        if (_groupChatNames.TryGetValue(chatId, out var groupName)) return groupName;
+        if (_dmParticipants.TryGetValue(chatId, out var pair))
+            return $"DM: {DisplayNameOf(pair.User1)} & {DisplayNameOf(pair.User2)}";
+        return chatId;
+    }
+
+    public async Task<List<ReportDto>> GetReports()
+    {
+        RequireSiteAdmin();
+
+        await using var db = await _dbFactory.CreateDbContextAsync();
+        var reports = await db.MessageReports
+            .Where(r => r.ResolvedAtUtc == null)
+            .OrderBy(r => r.CreatedAtUtc)
+            .ToListAsync();
+        if (reports.Count == 0) return new List<ReportDto>();
+
+        var messageIds = reports.Select(r => r.MessageId).Distinct().ToList();
+        var messagesById = await db.Messages.Where(m => messageIds.Contains(m.Id)).ToDictionaryAsync(m => m.Id);
+
+        var result = new List<ReportDto>();
+        foreach (var r in reports)
+        {
+            // The reported message was hard-deleted from the DB some other way (never happens via
+            // normal DeleteMessage, which only soft-deletes) - skip rather than throw, so one bad
+            // row doesn't break the whole queue for the admin.
+            if (!messagesById.TryGetValue(r.MessageId, out var msg)) continue;
+
+            var snippet = msg.IsDeleted ? "(message deleted)" : msg.Body;
+            if (snippet.Length > 200) snippet = snippet[..200] + "…";
+
+            result.Add(new ReportDto(
+                r.Id, msg.Id, msg.ChatId, ComputeChatLabelForAdmin(msg.ChatId),
+                snippet, msg.SenderDisplayName, DisplayNameOf(r.ReporterUserId), r.Reason, r.CreatedAtUtc));
+        }
+        return result;
+    }
+
+    // Marks a report handled without necessarily taking any action on the message/account -
+    // covers both "looked into it, it's fine" and "already dealt with via DeleteMessage/BanUser
+    // below". Reports aren't auto-resolved by those actions since a report can reference a message
+    // an admin chooses to leave up (e.g. reporter was mistaken).
+    public async Task DismissReport(long reportId)
+    {
+        RequireSiteAdmin();
+        var me = RequireUserId();
+
+        await using var db = await _dbFactory.CreateDbContextAsync();
+        var report = await db.MessageReports.FindAsync(reportId) ?? throw new HubException("Report not found.");
+        report.ResolvedByUserId = me;
+        report.ResolvedAtUtc = DateTime.UtcNow;
+        await db.SaveChangesAsync();
+    }
+
+    public async Task BanUser(string displayName)
+    {
+        RequireSiteAdmin();
+
+        if (!_userIdByDisplayName.TryGetValue((displayName ?? string.Empty).Trim(), out var targetId))
+            throw new HubException($"Could not find a user named '{displayName}'.");
+
+        await using var db = await _dbFactory.CreateDbContextAsync();
+        var user = await db.Users.FindAsync(targetId) ?? throw new HubException("Account not found.");
+        user.IsBanned = true;
+        user.BannedAtUtc = DateTime.UtcNow;
+        await db.SaveChangesAsync();
+
+        // Cooperative kick: ask any live connections to disconnect themselves. This can't
+        // forcibly sever an already-authenticated SignalR connection from a different Hub
+        // instance - a modified client could ignore the event - so the real backstop is
+        // /auth/login rejecting a banned account on its next attempt (see Program.cs). This just
+        // gets a normal, well-behaved client off immediately instead of leaving it connected
+        // until its token naturally expires.
+        await Clients.Clients(ConnectionsFor(targetId).ToList()).SendAsync("Banned");
+    }
+
+    public async Task UnbanUser(string displayName)
+    {
+        RequireSiteAdmin();
+
+        if (!_userIdByDisplayName.TryGetValue((displayName ?? string.Empty).Trim(), out var targetId))
+            throw new HubException($"Could not find a user named '{displayName}'.");
+
+        await using var db = await _dbFactory.CreateDbContextAsync();
+        var user = await db.Users.FindAsync(targetId) ?? throw new HubException("Account not found.");
+        user.IsBanned = false;
+        user.BannedAtUtc = null;
+        await db.SaveChangesAsync();
+    }
+
     // Muting never touches delivery - the message still arrives and gets persisted normally,
     // this only tells the *caller's own* client to stop bumping the unread badge for this chat.
     public async Task SetChatMuted(string chatId, bool muted)
@@ -1459,6 +1589,41 @@ public class ChatHub : Hub
         return await ToDtosAsync(db, rows, me);
     }
 
+    // Same idea as SearchMessages, but across every chat the caller is a member of instead of one
+    // - "search everywhere" rather than "search this conversation". Security-wise this is exactly
+    // as safe as any other per-chat method: myChatIds is built from _chatMembers for the calling
+    // user specifically, so a match can never surface a message from a chat they don't belong to.
+    // Ordered newest-first and not reversed to chronological order (unlike SearchMessages) - a
+    // cross-chat result list reads more naturally as "most recent match first", like a normal
+    // search, rather than as one conversation's timeline.
+    public async Task<List<GlobalSearchResultDto>> SearchAllChats(string query, int take = 50)
+    {
+        var me = RequireUserId();
+        take = Math.Clamp(take, 1, 200);
+
+        query = (query ?? string.Empty).Trim();
+        if (query.Length == 0) return new List<GlobalSearchResultDto>();
+
+        var myChatIds = _chatMembers
+            .Where(kv => kv.Value.Contains(me))
+            .Select(kv => kv.Key)
+            .Concat(new[] { LobbyId })
+            .Distinct(Ci)
+            .ToList();
+
+        var needle = query.ToLowerInvariant();
+
+        await using var db = await _dbFactory.CreateDbContextAsync();
+        var rows = await db.Messages
+            .Where(m => myChatIds.Contains(m.ChatId) && !m.IsDeleted && m.Body.ToLower().Contains(needle))
+            .OrderByDescending(m => m.Id)
+            .Take(take)
+            .ToListAsync();
+
+        var dtos = await ToDtosAsync(db, rows, me);
+        return rows.Zip(dtos, (row, dto) => new GlobalSearchResultDto(row.ChatId, ComputeChatLabelForUser(row.ChatId, me), dto)).ToList();
+    }
+
     // Fetches title/description/image metadata for a URL found in a message body (see
     // Services/LinkPreviewFetcher for the actual fetch + SSRF guard + caching). Just requires
     // being authenticated, not chat membership - a preview isn't scoped to a particular chat, and
@@ -1543,9 +1708,29 @@ public class ChatHub : Hub
     //
     // The server never looks at an SDP offer/answer or ICE candidate's contents - it's a dumb
     // relay between exactly the two DM participants, identical in spirit to how a message is
-    // delivered. Media itself flows peer-to-peer once signaling completes; this app deliberately
-    // ships no STUN/TURN server, so a call between two peers behind restrictive NATs (common on
-    // mobile data, some home routers) may fail to connect - see README's "Known simplifications".
+    // delivered. Media itself flows peer-to-peer once signaling completes.
+
+    // Public STUN plus, if a TURN server is configured (Turn:Url/Turn:SharedSecret - see
+    // README's "Configure" section and docker-compose.yml's optional coturn service), a
+    // short-lived TURN credential (Auth/TurnCredentialSigner) so a call between two peers behind
+    // restrictive/symmetric NATs can still relay through it instead of failing to connect. Falls
+    // back to STUN-only when no TURN server is configured, same as before this existed.
+    public Task<List<IceServerDto>> GetIceServers()
+    {
+        RequireUserId();
+
+        var servers = new List<IceServerDto> { new("stun:stun.l.google.com:19302", null, null) };
+
+        var turnUrl = _config["Turn:Url"];
+        var turnSecret = _config["Turn:SharedSecret"];
+        if (!string.IsNullOrWhiteSpace(turnUrl) && !string.IsNullOrWhiteSpace(turnSecret))
+        {
+            var (username, credential) = TurnCredentialSigner.CreateEphemeralCredential(RequireUserId(), turnSecret);
+            servers.Add(new IceServerDto(turnUrl, username, credential));
+        }
+
+        return Task.FromResult(servers);
+    }
     private string OtherDmParticipantOrThrow(string chatId, string me)
     {
         if (!_dmParticipants.TryGetValue(chatId, out var pair))
@@ -2036,6 +2221,18 @@ public class ChatHub : Hub
     private string? GetUserId() =>
         Context.User?.FindFirst("sub")?.Value
         ?? Context.User?.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+
+    // "is_admin" is set into the JWT at login/register from server config (Program.cs's
+    // SyncAdminFlagAsync) - like "sub", it's server-issued and signed, never client-supplied, so
+    // trusting it here doesn't need a fresh DB round-trip on every admin-gated call. A change to
+    // Admin:Emails takes effect on that account's next login, not instantly - same tradeoff as
+    // any other claim baked into a 7-day token (see JwtIssuer).
+    private bool IsSiteAdmin() => Context.User?.FindFirst("is_admin")?.Value == "true";
+
+    private void RequireSiteAdmin()
+    {
+        if (!IsSiteAdmin()) throw new HubException("Only a site admin can do that.");
+    }
 
     // The server issues its own tokens now (see Auth/JwtIssuer), so the display name chosen at
     // registration always arrives as a plain "display_name" claim - no nested metadata to parse.

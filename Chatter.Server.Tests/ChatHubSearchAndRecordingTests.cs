@@ -94,6 +94,65 @@ public class ChatHubSearchAndRecordingTests
         Assert.Empty(results);
     }
 
+    // ---------- Search everywhere ----------
+
+    [Fact]
+    public async Task SearchAllChats_FindsMatchesAcrossMultipleChats()
+    {
+        var (db, _, _, _, bobName, aliceHub, _) = await SetUpAliceAndBob();
+        var carolId = NewId();
+        var carolName = "Carol-" + NewId();
+        var carolHub = ChatHubTestHarness.Create(db, carolId);
+        await carolHub.OnConnectedAsync();
+        await carolHub.SetDisplayName(carolName);
+
+        var dmWithBob = await aliceHub.CreateDm(bobName);
+        await aliceHub.SendToChat(dmWithBob, "let's grab coffee tomorrow");
+
+        var dmWithCarol = await aliceHub.CreateDm(carolName);
+        await aliceHub.SendToChat(dmWithCarol, "coffee meeting moved to friday");
+
+        await aliceHub.SendToChat("Lobby", "no match here");
+
+        var results = await aliceHub.SearchAllChats("coffee");
+
+        Assert.Equal(2, results.Count);
+        Assert.Contains(results, r => r.ChatId == dmWithBob);
+        Assert.Contains(results, r => r.ChatId == dmWithCarol);
+    }
+
+    [Fact]
+    public async Task SearchAllChats_ExcludesChatsCallerIsNotMemberOf()
+    {
+        var (db, _, _, _, bobName, _, bobHub) = await SetUpAliceAndBob();
+        var carolId = NewId();
+        var carolName = "Carol-" + NewId();
+        var carolHub = ChatHubTestHarness.Create(db, carolId);
+        await carolHub.OnConnectedAsync();
+        await carolHub.SetDisplayName(carolName);
+
+        var bobCarolDm = await bobHub.CreateDm(carolName);
+        await bobHub.SendToChat(bobCarolDm, "secret coffee plan");
+
+        var aliceHub = ChatHubTestHarness.Create(db, NewId());
+        await aliceHub.OnConnectedAsync();
+
+        var results = await aliceHub.SearchAllChats("coffee");
+
+        Assert.Empty(results);
+    }
+
+    [Fact]
+    public async Task SearchAllChats_EmptyQuery_ReturnsEmptyWithoutThrowing()
+    {
+        var (_, _, _, _, bobName, aliceHub, _) = await SetUpAliceAndBob();
+        var chatId = await aliceHub.CreateDm(bobName);
+        await aliceHub.SendToChat(chatId, "hello");
+
+        var results = await aliceHub.SearchAllChats("   ");
+        Assert.Empty(results);
+    }
+
     // ---------- Recording indicator ----------
 
     [Fact]

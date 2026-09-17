@@ -39,12 +39,13 @@ public static class ChatHubTestHarness
 
     private sealed class FakeHubCallerContext : HubCallerContext
     {
-        public FakeHubCallerContext(string connectionId, string? userId)
+        public FakeHubCallerContext(string connectionId, string? userId, bool isAdmin = false)
         {
             ConnectionId = connectionId;
             User = userId is null
                 ? new ClaimsPrincipal(new ClaimsIdentity())
-                : new ClaimsPrincipal(new ClaimsIdentity(new[] { new Claim("sub", userId) }, "Test"));
+                : new ClaimsPrincipal(new ClaimsIdentity(
+                    new[] { new Claim("sub", userId), new Claim("is_admin", isAdmin ? "true" : "false") }, "Test"));
         }
 
         public bool Aborted { get; private set; }
@@ -61,14 +62,15 @@ public static class ChatHubTestHarness
     // connectionId defaults to a fresh id per call: ChatHub's rate limiter (and other
     // per-connection state) is keyed by connection id in static, process-wide dictionaries,
     // so reusing a fixed literal like "conn-1" across tests would leak state between them.
-    public static ChatHub Create(string dbName, string? userId, string? connectionId = null)
+    public static ChatHub Create(string dbName, string? userId, string? connectionId = null, bool isAdmin = false,
+        Dictionary<string, string?>? extraConfig = null)
     {
         connectionId ??= Guid.NewGuid().ToString("N");
 
         // ChatHub keys most of its own state off the JWT's "sub" claim alone, but a few methods
         // (UpdateAvatar, PersistDisplayNameAsync) look up a real ApplicationUser row via
         // db.Users - seed one so those aren't testing against an account that doesn't exist.
-        if (userId is not null) EnsureUserRowExists(dbName, userId);
+        if (userId is not null) EnsureUserRowExists(dbName, userId, isAdmin);
 
         var proxy = new Mock<IClientProxy>();
         proxy.Setup(p => p.SendCoreAsync(It.IsAny<string>(), It.IsAny<object?[]>(), It.IsAny<CancellationToken>()))
@@ -93,9 +95,9 @@ public static class ChatHubTestHarness
         groups.Setup(g => g.RemoveFromGroupAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
-        var hub = new ChatHub(new FakeDbContextFactory(dbName), new LinkPreviewFetcher(new HttpClient()), BuildJwtConfig())
+        var hub = new ChatHub(new FakeDbContextFactory(dbName), new LinkPreviewFetcher(new HttpClient()), BuildJwtConfig(extraConfig))
         {
-            Context = new FakeHubCallerContext(connectionId, userId),
+            Context = new FakeHubCallerContext(connectionId, userId, isAdmin),
             Clients = clients.Object,
             Groups = groups.Object,
         };
@@ -103,19 +105,30 @@ public static class ChatHubTestHarness
         return hub;
     }
 
-    // Only needs Jwt:SigningKey - ChatHub reads it to sign avatar URLs (see AvatarUrlSigner).
-    private static IConfiguration BuildJwtConfig() =>
-        new ConfigurationBuilder()
-            .AddInMemoryCollection(new Dictionary<string, string?>
-            {
-                ["Jwt:SigningKey"] = "test-signing-key-at-least-32-bytes-long-for-hmac",
-            })
-            .Build();
+    // Always has Jwt:SigningKey (ChatHub reads it to sign avatar URLs - see AvatarUrlSigner);
+    // extraConfig layers on top for tests that need e.g. Turn:Url/Turn:SharedSecret configured
+    // (see ChatHub.GetIceServers).
+    private static IConfiguration BuildJwtConfig(Dictionary<string, string?>? extraConfig = null)
+    {
+        var values = new Dictionary<string, string?>
+        {
+            ["Jwt:SigningKey"] = "test-signing-key-at-least-32-bytes-long-for-hmac",
+        };
+        if (extraConfig is not null)
+            foreach (var kv in extraConfig) values[kv.Key] = kv.Value;
 
-    private static void EnsureUserRowExists(string dbName, string userId)
+        return new ConfigurationBuilder().AddInMemoryCollection(values).Build();
+    }
+
+    private static void EnsureUserRowExists(string dbName, string userId, bool isAdmin = false)
     {
         using var db = CreateDb(dbName);
-        if (db.Users.Any(u => u.Id == userId)) return;
+        var existing = db.Users.FirstOrDefault(u => u.Id == userId);
+        if (existing is not null)
+        {
+            if (existing.IsAdmin != isAdmin) { existing.IsAdmin = isAdmin; db.SaveChanges(); }
+            return;
+        }
 
         db.Users.Add(new ApplicationUser
         {
@@ -123,6 +136,7 @@ public static class ChatHubTestHarness
             UserName = $"{userId}@test.local",
             Email = $"{userId}@test.local",
             DisplayName = string.Empty,
+            IsAdmin = isAdmin,
         });
         db.SaveChanges();
     }

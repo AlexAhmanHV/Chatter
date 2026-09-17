@@ -39,6 +39,11 @@ public sealed record ChatMessageDto(
     ReplyPreviewDto? ReplyTo,
     bool IsPinned);
 
+// One match from ChatHub.SearchAllChats - same shape as a per-chat search result (ChatMessageDto)
+// plus which chat it came from, since a global result can point anywhere the caller is a member,
+// not just the chat they currently have open.
+public sealed record GlobalSearchResultDto(string ChatId, string ChatLabel, ChatMessageDto Message);
+
 // The actual bytes of a message's attachment, fetched lazily via ChatHub.GetAttachmentData.
 public sealed record AttachmentDataDto(string ContentType, byte[] Data);
 

@@ -23,6 +23,7 @@ public class ApiAuthService
 
     public string? AccessToken { get; private set; }
     public string? CurrentDisplayName { get; private set; }
+    public bool IsAdmin { get; private set; }
 
     public ApiAuthService()
     {
@@ -40,6 +41,7 @@ public class ApiAuthService
 
         AccessToken = body.AccessToken;
         CurrentDisplayName = body.DisplayName;
+        IsAdmin = body.IsAdmin;
         return CurrentDisplayName;
     }
 
@@ -54,6 +56,7 @@ public class ApiAuthService
 
         AccessToken = body.AccessToken;
         CurrentDisplayName = body.DisplayName;
+        IsAdmin = body.IsAdmin;
         return CurrentDisplayName;
     }
 
@@ -69,6 +72,7 @@ public class ApiAuthService
     {
         AccessToken = null;
         CurrentDisplayName = null;
+        IsAdmin = false;
     }
 
     private static async Task<string> ExtractErrorAsync(HttpResponseMessage resp)

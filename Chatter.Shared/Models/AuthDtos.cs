@@ -4,5 +4,5 @@ public sealed record RegisterRequest(string Email, string Password, string? Disp
 public sealed record LoginRequest(string Email, string Password);
 
 // Returned by both /auth/register and /auth/login. The client stores AccessToken and uses
-// DisplayName directly instead of decoding the JWT itself.
-public sealed record AuthResponse(string AccessToken, DateTime ExpiresAtUtc, string DisplayName);
+// DisplayName/IsAdmin directly instead of decoding the JWT itself.
+public sealed record AuthResponse(string AccessToken, DateTime ExpiresAtUtc, string DisplayName, bool IsAdmin = false);

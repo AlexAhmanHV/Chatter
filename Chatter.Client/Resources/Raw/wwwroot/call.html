@@ -13,9 +13,12 @@ What this does:
 - Protocol: every message either way is a JSON object with a "type" field - see the switch
   statements in handleNativeMessage (commands received from C#) and the send() calls (events
   sent to C#) for the full set.
-- STUN only, no TURN: gathers reflexive ICE candidates via a public Google STUN server so two
-  peers can usually find each other through NAT, but there's no relay fallback for restrictive
-  NATs (symmetric NAT, some corporate/mobile networks) - see the README's "Known simplifications".
+- ICE servers: starts with public-STUN-only as a default that always works with zero setup, then
+  CallViewModel pushes a "set-ice-servers" message (fetched from ChatHub.GetIceServers) before
+  telling this page to actually start - which adds a TURN relay if the server has one configured.
+  If that message never arrives (e.g. the fetch failed), the STUN-only default is what's used, so
+  a call still works the same as before TURN support existed - just without the relay fallback for
+  restrictive/symmetric NATs.
 -->
 <html>
 <head>
@@ -34,7 +37,10 @@ What this does:
   <video id="localVideo" autoplay playsinline muted></video>
 
   <script>
-    const ICE_SERVERS = [{ urls: "stun:stun.l.google.com:19302" }];
+    // Overwritten by a "set-ice-servers" message (see handleNativeMessage) before start-caller/
+    // start-callee normally arrives - this default only actually matters if that message is
+    // skipped or fails, so a call still works (STUN-only) rather than not starting at all.
+    let iceServers = [{ urls: "stun:stun.l.google.com:19302" }];
 
     let pc = null;
     let localStream = null;
@@ -46,7 +52,7 @@ What this does:
 
     function ensurePeerConnection() {
       if (pc) return pc;
-      pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+      pc = new RTCPeerConnection({ iceServers: iceServers });
 
       pc.onicecandidate = (event) => {
         if (event.candidate) send({ type: "ice-candidate", candidate: JSON.stringify(event.candidate) });
@@ -144,6 +150,13 @@ What this does:
     function handleNativeMessage(message) {
       const data = JSON.parse(message);
       switch (data.type) {
+        case "set-ice-servers":
+          // Arrives before start-caller/start-callee, and always before ensurePeerConnection()
+          // has run for this call (a fresh RTCPeerConnection is only created by startAsCaller/
+          // startAsCallee) - so there's no already-live connection whose config this would need
+          // to migrate.
+          if (Array.isArray(data.servers) && data.servers.length > 0) iceServers = data.servers;
+          break;
         case "start-caller":
           startAsCaller(data.kind);
           break;

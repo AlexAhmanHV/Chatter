@@ -57,10 +57,23 @@ public partial class ChatMessageItem : ObservableObject
     // id to reference server-side - never a synthetic system line.
     public bool CanForward => Id > 0 && !IsSystem;
     public bool CanReply => Id > 0 && !IsSystem;
+
+    // Reporting your own message would just be a confusing way to delete it (which CanModify
+    // already covers) - only offered on someone else's.
+    public bool CanReport => Id > 0 && !IsSystem && !IsMine;
     public bool CanPin => Id > 0 && !IsSystem && !IsDeleted;
     public bool CanViewEditHistory => Id > 0 && !IsSystem && IsEdited;
 
     [ObservableProperty] public partial bool IsPinned { get; set; }
+
+    // Set only for a result from ChatViewModel.SearchAllChatsAsync ("search everywhere") - the
+    // chat this match lives in, so the result list can show which conversation it's from and
+    // tapping it can jump there. Null (and hidden) for an ordinary per-chat search result.
+    [ObservableProperty] public partial string? SearchChatId { get; set; }
+    [ObservableProperty] public partial string? SearchChatLabel { get; set; }
+    public bool HasSearchChatLabel => !string.IsNullOrEmpty(SearchChatLabel);
+
+    partial void OnSearchChatLabelChanged(string? value) => OnPropertyChanged(nameof(HasSearchChatLabel));
 
     // Set once ChatViewModel has resolved a URL found in Body via GetLinkPreviewAsync - null
     // until then, and stays null if the message has no URL or the preview fetch failed/found

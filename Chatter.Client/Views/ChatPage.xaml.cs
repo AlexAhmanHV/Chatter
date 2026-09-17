@@ -48,8 +48,20 @@ public partial class ChatPage : ContentPage, IAlertHost, IPromptHost, IActionShe
         if (PeopleList is not null)
             PeopleList.SelectionChanged += OnOnlineUserSelected;
 
+        vm.LoggedOut += OnLoggedOut;
+
         WeakReferenceMessenger.Default.Register<ScrollToMessageMessage>(this, (_, msg) =>
             MessagesList?.ScrollTo(msg.Value, position: ScrollToPosition.Center, animate: true));
+    }
+
+    // Reached only via a forced ban (see ChatViewModel.OnBanned) - an ordinary logout goes through
+    // SettingsPage instead. Same navigation-stack reset either way: a banned/logged-out user
+    // shouldn't be able to hit "back" from Login and land in the session they just left.
+    private async void OnLoggedOut()
+    {
+        var loginPage = _services.GetRequiredService<LoginPage>();
+        Navigation.InsertPageBefore(loginPage, Navigation.NavigationStack[0]);
+        await Navigation.PopToRootAsync(false);
     }
 
     private void OnDeleteChatTapped(object? sender, EventArgs e)
@@ -133,6 +145,13 @@ public partial class ChatPage : ContentPage, IAlertHost, IPromptHost, IActionShe
         if (BindingContext is not ChatViewModel vm) return;
         if (sender is Element { BindingContext: ChatMessageItem item })
             vm.TogglePinCommand.Execute(item);
+    }
+
+    private void OnReportMessageInvoked(object? sender, EventArgs e)
+    {
+        if (BindingContext is not ChatViewModel vm) return;
+        if (sender is Element { BindingContext: ChatMessageItem item })
+            vm.ReportMessageCommand.Execute(item);
     }
 
     private void OnViewEditHistoryTapped(object? sender, EventArgs e)

@@ -28,6 +28,7 @@ public class ChatDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<BlockedUserEntity> Blocks => Set<BlockedUserEntity>();
     public DbSet<MutedChatEntity> MutedChats => Set<MutedChatEntity>();
     public DbSet<PinnedChatEntity> PinnedChats => Set<PinnedChatEntity>();
+    public DbSet<MessageReportEntity> MessageReports => Set<MessageReportEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -83,6 +84,13 @@ public class ChatDbContext : IdentityDbContext<ApplicationUser>
         modelBuilder.Entity<PinnedChatEntity>(e =>
         {
             e.HasKey(p => new { p.UserId, p.ChatId });
+        });
+
+        modelBuilder.Entity<MessageReportEntity>(e =>
+        {
+            e.HasKey(r => r.Id);
+            e.HasIndex(r => r.MessageId);
+            e.HasIndex(r => r.ResolvedAtUtc);
         });
     }
 }
@@ -201,4 +209,22 @@ public class PinnedChatEntity
     public required string UserId { get; set; }
     public required string ChatId { get; set; }
     public DateTime PinnedAtUtc { get; set; }
+}
+
+// A member's flag on a message for a site admin to review (see ChatHub.ReportMessage/GetReports).
+// Reporting doesn't hide or otherwise affect the message itself - it's purely a queue for an
+// admin to act on (delete the message, ban the sender, or dismiss it as not-actually-a-problem).
+public class MessageReportEntity
+{
+    public long Id { get; set; }
+    public long MessageId { get; set; }
+    public required string ReporterUserId { get; set; }
+    public required string Reason { get; set; }
+    public DateTime CreatedAtUtc { get; set; }
+
+    // Null while pending. Set (to whichever admin handled it, so there's a trail of who did what)
+    // once GetReports should stop surfacing it - dismissing and acting on it both resolve it the
+    // same way, since the outcome that matters is already reflected in the message/account itself.
+    public string? ResolvedByUserId { get; set; }
+    public DateTime? ResolvedAtUtc { get; set; }
 }

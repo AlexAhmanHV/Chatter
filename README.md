@@ -69,7 +69,9 @@ Chatter is a small but complete chat application that showcases a modern .NET st
 * **Video clips & documents**: Send several video clips or documents (PDF, Office, txt, zip) in one go.
 * **Link previews**: Paste a URL into a message and it renders as a rich preview card (title, description, image).
 * **Pin a chat**: Pin any chat to the top of the chat list, alongside the existing mute/block options.
-* **Audio/video calls**: Call another DM participant, audio- or video-only, over WebRTC (STUN only, no TURN relay).
+* **Audio/video calls**: Call another DM participant, audio- or video-only, over WebRTC (public STUN always, plus a TURN relay if you configure one - see [Configure](#configure)).
+* **Search everywhere**: Search within one open chat, or toggle "Search everywhere" to search across every chat you're a member of at once.
+* **Moderation**: Any member can report a message; a site admin (configured by email, see [Configure](#configure)) gets a review queue to delete the message, ban the account, or dismiss the report.
 * **Read receipts**: A "Seen" marker appears under your last DM message once the other person has viewed it.
 * **Paginated history**: Only the most recent messages load at first — a "Load earlier messages" button pages further back.
 * **Persisted history**: Messages, edits, reactions, read receipts, group membership, accounts, and unread counts all survive a server restart (SQLite via EF Core migrations).
@@ -143,9 +145,10 @@ Chatter.sln
 * **LoginPage** – Email/password login.
 * **RegisterPage** – Create an account (optional display name).
 * **ChatPage** – Chats list (Lobby/DMs/groups), messages with edit history/delete/react/seen/
-  pinning/replies/attachments/voice notes/video/forwarding, in-chat search, composer with image/
-  video-attach and record buttons, typing indicator, people panel with avatars, group admin
-  management, "New group" toolbar action, "Load earlier messages" paging.
+  pinning/replies/attachments/voice notes/video/forwarding/reporting, search (this chat or
+  everywhere), composer with image/video-attach and record buttons, typing indicator, people panel
+  with avatars, group admin management, "New group" toolbar action, "Load earlier messages"
+  paging, and (site admins only) a reports queue.
 * **SettingsPage** – Update display name and avatar, log out.
 
 ### Attachments & avatars
@@ -191,9 +194,13 @@ external decoding library, and falls back to a flat placeholder waveform if the 
 
 The 🔍 button in the chat header searches the currently open chat's history
 (`ChatHub.SearchMessages`) with a debounced, case-insensitive substring match; deleted messages
-are excluded. Tapping a result jumps to it if it's already loaded into the visible message list,
-or asks you to load earlier history first if it isn't - there's no "load history around this
-message" API, only "load older from the top" (`LoadMoreHistoryCommand`).
+are excluded. A "Search everywhere" toggle next to the search box switches to
+`ChatHub.SearchAllChats`, which searches across every chat you're a member of at once (still
+membership-checked server-side per chat, same as everything else - a result can never surface a
+message from a chat you don't belong to) and labels each result with which chat it's from. Tapping
+a result jumps to it - switching chats first for a global result - if it's already loaded into the
+visible message list, or asks you to load earlier history first if it isn't; there's no "load
+history around this message" API, only "load older from the top" (`LoadMoreHistoryCommand`).
 
 ### Message forwarding
 
@@ -295,15 +302,40 @@ available in group chats or the Lobby) - the other person sees an incoming-call 
 Accept/Decline. Signaling (invite, answer, decline, ICE candidates, hangup) travels over the
 existing SignalR hub connection as its own set of methods/events, rate-limited the same way as
 other hub actions; the actual audio/video itself is a direct WebRTC peer connection negotiated
-inside a `HybridWebView` page (`Resources/Raw/wwwroot/call.html`), using only a public STUN
-server (`stun:stun.l.google.com:19302`) - no TURN relay.
+inside a `HybridWebView` page (`Resources/Raw/wwwroot/call.html`).
 
-This is the simplest option to start with, at a real cost: STUN alone can't establish a direct
-connection through every kind of NAT/firewall (some mobile carriers and locked-down corporate
-networks in particular), so some caller/callee pairs won't be able to connect at all - a known
-limitation, not a bug, if a specific pair can't connect. A TURN relay server fixes that but needs
-its own infrastructure (self-hosted, e.g. coturn, or a paid service) - a reasonable next step if
-calls need to work reliably for everyone.
+**ICE servers**: `ChatHub.GetIceServers` always returns a public STUN server
+(`stun:stun.l.google.com:19302`), and additionally a TURN relay if you've configured one (see
+[Configure](#configure)) - fetched fresh before every call and pushed into the page, never cached
+client-side, since a TURN credential is short-lived (`Auth/TurnCredentialSigner`, coturn's
+standard HMAC "REST API" scheme - a shared secret configured on both this server and the TURN
+server mints a username/password pair that expires on its own, rather than either side ever
+handing out the secret itself).
+
+Public STUN alone can't establish a direct connection through every kind of NAT/firewall (some
+mobile carriers and locked-down corporate networks in particular, especially symmetric NAT), so
+without a TURN server configured, some caller/callee pairs won't be able to connect at all - a
+known limitation of STUN itself, not a bug, if a specific pair can't connect. `docker-compose.yml`
+has a ready-to-uncomment `coturn` service if you want to close that gap; see
+[Configure](#configure) for wiring it up. Chatter works the same either way - a TURN server is
+strictly additive, not required to place a call at all.
+
+### Moderation
+
+Any member can report a message (swipe it, choose "Report", give a short reason) - this doesn't
+hide the message or notify its sender, it just adds an entry to the site admin's review queue
+(`ChatHub.ReportMessage`/`GetReports`). A site admin is anyone whose email is listed in
+`Admin:Emails` (see [Configure](#configure)) - there's no in-app way to grant it, only server
+config, checked fresh on every login/register. An admin sees a 🚩 button next to Settings that
+opens the pending-reports queue; picking one offers **Delete message**, **Ban {sender}**, or
+**Dismiss report**. Deleting bypasses the normal "only your own messages" rule for admins
+specifically; banning sets `ApplicationUser.IsBanned`, which `/auth/login` checks and rejects.
+
+Banning can't forcibly disconnect a session that's already connected - SignalR has no built-in way
+to sever a specific connection from a different Hub instance. Instead, `ChatHub.BanUser` sends a
+cooperative `"Banned"` event to the account's live connections, and this client reacts to it by
+signing itself out immediately; a modified/malicious client could ignore that event, so the real
+enforcement is `/auth/login` rejecting the banned account on its next attempt, not the live kick.
 
 ### Known simplifications
 
@@ -314,8 +346,9 @@ A few deliberate scope cuts, worth knowing about if you extend this:
 * **No refresh tokens** — a login/register JWT is valid for 7 days flat (`Auth/JwtIssuer.cs`) with no rotation or revocation. Logging out (Settings) clears the token client-side, but the server has no notion of a "session" to revoke - a compromised token stays valid until it expires, and there's no server-side "sign out everywhere" beyond changing the JWT signing key (which invalidates *every* session, not just one).
 * **Attachments/avatars/voice messages as SQLite blobs** — see [Attachments & avatars](#attachments--avatars) above. Fine at this scale; a high-traffic deployment would want a real object store instead of growing the database file with binary data.
 * **Forwarding doesn't cross a block** — forwarding into a DM still goes through the same block check as sending normally, but there's no separate "this content came from someone you've blocked" warning; it's just refused the same way a direct message would be.
-* **Search is per-chat, not global** — `SearchMessages` only looks within one chat at a time; there's no "search across all my chats" view.
-* **Calls are STUN-only, no TURN relay** — see [Audio/video calls](#audiovideo-calls) above; some caller/callee pairs behind restrictive NATs won't be able to connect at all.
+* **TURN is optional, not automatic** — see [Audio/video calls](#audiovideo-calls) above; without a TURN server configured, some caller/callee pairs behind restrictive NATs still won't be able to connect.
+* **A ban can't force-disconnect an active session** — see [Moderation](#moderation) above; it's cooperative plus a login-time block, not a hard kick.
+* **No invite system or access list** — anyone who can reach the server can register an account; moderation (reports, bans) is reactive, not a gate on who can join in the first place.
 
 ## Project structure
 
@@ -374,6 +407,33 @@ For a plain `dotnet run`/first clone, you don't need to do anything: if `Jwt:Sig
    ```
 
 Anyone who obtains this key can forge a valid login as any user, so treat it like a database password: never commit it (auto-generated or not), and rotate it (which invalidates every existing session) if it ever leaks.
+
+**Site admins (`Admin:Emails`, optional)**
+
+There's no in-app way to grant admin rights — it's set via server config, checked on every `/auth/register` and `/auth/login`, so it takes effect the next time the account signs in. List the email addresses that should be treated as site admins:
+
+```json
+{ "Admin": { "Emails": ["you@example.com"] } }
+```
+
+or as environment variables (note the `__0`, `__1`, ... index suffix for array items):
+
+```bash
+Admin__Emails__0=you@example.com
+```
+
+An admin account gets a reports queue (the flag button in the People panel) and can delete any message or ban an account from there. Leave this unset and the moderation UI simply never appears for anyone.
+
+**TURN server (`Turn:Url` / `Turn:SharedSecret`, optional)**
+
+Calls work out of the box with public STUN alone (`stun:stun.l.google.com:19302`) — this is enough for most peers. It only fails to establish a direct connection when both sides are behind restrictive/symmetric NATs, which is where a TURN relay helps. There's a ready-to-use `coturn` service commented out in `docker-compose.yml`; uncomment it and the matching `chatter-server` environment lines, then set:
+
+```bash
+Turn__Url=turn:your-server-address:3478
+Turn__SharedSecret=replace-me-with-a-real-random-secret
+```
+
+The server never stores or forwards this secret to clients — it uses it to mint short-lived (6-hour), per-user HMAC credentials on demand (`GetIceServers`, `TurnCredentialSigner`), so nothing long-lived is exposed to a peer. Leave both unset and calls just keep using STUN only, same as before this existed.
 
 **Chat data & accounts (SQLite)**
 
